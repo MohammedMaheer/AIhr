@@ -1,0 +1,136 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hr-agent
+  labels:
+    app: hr-agent
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: hr-agent
+  template:
+    metadata:
+      labels:
+        app: hr-agent
+        version: v1
+    spec:
+      containers:
+      - name: hr-agent
+        image: gcr.io/YOUR_PROJECT_ID/hr-agent:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: ENV
+          value: "production"
+        - name: GCP_PROJECT_ID
+          valueFrom:
+            configMapKeyRef:
+              name: hr-agent-config
+              key: project-id
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: hr-agent-secrets
+              key: db-host
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hr-agent-secrets
+              key: db-password
+        - name: GCS_BUCKET_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: hr-agent-config
+              key: gcs-bucket-name
+        - name: DATASTORE_ID
+          valueFrom:
+            configMapKeyRef:
+              name: hr-agent-config
+              key: datastore-id
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/config
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/config
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: google-credentials
+          mountPath: /app/google-credentials.json
+          subPath: google-credentials.json
+          readOnly: true
+      volumes:
+      - name: google-credentials
+        secret:
+          secretName: google-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hr-agent-service
+  labels:
+    app: hr-agent
+spec:
+  selector:
+    app: hr-agent
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hr-agent-config
+data:
+  project-id: "YOUR_PROJECT_ID"
+  gcs-bucket-name: "your-gcs-bucket-name"
+  datastore-id: "your-datastore-id"
+  web-search-datastore-id: "your-web-search-datastore-id"
+  gcp-location: "global"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hr-agent-ingress
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: "hr-agent-ip"  # Optional: Reserve static IP
+    networking.gke.io/managed-certificates: "hr-agent-ssl-cert"  # For SSL
+spec:
+  rules:
+  - host: smarthr.yourdomain.com  # Replace with your domain
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: hr-agent-service
+            port:
+              number: 80
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: hr-agent-ssl-cert
+spec:
+  domains:
+    - smarthr.yourdomain.com  # Replace with your domain 

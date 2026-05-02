@@ -1,0 +1,49 @@
+{
+    "gcs": {
+        "bucket_name": "your_resume_storage_bucket",
+        "default_folder": "resume/",
+        "credentials_path": "service-account.json"
+    },
+    "upload": {
+        "allowed_extensions": [".pdf", ".doc", ".docx"],
+        "auto_create_folders": true
+    },
+    "vector_search": {
+        "project_id": "your-gcp-project-id",
+        "location": "global",
+        "datastore_id": "your_resume_datastore_id"
+    },
+    "postgresql": {
+        "host": "your_db_host_ip",
+        "cloud_sql_connection_name": "your-gcp-project-id:me-central1:your-cloudsql-instance",
+        "port": 5432,
+        "database": "postgres",
+        "user": "postgres",
+        "password": "your_db_password_here",
+        "ssl_mode": "require",
+        "pool_size": 10,
+        "max_overflow": 20,
+        "pool_timeout": 30,
+        "pool_recycle": 3600
+    },
+    "web_search": {
+        "project_id": "your-gcp-project-id",
+        "location": "global",
+        "datastore_id": "your_web_search_datastore_id",
+        "engine_id": "web-search",
+        "serving_config": "projects/your-gcp-project-id/locations/global/collections/default_collection/engines/web-search/servingConfigs/default_config",
+        "created_at": "2025-06-29"
+    },
+    "cloud_tasks": {
+        "project_id": "your-gcp-project-id",
+        "location": "europe-west1",
+        "queue_name": "hr-scorecard-processing",
+        "service_account_email": "your-service-account-name@your-gcp-project-id.iam.gserviceaccount.com",
+        "target_uri": "https://your-cloud-run-url.run.app",
+        "task_timeout": 3600,
+        "max_retry_attempts": 3,
+        "min_backoff_seconds": 60,
+        "max_backoff_seconds": 300,
+        "max_doublings": 10
+    }
+} 

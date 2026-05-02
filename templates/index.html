@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart HR</title>
+    <link rel="icon" type="image/png" href="/static/img/makaiyslogo-2-300x262.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#3B82F6',
+                        'primary-dark': '#1E40AF',
+                        'secondary': '#8B5CF6',
+                        'accent': '#10B981',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Job Description Preview Formatting */
+        #jd-preview h1,
+        #jd-preview h2,
+        #jd-preview h3 {
+            font-weight: bold !important;
+            margin-top: 1.5rem !important;
+            margin-bottom: 1rem !important;
+            color: #1f2937 !important;
+        }
+
+        #jd-preview h1 {
+            font-size: 1.875rem !important;
+            border-bottom: 2px solid #e5e7eb !important;
+            padding-bottom: 0.5rem !important;
+        }
+
+        #jd-preview h2 {
+            font-size: 1.5rem !important;
+            color: #374151 !important;
+        }
+
+        #jd-preview h3 {
+            font-size: 1.25rem !important;
+            color: #4b5563 !important;
+        }
+
+        #jd-preview ul,
+        #jd-preview ol {
+            margin: 1rem 0 !important;
+            padding-left: 1.5rem !important;
+        }
+
+        #jd-preview ul li {
+            list-style-type: disc !important;
+            margin-bottom: 0.5rem !important;
+            line-height: 1.6 !important;
+        }
+
+        #jd-preview ol li {
+            list-style-type: decimal !important;
+            margin-bottom: 0.5rem !important;
+            line-height: 1.6 !important;
+        }
+
+        #jd-preview p {
+            margin: 1rem 0 !important;
+            line-height: 1.7 !important;
+            color: #374151 !important;
+        }
+
+        #jd-preview strong,
+        #jd-preview b {
+            font-weight: 600 !important;
+            color: #1f2937 !important;
+        }
+
+        #jd-preview em,
+        #jd-preview i {
+            font-style: italic !important;
+        }
+
+        #jd-preview {
+            background-color: white !important;
+            line-height: 1.6 !important;
+        }
+
+        /* Section headers with gradient styling */
+        #jd-preview .section-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body class="bg-gradient-to-br from-slate-50 to-blue-50 font-inter antialiased">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <div class="w-52 bg-white/95 backdrop-blur-sm shadow-xl border-r border-gray-200/50 sidebar-compact">
+            <!-- Logo Section -->
+            <div class="p-4 border-b border-gray-100">
+                <div class="flex items-center space-x-2">
+                    <div class="w-9 h-9 bg-white rounded-lg shadow-md flex items-center justify-center">
+                        <img src="/static/img/makaiyslogo-2-300x262.png" alt="Smart HR Logo"
+                            class="h-7 w-7 object-contain">
+                    </div>
+                    <div>
+                        <h1 class="text-sm font-bold text-gray-800">Smart HR</h1>
+                        <p class="text-xs text-gray-500">Your AI Agent for Seamless Recruitment</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="mt-4 px-2">
+                <div class="space-y-1">
+                    <a href="#" id="dashboard-link"
+                        class="nav-link group flex items-center px-2 py-2 text-gray-600 rounded-lg hover:bg-gray-50 transition-all duration-200">
+                        <div
+                            class="w-7 h-7 bg-gray-100 rounded-md flex items-center justify-center mr-2 group-hover:bg-blue-100 transition-colors">
+                            <i class="fas fa-chart-pie text-gray-600 group-hover:text-blue-600 text-xs"></i>
+                        </div>
+                        <div>
+                            <div class="font-medium text-xs">Dashboard</div>
+                            <div class="text-xs text-gray-400">Overview & Analytics</div>
+                        </div>
+                    </a>
+
+                    <a href="#" id="upload-files-link"
+                        class="nav-link group flex items-center px-2 py-2 text-gray-600 rounded-lg hover:bg-gray-50 transition-all duration-200">
+                        <div
+                            class="w-7 h-7 bg-gray-100 rounded-md flex items-center justify-center mr-2 group-hover:bg-green-100 transition-colors">
+                            <i class="fas fa-cloud-upload-alt text-gray-600 group-hover:text-green-600 text-xs"></i>
+                        </div>
+                        <div>
+                            <div class="font-medium text-xs">Upload Files</div>
+                            <div class="text-xs text-gray-400">Bulk upload & email scraping</div>
+                        </div>
+                    </a>
+
+                    <a href="#" id="search-resumes-link"
+                        class="nav-link group flex items-center px-2 py-2 text-gray-600 rounded-lg hover:bg-gray-50 transition-all duration-200">
+                        <div
+                            class="w-7 h-7 bg-gray-100 rounded-md flex items-center justify-center mr-2 group-hover:bg-blue-100 transition-colors">
+                            <i class="fas fa-search text-gray-600 group-hover:text-blue-600 text-xs"></i>
+                        </div>
+                        <div>
+                            <div class="font-medium text-xs">Search Resumes</div>
+                            <div class="text-xs text-gray-400">AI-Powered Search</div>
+                        </div>
+                    </a>
+
+                    <a href="#" id="history-link"
+                        class="nav-link group flex items-center px-2 py-2 text-gray-600 rounded-lg hover:bg-gray-50 transition-all duration-200">
+                        <div
+                            class="w-7 h-7 bg-gray-100 rounded-md flex items-center justify-center mr-2 group-hover:bg-purple-100 transition-colors">
+                            <i class="fas fa-history text-gray-600 group-hover:text-purple-600 text-xs"></i>
+                        </div>
+                        <div>
+                            <div class="font-medium text-xs">Search Reports</div>
+                            <div class="text-xs text-gray-400">Previous searches & results</div>
+                        </div>
+                    </a>
+
+                    <a href="#" id="jd-builder-link"
+                        class="nav-link group flex items-center px-2 py-2 text-gray-600 rounded-lg hover:bg-gray-50 transition-all duration-200">
+                        <div
+                            class="w-7 h-7 bg-gray-100 rounded-md flex items-center justify-center mr-2 group-hover:bg-indigo-100 transition-colors">
+                            <i class="fas fa-file-contract text-gray-600 group-hover:text-indigo-600 text-xs"></i>
+                        </div>
+                        <div>
+                            <div class="font-medium text-xs">JD Builder</div>
+                            <div class="text-xs text-gray-400">AI Job Descriptions</div>
+                        </div>
+                    </a>
+
+                    <a href="#" id="settings-link"
+                        class="nav-link group flex items-center px-2 py-2 text-gray-600 rounded-lg hover:bg-gray-50 transition-all duration-200">
+                        <div
+                            class="w-7 h-7 bg-gray-100 rounded-md flex items-center justify-center mr-2 group-hover:bg-purple-100 transition-colors">
+                            <i class="fas fa-cog text-gray-600 group-hover:text-purple-600 text-xs"></i>
+                        </div>
+                        <div>
+                            <div class="font-medium text-xs">Settings</div>
+                            <div class="text-xs text-gray-400">Preferences</div>
+                        </div>
+                    </a>
+                </div>
+            </nav>
+
+            <!-- User Profile -->
+            <div class="absolute bottom-0 left-0 right-0 p-2 border-t border-gray-100">
+                <div class="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
+                    <div
+                        class="w-7 h-7 bg-gradient-to-r from-green-400 to-blue-500 rounded-full flex items-center justify-center">
+                        <i class="fas fa-user text-white text-xs"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-medium text-gray-800 text-xs" id="userName">Loading...</div>
+                        <div class="text-xs text-gray-500 truncate" id="userEmail">Loading...</div>
+                    </div>
+                    <div class="relative" id="userMenu">
+                        <button class="text-gray-400 hover:text-gray-600" onclick="toggleUserMenu()">
+                            <i class="fas fa-ellipsis-v text-xs"></i>
+                        </button>
+                        <div id="userDropdown"
+                            class="absolute bottom-full right-0 mb-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 hidden">
+                            <!-- <a href="/dashboard" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <i class="fas fa-tachometer-alt mr-2"></i>Dashboard
+                            </a> -->
+                            <a href="#" onclick="logout()"
+                                class="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100">
+                                <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Content Area -->
+            <main id="main-content" class="flex-1 overflow-y-auto bg-gradient-to-br from-gray-50/50 to-blue-50/30 p-6">
+                <!-- Dynamic content will be loaded here -->
+            </main>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="/static/js/main.js"></script>
+</body>
+
+</html>

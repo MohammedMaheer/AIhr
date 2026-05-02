@@ -1,0 +1,91 @@
+# Git files
+.git
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Development files
+*.backup
+main copy.py
+main.py.backup
+dashboard_old.html
+test_*.py
+test_*.html
+*_test.py
+
+# Company data files (sensitive)
+company_info_*.txt
+
+# SQL migration files
+*.sql
+migrate_*.py
+
+# Logs
+*.log
+logs/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Scripts (exclude most, but keep start.sh)
+*.ps1
+push_to_github.*
+run_reset.*
+deploy/*.sh
+!start.sh
+
+# Config backups
+config.*.json
+
+# Large development files
+*.zip
+*.tar.gz
+*.rar
+
+# Jupyter notebooks
+*.ipynb
+
+# Development utilities
+reset_system.py
+extract_emails_365.py
+simple_vector_test.py
+vector_search_test.py
+vertex_ai_example.py
+check_web_search_status.py
+create_web_search_app.py
+quick_web_search_test.py
+
+# README files (except main one)
+*README*.md
+!README.md 

@@ -1,0 +1,36 @@
+{
+    "gcs": {
+        "bucket_name": "${GCS_BUCKET_NAME:-your_resume_storage_bucket}",
+        "default_folder": "resume/",
+        "credentials_path": "${GOOGLE_APPLICATION_CREDENTIALS:-/app/service-account.json}"
+    },
+    "upload": {
+        "allowed_extensions": [".pdf", ".doc", ".docx"],
+        "auto_create_folders": true
+    },
+    "vector_search": {
+        "project_id": "${GCP_PROJECT_ID:-your-gcp-project-id}",
+        "location": "${GCP_LOCATION:-global}",
+        "datastore_id": "${DATASTORE_ID:-your_resume_datastore_id}"
+    },
+    "postgresql": {
+        "host": "${DB_HOST:-localhost}",
+        "port": "${DB_PORT:-5432}",
+        "database": "${DB_NAME:-postgres}",
+        "user": "${DB_USER:-postgres}",
+        "password": "${DB_PASSWORD:-your_db_password_here}",
+        "ssl_mode": "${DB_SSL_MODE:-require}",
+        "pool_size": "${DB_POOL_SIZE:-10}",
+        "max_overflow": "${DB_MAX_OVERFLOW:-20}",
+        "pool_timeout": "${DB_POOL_TIMEOUT:-30}",
+        "pool_recycle": "${DB_POOL_RECYCLE:-3600}"
+    },
+    "web_search": {
+        "project_id": "${GCP_PROJECT_ID:-your-gcp-project-id}",
+        "location": "${GCP_LOCATION:-global}",
+        "datastore_id": "${WEB_SEARCH_DATASTORE_ID:-your_web_search_datastore_id}",
+        "engine_id": "${WEB_SEARCH_ENGINE_ID:-web-search}",
+        "serving_config": "${WEB_SEARCH_SERVING_CONFIG:-projects/your-gcp-project-id/locations/global/collections/default_collection/engines/web-search/servingConfigs/default_config}",
+        "created_at": "2025-06-29"
+    }
+} 

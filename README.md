@@ -1,7 +1,5 @@
 # 🌟 Smart HR: AI-Powered Candidate Search & Analysis Platform
 
-> 🎬 **Watch the Demo →** [SmartHR Feature Walkthrough on YouTube](https://youtube.com/YOUR_VIDEO_LINK_HERE)
-
 ![Python](https://img.shields.io/badge/Python-3.11-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-teal) ![Docker](https://img.shields.io/badge/Docker-Ready-blue) ![GCP](https://img.shields.io/badge/GCP-Cloud_Run-orange) ![License](https://img.shields.io/badge/License-Commercial-green)
 
 **Smart HR** is a production-ready, enterprise-grade AI recruitment platform and Applicant Tracking System (ATS). It allows HR professionals to instantly generate professional Job Descriptions from scratch using AI, upload candidate resumes (PDF/DOCX), let Google's advanced **Gemini 2.5 Flash AI** analyze them, and instantly find the best matches.

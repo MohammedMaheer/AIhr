@@ -2,7 +2,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-teal) ![Docker](https://img.shields.io/badge/Docker-Ready-blue) ![GCP](https://img.shields.io/badge/GCP-Cloud_Run-orange) ![License](https://img.shields.io/badge/License-Commercial-green)
 
-**Smart HR** is a production-ready, enterprise-grade AI recruitment platform and Applicant Tracking System (ATS). It allows HR professionals to instantly generate professional Job Descriptions from scratch using AI, upload candidate resumes (PDF/DOCX), let Google's advanced **Gemini 2.5 Flash AI** analyze them, and instantly find the best matches.
+**Smart HR** is a production-ready, enterprise-grade AI recruitment platform and Applicant Tracking System (ATS). It allows HR professionals to instantly generate professional Job Descriptions from scratch using AI, upload candidate resumes (PDF/DOCX), let Google's advanced **Gemini Model / GPT Model** analyze them, and instantly find the best matches.
 
 The application architecture includes a powerful FastAPI backend, a responsive Vanilla JS and TailwindCSS frontend dashboard, and robust integrations with **Google Cloud Platform** (Cloud Run, Cloud Storage, Vertex AI, Discovery Engine, and Cloud Tasks).
 
@@ -245,4 +245,4 @@ This single script automatically provisions **Cloud SQL + GCS Bucket + Cloud Tas
 
 ## 👨‍💻 Support
 
-If you run into issues during setup or deployment, please reach out through the **codester support**. I'm happy to help with a personal screen-share or walkthrough.
+If you run into issues during setup or deployment, please reach out through the comment. I'm happy to help with a personal screen-share or walkthrough.

@@ -1,6 +1,6 @@
 {
     "gcs": {
-        "bucket_name": "your_resume_storage_bucket",
+        "bucket_name": "smarthr-prod-2026-resume-storage",
         "default_folder": "resume/",
         "credentials_path": "service-account.json"
     },
@@ -9,41 +9,65 @@
         "auto_create_folders": true
     },
     "vector_search": {
-        "project_id": "your-gcp-project-id",
+        "project_id": "smarthr-prod-2026",
         "location": "global",
-        "datastore_id": "your_resume_datastore_id"
+        "datastore_id": "smarthr-resume-datastore"
     },
     "postgresql": {
-        "host": "your_db_host_ip",
-        "cloud_sql_connection_name": "your-gcp-project-id:me-central1:your-cloudsql-instance",
+        "host": "/cloudsql/smarthr-prod-2026:asia-south1:smarthr-db",
+        "cloud_sql_connection_name": "smarthr-prod-2026:asia-south1:smarthr-db",
         "port": 5432,
-        "database": "postgres",
-        "user": "postgres",
-        "password": "your_db_password_here",
-        "ssl_mode": "require",
-        "pool_size": 10,
+        "database": "smarthr_db",
+        "user": "smarthr_user",
+        "password": "REPLACED_VIA_ENV",
+        "ssl_mode": "disable",
+        "pool_size": 40,
         "max_overflow": 20,
         "pool_timeout": 30,
         "pool_recycle": 3600
     },
     "web_search": {
-        "project_id": "your-gcp-project-id",
+        "project_id": "smarthr-prod-2026",
         "location": "global",
-        "datastore_id": "your_web_search_datastore_id",
+        "datastore_id": "smarthr-web-datastore",
         "engine_id": "web-search",
-        "serving_config": "projects/your-gcp-project-id/locations/global/collections/default_collection/engines/web-search/servingConfigs/default_config",
-        "created_at": "2025-06-29"
+        "serving_config": "projects/smarthr-prod-2026/locations/global/collections/default_collection/engines/web-search/servingConfigs/default_config",
+        "created_at": "2026-05-02"
     },
     "cloud_tasks": {
-        "project_id": "your-gcp-project-id",
-        "location": "europe-west1",
+        "project_id": "smarthr-prod-2026",
+        "location": "asia-south1",
         "queue_name": "hr-scorecard-processing",
-        "service_account_email": "your-service-account-name@your-gcp-project-id.iam.gserviceaccount.com",
-        "target_uri": "https://your-cloud-run-url.run.app",
+        "service_account_email": "smarthr-runtime@smarthr-prod-2026.iam.gserviceaccount.com",
+        "target_uri": "https://smarthr-25561004277.asia-south1.run.app",
         "task_timeout": 3600,
         "max_retry_attempts": 3,
         "min_backoff_seconds": 60,
         "max_backoff_seconds": 300,
         "max_doublings": 10
+    },
+    "calendar": {
+        "google": {
+            "client_id": "",
+            "client_secret": "",
+            "redirect_uri": "https://effortsairecruiter.tech/api/oauth/google/callback"
+        },
+        "microsoft": {
+            "tenant_id": "017c0c22-31fd-41c8-b159-d421376db3f2",
+            "client_id": "8265f455-0545-4cd3-966a-1a9f11cdd861",
+            "client_secret": "",
+            "redirect_uri": "https://effortsairecruiter.tech/api/oauth/microsoft/callback",
+            "sender_user_id": ""
+        }
+    },
+    "email": {
+        "smtp": {
+            "host": "",
+            "port": 587,
+            "user": "",
+            "password": "",
+            "from": "",
+            "use_tls": true
+        }
     }
-} 
+}

@@ -13,8 +13,25 @@ WORKDIR /app
 
 # Install Python dependencies
 COPY requirements.txt .
+COPY requirements-vps.txt ./
+ARG INSTALL_VPS_DEPS=0
 RUN pip install --upgrade pip && \
-    pip install --prefix=/install --no-cache-dir -r requirements.txt
+    pip install --prefix=/install --no-cache-dir -r requirements.txt && \
+    if [ "$INSTALL_VPS_DEPS" = "1" ]; then \
+        pip install --prefix=/install --no-cache-dir -r requirements-vps.txt ; \
+    fi
+
+# Stage 1b: CSS builder (Tailwind standalone CLI, no Node needed)
+FROM debian:bookworm-slim AS css-builder
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /css
+RUN wget -qO tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.13/tailwindcss-linux-x64 \
+    && chmod +x tailwindcss
+COPY tailwind.config.js tailwind.input.css ./
+COPY templates ./templates
+COPY static ./static
+RUN ./tailwindcss -c tailwind.config.js -i tailwind.input.css -o /css/tailwind.css --minify
 
 # Stage 2: Runtime
 FROM python:3.11-slim
@@ -42,6 +59,9 @@ WORKDIR /app
 
 # Copy your FastAPI app
 COPY . .
+
+# Copy built Tailwind CSS bundle from the css-builder stage
+COPY --from=css-builder /css/tailwind.css /app/static/css/tailwind.css
 
 # Create logs/uploads directories
 RUN mkdir -p /app/logs /app/uploads

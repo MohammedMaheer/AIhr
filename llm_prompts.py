@@ -145,6 +145,8 @@ STEP 1: SCAN for these MANDATORY indicators in the job posting:
 - "Must be proficient in" | "Must possess" | "Must demonstrate"
 - Programming languages/technologies mentioned in core job duties (ALWAYS mandatory)
 - Core technical skills for the role (ALWAYS mandatory)
+- Spoken/written language requirements: "speaks X", "fluent in X", "X-speaking", "languages: X" (ALWAYS mandatory when stated)
+- Location requirements: "based in X", "located in X", "must be in X", "remote", "on-site at X" (ALWAYS mandatory when stated)
 
 STEP 2: CLASSIFY each requirement as:
 - MANDATORY (will cause score reduction if missing)
@@ -415,7 +417,13 @@ EXAMPLE for "Technical Specialist L2 Support":
     }}
 }}
 
-Make the optimized_query comprehensive (aim for 10-20 relevant terms) and specific to the job requirements."""
+Make the optimized_query comprehensive (aim for 10-20 relevant terms) and specific to the job requirements.
+
+HARD LIMITS (failure to follow these will cause the parser to reject your output):
+- "optimized_query" MUST be ≤ 600 characters and ≤ 40 words.
+- Use plain space-separated keywords. Do NOT use boolean operators (no "OR", "AND", parentheses, or quotes inside the string).
+- Do NOT pad with generic filler skills/frameworks that are not mentioned in the job posting.
+- Return ONLY the JSON object, with no prose before or after, and no ```json code fences."""
 
 # KEYWORD_EXTRACTION_PROMPT = """You are an expert technical recruiter with deep knowledge of various technical roles. Extract meaningful, specific keywords from this job posting for candidate matching.
 
@@ -698,17 +706,56 @@ Employment Type: {employment_type}
 Additional Requirements/Details:
 {additional_info}
 
-Create a professional job description with the following sections:
-- Company Overview (brief)
-- Position Summary
-- Key Responsibilities (5-7 bullet points)
-- Required Qualifications
-- Preferred Qualifications  
-- Skills Required (technical and soft skills)
-- Benefits and Perks
-- Application Instructions
+OUTPUT FORMAT — STRICT:
+Return ONLY clean semantic HTML. No markdown (no `**`, no `##`, no `---`, no backticks). No <html>, <head>, <body>, <style>, <script>, or code fences. Output starts directly with the <h1>.
 
-Make it engaging, clear, and attractive to potential candidates while being specific about requirements."""
+Use this exact structure and these exact tags (omit the meta line items that have no value provided):
+
+<h1>{position}</h1>
+<p class="jd-meta"><strong>Department:</strong> {department} | <strong>Location:</strong> {location} | <strong>Experience Level:</strong> {experience_level} | <strong>Employment Type:</strong> {employment_type}</p>
+
+<h2>Company Overview</h2>
+<p>2-4 sentences about the company, drawn from the company information provided.</p>
+
+<h2>Position Summary</h2>
+<p>2-4 sentences describing the role, its impact, and who it's for.</p>
+
+<h2>Key Responsibilities</h2>
+<ul>
+  <li>5-8 specific, action-oriented responsibilities, each one sentence.</li>
+</ul>
+
+<h2>Required Qualifications</h2>
+<ul>
+  <li>5-7 must-have qualifications (education, years of experience, core technical skills).</li>
+</ul>
+
+<h2>Preferred Qualifications</h2>
+<ul>
+  <li>3-5 nice-to-have qualifications.</li>
+</ul>
+
+<h2>Skills Required</h2>
+<p><strong>Technical Skills:</strong></p>
+<ul><li>Concrete technical skills, frameworks, tools.</li></ul>
+<p><strong>Soft Skills:</strong></p>
+<ul><li>Concrete soft skills.</li></ul>
+
+<h2>Benefits and Perks</h2>
+<ul>
+  <li>4-6 specific benefits.</li>
+</ul>
+
+<h2>Application Instructions</h2>
+<p>One short paragraph telling candidates how to apply.</p>
+
+RULES:
+- Every <li> must be a complete sentence with a period.
+- Use plain text inside tags. Do NOT include literal asterisks, hashes, or "###".
+- Do NOT wrap the output in ```html or any code fence.
+- Do NOT add inline styles, classes (other than jd-meta on the meta paragraph), or IDs.
+- Be specific to the position and company; avoid generic filler.
+"""
 
 ENHANCE_PROMPT = """You are an expert HR professional. Enhance and improve the following job description to make it more compelling, clear, and comprehensive.
 

@@ -147,8 +147,63 @@ CREATE TABLE IF NOT EXISTS scheduled_interviews (
     status            VARCHAR(50) DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'completed', 'cancelled')),
     created_by        VARCHAR(100),   -- stored as string for flexibility
     company_id        INTEGER REFERENCES tenant_companies(id) ON DELETE CASCADE,
+    meeting_provider  VARCHAR(40),
+    meeting_join_url  TEXT,
+    meeting_event_id  VARCHAR(255),
+    search_result_id  INTEGER,
     created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Per-tenant customised email templates for shortlist / interview-invite /
+-- rejection / custom communications. Rows with company_id IS NULL are
+-- global defaults seeded on first run.
+CREATE TABLE IF NOT EXISTS email_templates (
+    id         SERIAL PRIMARY KEY,
+    company_id INTEGER REFERENCES tenant_companies(id) ON DELETE CASCADE,
+    kind       VARCHAR(40) NOT NULL,
+    name       VARCHAR(200) NOT NULL,
+    subject    TEXT NOT NULL,
+    body       TEXT NOT NULL,
+    is_default BOOLEAN DEFAULT FALSE,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_email_templates_company_kind
+    ON email_templates(company_id, kind);
+
+-- Log of every candidate-facing email sent.
+CREATE TABLE IF NOT EXISTS interview_emails_sent (
+    id               SERIAL PRIMARY KEY,
+    company_id       INTEGER REFERENCES tenant_companies(id) ON DELETE CASCADE,
+    sent_by_user_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    recipient_email  VARCHAR(320) NOT NULL,
+    candidate_name   VARCHAR(500),
+    kind             VARCHAR(40),
+    subject          TEXT,
+    body             TEXT,
+    provider         VARCHAR(40),
+    status           VARCHAR(40) DEFAULT 'sent',
+    error_message    TEXT,
+    search_result_id INTEGER,
+    interview_id     INTEGER REFERENCES scheduled_interviews(id) ON DELETE SET NULL,
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Per-user OAuth tokens (Google, Microsoft) for calendar/mail integration.
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+    id            SERIAL PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider      VARCHAR(40) NOT NULL,
+    access_token  TEXT,
+    refresh_token TEXT,
+    expires_at    TIMESTAMP,
+    scope         TEXT,
+    email         VARCHAR(320),
+    extra         JSONB,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, provider)
 );
 
 -- =============================================================================
@@ -170,6 +225,35 @@ CREATE TABLE IF NOT EXISTS hr_scorecard_tasks (
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at  TIMESTAMP
 );
+
+-- =============================================================================
+-- AI ANALYSIS CACHE
+-- Caches per-(company_id, file_path, jd_hash) Gemini scorecards so repeated
+-- tenant-scoped searches with the same job description avoid re-running the LLM.
+-- A nullable jd_hash with source='migrated_legacy' is used by the legacy
+-- importer to seed analyses that pre-date this app (no JD available).
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS cached_resume_analyses (
+    id              SERIAL PRIMARY KEY,
+    file_path       TEXT NOT NULL,
+    jd_hash         CHAR(64) NOT NULL,
+    jd_summary      TEXT,
+    company_id      INTEGER REFERENCES tenant_companies(id) ON DELETE CASCADE,
+    gemini_analysis JSONB NOT NULL,
+    match_score     NUMERIC(5,2),
+    source          VARCHAR(40) DEFAULT 'live_gemini',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cached_resume_analyses_tenant_file_jd
+    ON cached_resume_analyses(company_id, file_path, jd_hash)
+    WHERE company_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cached_resume_analyses_global_file_jd
+    ON cached_resume_analyses(file_path, jd_hash)
+    WHERE company_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_cached_resume_analyses_file ON cached_resume_analyses(file_path);
+CREATE INDEX IF NOT EXISTS idx_cached_resume_analyses_company ON cached_resume_analyses(company_id);
 
 -- =============================================================================
 -- AUDIT LOG TABLE
@@ -206,18 +290,7 @@ CREATE INDEX IF NOT EXISTS idx_hr_tasks_status        ON hr_scorecard_tasks(stat
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user        ON audit_logs(user_id);
 
 -- =============================================================================
--- SEED: Default Super Admin Account
--- Email: admin@yourcompany.com  /  Password: admin123
--- ⚠️  Change this password immediately after first login!
--- Password hash generated with bcrypt (12 rounds)
+-- Initial super-admin accounts must be created through a controlled
+-- deployment script or the application admin flow. Do not seed default
+-- credentials in schema files.
 -- =============================================================================
-
-INSERT INTO users (email, password_hash, full_name, user_type, is_active)
-VALUES (
-    'admin@yourcompany.com',
-    '$2b$12$LiGkY5BW1q5V5xjQ5bW5K5sK5cKa',  -- admin123 (replace with real hash)
-    'Super Admin',
-    'super_admin',
-    TRUE
-)
-ON CONFLICT (email) DO NOTHING;

@@ -1828,6 +1828,41 @@ button, input, .glass {
     font-size: 9px;
 }
 
+.criteria-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.criteria-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    font-size: 10px;
+    line-height: 14px;
+    font-weight: 600;
+    border-radius: 9999px;
+    border: 1px solid transparent;
+    text-transform: capitalize;
+}
+
+.criteria-badge-match {
+    background-color: #ecfdf5;
+    color: #047857;
+    border-color: #a7f3d0;
+}
+
+.criteria-badge-miss {
+    background-color: #fef2f2;
+    color: #b91c1c;
+    border-color: #fecaca;
+}
+
+/* "Only matches" toggle hides candidates with any criterion miss. */
+.candidate-list.hide-misses .candidate-list-item[data-has-misses="1"] {
+    display: none;
+}
+
 .candidate-list-score {
     text-align: right;
     margin-left: 10px;
@@ -2406,4 +2441,57 @@ button, input, .glass {
 
 .tenure-factor-item:hover::before {
     opacity: 0.2;
+}
+/* ============================================================
+   JD Builder preview � restore default heading & list styling
+   that Tailwind's preflight resets, so generated job descriptions
+   render with structure (h1/h2/ul) instead of as a wall of text.
+   ============================================================ */
+#jd-preview h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #111827;
+    margin: 0 0 0.5rem 0;
+    line-height: 1.2;
+}
+#jd-preview h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 1.5rem 0 0.5rem 0;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+#jd-preview h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #374151;
+    margin: 1rem 0 0.4rem 0;
+}
+#jd-preview p {
+    margin: 0 0 0.75rem 0;
+    color: #374151;
+}
+#jd-preview p.jd-meta {
+    color: #6b7280;
+    font-size: 0.9rem;
+    margin-bottom: 1.25rem;
+}
+#jd-preview ul {
+    list-style: disc outside;
+    padding-left: 1.5rem;
+    margin: 0 0 1rem 0;
+}
+#jd-preview ul li {
+    margin-bottom: 0.35rem;
+    color: #374151;
+}
+#jd-preview strong {
+    color: #111827;
+    font-weight: 600;
+}
+#jd-preview hr {
+    border: 0;
+    border-top: 1px solid #e5e7eb;
+    margin: 1.25rem 0;
 }

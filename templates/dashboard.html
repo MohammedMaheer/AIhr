@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - HR Agent Platform</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/css/tailwind.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         .sidebar-item {
             transition: all 0.3s ease;
@@ -137,6 +138,11 @@
                     <i class="fas fa-user-cog w-5"></i>
                     <span>My Profile</span>
                 </a>
+
+                <a href="#integrations" onclick="showSection('integrations')" class="sidebar-item flex items-center space-x-3 p-3 rounded-lg hover:bg-purple-700">
+                    <i class="fas fa-plug w-5"></i>
+                    <span>Integrations</span>
+                </a>
             </nav>
         </div>
     </aside>
@@ -192,59 +198,265 @@
                 </div>
             </div>
 
-            <!-- Companies Management (Super Admin Only) -->
-            <div id="companies" class="content-section hidden">
+            <!-- Integrations -->
+            <div id="integrations" class="content-section hidden">
                 <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-2xl font-bold text-gray-800">Manage Companies</h2>
-                    <button onclick="showCreateCompanyModal()" class="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-3 rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-                        <i class="fas fa-plus mr-2"></i>Add Company
+                    <h2 class="text-2xl font-bold text-gray-800">Integrations</h2>
+                    <button onclick="loadIntegrationsStatus()" class="text-sm text-purple-700 hover:text-purple-900">
+                        <i class="fas fa-sync-alt mr-1"></i>Refresh
                     </button>
                 </div>
-                
-                <div class="bg-white rounded-lg shadow overflow-hidden">
-                    <table class="min-w-full">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Administrator</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usage</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="companiesTableBody" class="bg-white divide-y divide-gray-200">
-                            <!-- Companies will be loaded here -->
-                        </tbody>
-                    </table>
+
+                <div id="integrationsBanner" class="hidden mb-4 p-3 rounded-lg text-sm"></div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Microsoft / Teams -->
+                    <div class="card-hover bg-white rounded-lg shadow p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center space-x-3">
+                                <i class="fab fa-microsoft text-3xl text-blue-600"></i>
+                                <div>
+                                    <p class="font-semibold text-gray-800">Microsoft Teams</p>
+                                    <p class="text-xs text-gray-500">Calendar · Teams meetings · Outlook mail</p>
+                                </div>
+                            </div>
+                            <span id="msStatusPill" class="text-xs font-medium px-2 py-1 rounded-full bg-gray-200 text-gray-700">…</span>
+                        </div>
+                        <p id="msStatusText" class="text-sm text-gray-600 mb-4">Loading…</p>
+                        <button id="msActionBtn" type="button" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium" onclick="connectIntegration('microsoft')">
+                            Connect
+                        </button>
+                    </div>
+
+                    <!-- Google / Meet -->
+                    <div class="card-hover bg-white rounded-lg shadow p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center space-x-3">
+                                <i class="fab fa-google text-3xl text-red-500"></i>
+                                <div>
+                                    <p class="font-semibold text-gray-800">Google Workspace</p>
+                                    <p class="text-xs text-gray-500">Calendar · Meet · Gmail</p>
+                                </div>
+                            </div>
+                            <span id="googleStatusPill" class="text-xs font-medium px-2 py-1 rounded-full bg-gray-200 text-gray-700">…</span>
+                        </div>
+                        <p id="googleStatusText" class="text-sm text-gray-600 mb-4">Loading…</p>
+                        <button id="googleActionBtn" type="button" class="w-full bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg text-sm font-medium" onclick="connectIntegration('google')">
+                            Connect
+                        </button>
+                    </div>
+
+                    <!-- SMTP -->
+                    <div class="card-hover bg-white rounded-lg shadow p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center space-x-3">
+                                <i class="fas fa-envelope text-3xl text-gray-600"></i>
+                                <div>
+                                    <p class="font-semibold text-gray-800">SMTP (Fallback Email)</p>
+                                    <p class="text-xs text-gray-500">Used when no Microsoft/Google mail connected</p>
+                                </div>
+                            </div>
+                            <span id="smtpStatusPill" class="text-xs font-medium px-2 py-1 rounded-full bg-gray-200 text-gray-700">…</span>
+                        </div>
+                        <p id="smtpStatusText" class="text-sm text-gray-600 mb-4">Loading…</p>
+                        <button type="button" class="w-full bg-gray-200 text-gray-500 py-2 rounded-lg text-sm font-medium cursor-not-allowed" disabled>
+                            Configured via server env
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mt-8 bg-purple-50 border border-purple-200 rounded-lg p-4 text-sm text-gray-700">
+                    <p class="font-semibold text-purple-800 mb-1"><i class="fas fa-info-circle mr-2"></i>How it works</p>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li><strong>Microsoft Teams</strong>: connect once to schedule interviews with auto-generated Teams meeting links and send invites from your Outlook mailbox.</li>
+                        <li><strong>Google Workspace</strong>: connect to schedule interviews with auto-generated Google Meet links and send invites from your Gmail.</li>
+                        <li><strong>SMTP</strong>: optional fallback for sending automated emails if neither account is connected.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Companies Management (Super Admin Only) -->
+            <div id="companies" class="content-section hidden">
+                <!-- Hero header -->
+                <div class="relative overflow-hidden rounded-xl mb-5 bg-gradient-to-r from-purple-600 via-purple-700 to-indigo-700 text-white shadow-lg">
+                    <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(circle at 20% 30%, white 1px, transparent 1px), radial-gradient(circle at 80% 70%, white 1px, transparent 1px); background-size: 40px 40px;"></div>
+                    <div class="relative px-6 py-5 flex items-center justify-between gap-4">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-11 h-11 rounded-xl bg-white bg-opacity-20 flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-building text-lg"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <h2 class="text-2xl font-bold tracking-tight leading-tight">Manage Companies</h2>
+                                <p class="text-purple-100 text-sm mt-0.5">Provision, configure, and monitor every tenant on the platform.</p>
+                            </div>
+                        </div>
+                        <button onclick="showCreateCompanyModal()" class="inline-flex items-center gap-2 bg-white text-purple-700 font-semibold px-4 py-2.5 rounded-lg shadow hover:bg-purple-50 transition whitespace-nowrap flex-shrink-0">
+                            <i class="fas fa-plus text-sm"></i> Add Company
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Stat cards -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500 text-xs font-semibold uppercase tracking-wider">Total Companies</p>
+                                <p class="text-3xl font-bold text-gray-900 mt-1" id="statCompaniesTotal">0</p>
+                            </div>
+                            <div class="w-12 h-12 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center text-2xl"><i class="fas fa-building"></i></div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500 text-xs font-semibold uppercase tracking-wider">Active</p>
+                                <p class="text-3xl font-bold text-gray-900 mt-1" id="statCompaniesActive">0</p>
+                            </div>
+                            <div class="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-2xl"><i class="fas fa-circle-check"></i></div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500 text-xs font-semibold uppercase tracking-wider">Total Seats</p>
+                                <p class="text-3xl font-bold text-gray-900 mt-1" id="statCompaniesSeats">0</p>
+                            </div>
+                            <div class="w-12 h-12 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center text-2xl"><i class="fas fa-users"></i></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search toolbar + table -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div class="px-5 py-3 border-b border-gray-100 flex items-center gap-3 bg-gray-50">
+                        <div class="relative flex-1">
+                            <i class="fas fa-search absolute left-3 top-1/2 text-gray-400 text-sm" style="transform:translateY(-50%)"></i>
+                            <input type="text" id="companiesSearch" oninput="filterCompaniesTable()" placeholder="Search companies by name, code, or plan..." class="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition" />
+                        </div>
+                        <span class="text-xs font-medium text-gray-500 whitespace-nowrap" id="companiesCount">0 companies</span>
+                        <button onclick="loadCompanies()" title="Refresh" class="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-100 transition text-sm">
+                            <i class="fas fa-rotate-right"></i>
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full table-fixed">
+                            <colgroup>
+                                <col style="width:34%"><col style="width:16%"><col style="width:16%"><col style="width:10%"><col style="width:14%"><col style="width:10%">
+                            </colgroup>
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Company</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Code</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Plan</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Users</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="companiesTableBody" class="bg-white divide-y divide-gray-100">
+                                <!-- Companies will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
             <!-- Users Management -->
             <div id="users" class="content-section hidden">
-                <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-2xl font-bold text-gray-800">Manage Users</h2>
-                    <button onclick="showCreateUserModal()" class="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-                        <i class="fas fa-user-plus mr-2"></i>Add User
-                    </button>
+                <!-- Hero header -->
+                <div class="relative overflow-hidden rounded-xl mb-5 bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 text-white shadow-lg">
+                    <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(circle at 20% 30%, white 1px, transparent 1px), radial-gradient(circle at 80% 70%, white 1px, transparent 1px); background-size: 40px 40px;"></div>
+                    <div class="relative px-6 py-5 flex items-center justify-between gap-4">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-11 h-11 rounded-xl bg-white bg-opacity-20 flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-users-cog text-lg"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <h2 class="text-2xl font-bold tracking-tight leading-tight">Manage Users</h2>
+                                <p class="text-blue-100 text-sm mt-0.5">Invite teammates, set roles, and control access across the workspace.</p>
+                            </div>
+                        </div>
+                        <button onclick="showCreateUserModal()" class="inline-flex items-center gap-2 bg-white text-blue-700 font-semibold px-4 py-2.5 rounded-lg shadow hover:bg-blue-50 transition whitespace-nowrap flex-shrink-0">
+                            <i class="fas fa-user-plus text-sm"></i> Add User
+                        </button>
+                    </div>
                 </div>
-                
-                <div class="bg-white rounded-lg shadow overflow-hidden">
-                    <table class="min-w-full">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="usersTableBody" class="bg-white divide-y divide-gray-200">
-                            <!-- Users will be loaded here -->
-                        </tbody>
-                    </table>
+
+                <!-- Stat cards -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500 text-xs font-semibold uppercase tracking-wider">Total Users</p>
+                                <p class="text-3xl font-bold text-gray-900 mt-1" id="statUsersTotal">0</p>
+                            </div>
+                            <div class="w-12 h-12 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center text-2xl"><i class="fas fa-users"></i></div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500 text-xs font-semibold uppercase tracking-wider">Active</p>
+                                <p class="text-3xl font-bold text-gray-900 mt-1" id="statUsersActive">0</p>
+                            </div>
+                            <div class="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-2xl"><i class="fas fa-circle-check"></i></div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500 text-xs font-semibold uppercase tracking-wider">Admins</p>
+                                <p class="text-3xl font-bold text-gray-900 mt-1" id="statUsersAdmins">0</p>
+                            </div>
+                            <div class="w-12 h-12 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center text-2xl"><i class="fas fa-user-shield"></i></div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500 text-xs font-semibold uppercase tracking-wider">Never Logged In</p>
+                                <p class="text-3xl font-bold text-gray-900 mt-1" id="statUsersNeverLoggedIn">0</p>
+                            </div>
+                            <div class="w-12 h-12 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center text-2xl"><i class="fas fa-clock"></i></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search + role filter + table -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div class="px-5 py-3 border-b border-gray-100 flex items-center gap-3 bg-gray-50">
+                        <div class="relative flex-1">
+                            <i class="fas fa-search absolute left-3 top-1/2 text-gray-400 text-sm" style="transform:translateY(-50%)"></i>
+                            <input type="text" id="usersSearch" oninput="filterUsersTable()" placeholder="Search by name, email, or company..." class="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" />
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <button type="button" data-role-filter="all" onclick="setUserRoleFilter('all')" class="user-role-chip px-3 py-1.5 rounded-md text-xs font-semibold bg-blue-600 text-white">All</button>
+                            <button type="button" data-role-filter="super_admin" onclick="setUserRoleFilter('super_admin')" class="user-role-chip px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100">Super</button>
+                            <button type="button" data-role-filter="tenant_admin" onclick="setUserRoleFilter('tenant_admin')" class="user-role-chip px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100">Admin</button>
+                            <button type="button" data-role-filter="tenant_user" onclick="setUserRoleFilter('tenant_user')" class="user-role-chip px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100">User</button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full table-fixed">
+                            <colgroup>
+                                <col style="width:28%"><col style="width:14%"><col style="width:20%"><col style="width:15%"><col style="width:13%"><col style="width:10%">
+                            </colgroup>
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">User</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Company</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Login</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody" class="bg-white divide-y divide-gray-100">
+                                <!-- Users will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -428,7 +640,7 @@
                         <div class="text-sm text-gray-500">Skills</div>
                     </div>
                     <div class="bg-white rounded-lg shadow p-4 text-center">
-                        <div class="text-2xl font-bold text-orange-600" id="jdReadabilityScore">-</div>
+                        <div class="text-2xl font-bold text-orange-600" id="jdReadabilityScore">0</div>
                         <div class="text-sm text-gray-500">Readability</div>
                     </div>
                     <div class="bg-white rounded-lg shadow p-4 text-center">
@@ -446,19 +658,19 @@
                     <div class="space-y-4">
                         <div>
                             <label class="text-sm font-medium text-gray-500">Full Name</label>
-                            <p class="text-lg text-gray-800" id="profileFullName">-</p>
+                            <p class="text-lg text-gray-800" id="profileFullName"><span class="text-gray-300">—</span></p>
                         </div>
                         <div>
                             <label class="text-sm font-medium text-gray-500">Email</label>
-                            <p class="text-lg text-gray-800" id="profileEmail">-</p>
+                            <p class="text-lg text-gray-800" id="profileEmail"><span class="text-gray-300">—</span></p>
                         </div>
                         <div>
                             <label class="text-sm font-medium text-gray-500">Role</label>
-                            <p class="text-lg text-gray-800 capitalize" id="profileRole">-</p>
+                            <p class="text-lg text-gray-800 capitalize" id="profileRole"><span class="text-gray-300">—</span></p>
                         </div>
                         <div id="profileCompanySection" style="display:none">
                             <label class="text-sm font-medium text-gray-500">Company</label>
-                            <p class="text-lg text-gray-800" id="profileCompany">-</p>
+                            <p class="text-lg text-gray-800" id="profileCompany"><span class="text-gray-300">—</span></p>
                         </div>
                         <div class="pt-4">
                             <button onclick="showChangePasswordModal()" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors">
@@ -599,7 +811,7 @@
                                         <input type="number" 
                                                id="max_resumes" 
                                                name="max_resumes" 
-                                               value="10" 
+                                               value="1000"
                                                min="10"
                                                max="100000"
                                                step="100"
@@ -620,7 +832,7 @@
                                         <input type="number" 
                                                id="max_searches" 
                                                name="max_searches" 
-                                               value="2" 
+                                               value="10000"
                                                min="1"
                                                max="1000000"
                                                step="1"
@@ -878,9 +1090,86 @@
         </div>
     </div>
 
+    <script src="/static/js/security.js"></script>
     <script>
         // User data will be populated from server
         let currentUser = null;
+
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value == null ? '' : String(value);
+            return div.innerHTML;
+        }
+
+        function escapeAttr(value) {
+            return window.escapeAttr ? window.escapeAttr(value) : String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/`/g, '&#96;');
+        }
+
+        function formatRole(userType) {
+            return escapeHtml((userType || 'user').replace('_', ' '));
+        }
+
+        function getUserCompanyLabel(user) {
+            if (user.user_type === 'super_admin') {
+                return 'Platform';
+            }
+            if (user.company_name) {
+                return user.company_code ? `${user.company_name} (${user.company_code})` : user.company_name;
+            }
+            if (currentUser && currentUser.company && currentUser.user_type === 'tenant_admin') {
+                const company = currentUser.company;
+                return company.company_code ? `${company.company_name} (${company.company_code})` : company.company_name;
+            }
+            return 'Not assigned';
+        }
+
+        async function updateProfileCompanyInfo() {
+            const section = document.getElementById('profileCompanySection');
+            const companyElement = document.getElementById('profileCompany');
+            const label = section ? section.querySelector('label') : null;
+
+            if (!section || !companyElement || !currentUser) {
+                return;
+            }
+
+            if (currentUser.company) {
+                if (label) label.textContent = 'Company';
+                section.style.display = 'block';
+                companyElement.textContent = getUserCompanyLabel({
+                    user_type: currentUser.user_type,
+                    company_name: currentUser.company.company_name,
+                    company_code: currentUser.company.company_code
+                });
+                return;
+            }
+
+            if (currentUser.user_type === 'super_admin') {
+                if (label) label.textContent = 'Company Profile';
+                section.style.display = 'block';
+                try {
+                    const response = await fetch('/api/companies');
+                    if (!response.ok) throw new Error('Failed to load companies');
+                    const data = await response.json();
+                    const companies = data.companies || [];
+                    const activeCount = companies.filter(company => company.is_active).length;
+                    companyElement.textContent = companies.length
+                        ? `Platform admin - ${companies.length} tenant compan${companies.length === 1 ? 'y' : 'ies'} (${activeCount} active)`
+                        : 'Platform admin - no tenant companies created yet';
+                } catch (error) {
+                    console.error('Error loading profile company info:', error);
+                    companyElement.textContent = 'Platform admin - tenant company list unavailable';
+                }
+                return;
+            }
+
+            section.style.display = 'none';
+        }
         
         // Initialize dashboard
         async function initDashboard() {
@@ -915,10 +1204,7 @@
                 document.getElementById('profileEmail').textContent = currentUser.email;
                 document.getElementById('profileRole').textContent = currentUser.user_type.replace('_', ' ');
                 
-                if (currentUser.company) {
-                    document.getElementById('profileCompanySection').style.display = 'block';
-                    document.getElementById('profileCompany').textContent = currentUser.company.company_name;
-                }
+                await updateProfileCompanyInfo();
                 
                 // Load dashboard stats
                 loadDashboardStats();
@@ -932,25 +1218,140 @@
             document.getElementById('sidebar').classList.toggle('-translate-x-full');
         });
 
-        // Show/hide content sections
-        function showSection(section) {
-            document.querySelectorAll('.content-section').forEach(el => {
-                el.classList.add('hidden');
-            });
-            document.getElementById(section).classList.remove('hidden');
-            
-            // Load data for the section
-            if (section === 'companies' && currentUser.user_type === 'super_admin') {
-                loadCompanies();
-            } else if (section === 'users') {
-                loadUsers();
-            }
-        }
+        // (showSection is defined later as async — see below)
 
         // Load dashboard stats
         async function loadDashboardStats() {
-            // This would be implemented with actual API calls
-            // For now, just placeholder
+            try {
+                const r = await fetch('/api/dashboard-stats');
+                if (!r.ok) return;
+                const data = await r.json();
+                const ru = data.resource_usage || {};
+                const ss = data.search_stats || {};
+                const act = data.activity_stats || {};
+                const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+                // Prefer per-company resource_usage when present; otherwise fall
+                // back to system-wide activity_stats (super admin path).
+                const usersVal = (ru.users && ru.users.current != null) ? ru.users.current : (act.total_users ?? 0);
+                const resumesVal = (ru.resumes && ru.resumes.current != null) ? ru.resumes.current : (act.total_resumes ?? 0);
+                const searchesVal = (ru.searches && ru.searches.current != null)
+                    ? ru.searches.current
+                    : (ss.total_searches != null ? ss.total_searches : (act.total_searches ?? 0));
+                setText('totalUsers', usersVal);
+                setText('totalResumes', resumesVal);
+                setText('totalSearches', searchesVal);
+                // Companies count
+                if (window.currentUser && window.currentUser.user_type === 'super_admin') {
+                    setText('totalCompanies', act.total_companies ?? 0);
+                } else {
+                    setText('totalCompanies', 1);
+                }
+            } catch (err) {
+                console.error('loadDashboardStats failed:', err);
+            }
+        }
+
+        // ---- Admin Panel: shared helpers ----
+        const ADMIN_AVATAR_PALETTE = [
+            ['bg-purple-100','text-purple-700'],
+            ['bg-blue-100','text-blue-700'],
+            ['bg-emerald-100','text-emerald-700'],
+            ['bg-amber-100','text-amber-700'],
+            ['bg-rose-100','text-rose-700'],
+            ['bg-cyan-100','text-cyan-700'],
+            ['bg-indigo-100','text-indigo-700'],
+            ['bg-pink-100','text-pink-700'],
+        ];
+        function adminAvatarColor(seed) {
+            const s = String(seed || '?');
+            let h = 0;
+            for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+            return ADMIN_AVATAR_PALETTE[h % ADMIN_AVATAR_PALETTE.length];
+        }
+        function adminAvatarHtml(name, size = 9) {
+            const [bg, text] = adminAvatarColor(name);
+            const letter = ((name || '?').trim().charAt(0) || '?').toUpperCase();
+            return `<div class="w-${size} h-${size} rounded-full ${bg} ${text} flex items-center justify-center font-semibold text-sm flex-shrink-0">${escapeHtml(letter)}</div>`;
+        }
+        function adminPlanBadge(plan) {
+            const p = (plan || '').toLowerCase();
+            const map = {
+                'enterprise':  ['bg-purple-100', 'text-purple-800', 'fa-crown'],
+                'professional':['bg-blue-100',   'text-blue-800',   'fa-briefcase'],
+                'business':    ['bg-blue-100',   'text-blue-800',   'fa-briefcase'],
+                'starter':     ['bg-gray-100',   'text-gray-700',   'fa-seedling'],
+                'free':        ['bg-gray-100',   'text-gray-700',   'fa-seedling'],
+            };
+            const [bg, text, icon] = map[p] || ['bg-slate-100','text-slate-700','fa-tag'];
+            const label = plan ? plan.replace(/_/g, ' ') : '—';
+            return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ${bg} ${text} text-xs font-semibold capitalize"><i class="fas ${icon} text-[10px]"></i>${escapeHtml(label)}</span>`;
+        }
+        function adminStatusPill(active) {
+            if (active) {
+                return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>Active</span>`;
+            }
+            return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 text-xs font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>Inactive</span>`;
+        }
+        function adminRoleBadge(role) {
+            const r = (role || '').toLowerCase();
+            const map = {
+                'super_admin':  ['bg-purple-100', 'text-purple-800', 'fa-shield-halved', 'Super Admin'],
+                'tenant_admin': ['bg-blue-100',   'text-blue-800',   'fa-user-shield',   'Admin'],
+                'tenant_user':  ['bg-gray-100',   'text-gray-700',   'fa-user',          'User'],
+            };
+            const [bg, text, icon, label] = map[r] || ['bg-slate-100','text-slate-700','fa-user','—'];
+            return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ${bg} ${text} text-xs font-semibold"><i class="fas ${icon} text-[10px]"></i>${escapeHtml(label)}</span>`;
+        }
+        function adminEmptyRow(colspan, icon, message) {
+            return `<tr><td colspan="${colspan}" class="px-6 py-16 text-center text-gray-400">
+                <div class="flex flex-col items-center gap-3">
+                    <div class="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center text-2xl text-gray-400"><i class="fas ${icon}"></i></div>
+                    <div class="font-medium text-gray-500">${escapeHtml(message)}</div>
+                </div>
+            </td></tr>`;
+        }
+
+        // ---- Filter state ----
+        let _adminUsersCache = [];
+        let _adminUsersFilterRole = 'all';
+        let _adminCompaniesCache = [];
+
+        function filterCompaniesTable() {
+            const q = (document.getElementById('companiesSearch')?.value || '').toLowerCase().trim();
+            const rows = _adminCompaniesCache.filter(c => {
+                if (!q) return true;
+                return [c.company_name, c.company_code, c.subscription_plan]
+                    .filter(Boolean).some(v => String(v).toLowerCase().includes(q));
+            });
+            renderCompaniesRows(rows);
+            document.getElementById('companiesCount').textContent =
+                `${rows.length} of ${_adminCompaniesCache.length}`;
+        }
+        function setUserRoleFilter(role) {
+            _adminUsersFilterRole = role;
+            document.querySelectorAll('.user-role-chip').forEach(btn => {
+                const active = btn.dataset.roleFilter === role;
+                btn.classList.toggle('bg-blue-600', active);
+                btn.classList.toggle('text-white', active);
+                btn.classList.toggle('border-blue-600', active);
+                btn.classList.toggle('bg-white', !active);
+                btn.classList.toggle('text-gray-700', !active);
+                btn.classList.toggle('border-gray-200', !active);
+                // ensure border class exists for both states
+                if (!btn.classList.contains('border')) btn.classList.add('border');
+            });
+            filterUsersTable();
+        }
+        function filterUsersTable() {
+            const q = (document.getElementById('usersSearch')?.value || '').toLowerCase().trim();
+            const rows = _adminUsersCache.filter(u => {
+                if (_adminUsersFilterRole !== 'all' && u.user_type !== _adminUsersFilterRole) return false;
+                if (!q) return true;
+                const company = getUserCompanyLabel(u);
+                return [u.full_name, u.email, u.user_type, company]
+                    .filter(Boolean).some(v => String(v).toLowerCase().includes(q));
+            });
+            renderUsersRows(rows);
         }
 
         // Load companies (Super Admin)
@@ -958,35 +1359,64 @@
             try {
                 const response = await fetch('/api/companies');
                 const data = await response.json();
-                
-                const tbody = document.getElementById('companiesTableBody');
-                tbody.innerHTML = '';
-                
-                data.companies.forEach(company => {
-                    const row = `
-                        <tr>
-                            <td class="px-6 py-4 whitespace-nowrap">${company.company_name}</td>
-                            <td class="px-6 py-4 whitespace-nowrap">${company.company_code}</td>
-                            <td class="px-6 py-4 whitespace-nowrap capitalize">${company.subscription_plan}</td>
-                            <td class="px-6 py-4 whitespace-nowrap">${company.user_count || 0}</td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${company.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
-                                    ${company.is_active ? 'Active' : 'Inactive'}
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                <button onclick="viewCompanyUsers(${company.id})" class="text-indigo-600 hover:text-indigo-900 mr-3">View Users</button>
-                                <button onclick="editCompany(${company.id})" class="text-blue-600 hover:text-blue-900">Edit</button>
-                            </td>
-                        </tr>
-                    `;
-                    tbody.innerHTML += row;
-                });
-                
-                document.getElementById('totalCompanies').textContent = data.companies.length;
+                _adminCompaniesCache = data.companies || [];
+
+                renderCompaniesRows(_adminCompaniesCache);
+
+                const total = _adminCompaniesCache.length;
+                const active = _adminCompaniesCache.filter(c => c.is_active).length;
+                const seats = _adminCompaniesCache.reduce((n, c) => n + (parseInt(c.user_count, 10) || 0), 0);
+                const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+                setText('totalCompanies', total);
+                setText('statCompaniesTotal', total);
+                setText('statCompaniesActive', active);
+                setText('statCompaniesSeats', seats);
+                setText('companiesCount', `${total} ${total === 1 ? 'company' : 'companies'}`);
             } catch (error) {
                 console.error('Error loading companies:', error);
             }
+        }
+        function renderCompaniesRows(companies) {
+            const tbody = document.getElementById('companiesTableBody');
+            if (!tbody) return;
+            if (!companies.length) {
+                tbody.innerHTML = adminEmptyRow(6, 'fa-building', 'No companies found');
+                return;
+            }
+            tbody.innerHTML = companies.map(company => `
+                <tr class="hover:bg-purple-50 transition-colors">
+                    <td class="px-5 py-3">
+                        <div class="flex items-center gap-3 min-w-0">
+                            ${adminAvatarHtml(company.company_name, 10)}
+                            <div class="min-w-0">
+                                <div class="font-semibold text-gray-900 text-sm truncate">${escapeHtml(company.company_name || '—')}</div>
+                                <div class="text-xs text-gray-400">ID #${company.id}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-5 py-3">
+                        <span class="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-xs font-mono">${escapeHtml(company.company_code || '—')}</span>
+                    </td>
+                    <td class="px-5 py-3">${adminPlanBadge(company.subscription_plan)}</td>
+                    <td class="px-5 py-3">
+                        <span class="inline-flex items-center gap-1.5 text-sm text-gray-700">
+                            <i class="fas fa-user-group text-gray-400 text-xs"></i>
+                            <span class="font-semibold">${company.user_count || 0}</span>
+                        </span>
+                    </td>
+                    <td class="px-5 py-3">${adminStatusPill(company.is_active)}</td>
+                    <td class="px-5 py-3 text-right">
+                        <div class="inline-flex items-center gap-1">
+                            <button onclick="viewCompanyUsers(${company.id})" title="View users" class="w-8 h-8 rounded-md text-indigo-600 hover:bg-indigo-50 transition flex items-center justify-center">
+                                <i class="fas fa-users text-sm"></i>
+                            </button>
+                            <button onclick="editCompany(${company.id})" title="Edit" class="w-8 h-8 rounded-md text-blue-600 hover:bg-blue-50 transition flex items-center justify-center">
+                                <i class="fas fa-pen text-sm"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
         }
 
         // Load users - Fixed to work for both super admin and tenant admin
@@ -996,37 +1426,65 @@
                 // The backend handles the logic based on user type
                 const response = await fetch('/api/users');
                 const data = await response.json();
-                
-                const tbody = document.getElementById('usersTableBody');
-                tbody.innerHTML = '';
-                
-                // Handle the users array from the API response
-                const users = data.users || [];
-                
-                users.forEach(user => {
-                    const row = `
-                        <tr>
-                            <td class="px-6 py-4 whitespace-nowrap">${user.full_name}</td>
-                            <td class="px-6 py-4 whitespace-nowrap">${user.email}</td>
-                            <td class="px-6 py-4 whitespace-nowrap capitalize">${user.user_type.replace('_', ' ')}</td>
-                            <td class="px-6 py-4 whitespace-nowrap">${user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}</td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
-                                    ${user.is_active ? 'Active' : 'Inactive'}
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                <button onclick="editUser(${user.id})" class="text-blue-600 hover:text-blue-900">Edit</button>
-                            </td>
-                        </tr>
-                    `;
-                    tbody.innerHTML += row;
-                });
-                
-                document.getElementById('totalUsers').textContent = users.length;
+                _adminUsersCache = data.users || [];
+
+                renderUsersRows(_adminUsersCache);
+
+                const total = _adminUsersCache.length;
+                const active = _adminUsersCache.filter(u => u.is_active).length;
+                const admins = _adminUsersCache.filter(u =>
+                    u.user_type === 'super_admin' || u.user_type === 'tenant_admin').length;
+                const never  = _adminUsersCache.filter(u => !u.last_login).length;
+                const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+                setText('totalUsers', total);
+                setText('statUsersTotal', total);
+                setText('statUsersActive', active);
+                setText('statUsersAdmins', admins);
+                setText('statUsersNeverLoggedIn', never);
             } catch (error) {
                 console.error('Error loading users:', error);
             }
+        }
+        function renderUsersRows(users) {
+            const tbody = document.getElementById('usersTableBody');
+            if (!tbody) return;
+            if (!users.length) {
+                tbody.innerHTML = adminEmptyRow(6, 'fa-user-slash', 'No users match your filters');
+                return;
+            }
+            tbody.innerHTML = users.map(user => {
+                const companyLabel = getUserCompanyLabel(user);
+                const lastLogin = user.last_login
+                    ? new Date(user.last_login).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' })
+                    : '<span class="text-amber-600 inline-flex items-center gap-1 text-sm"><i class="fas fa-clock text-xs"></i>Never</span>';
+                const safeEmail = JSON.stringify(user.email || '').replace(/"/g, '&quot;');
+                return `
+                <tr class="hover:bg-blue-50 transition-colors">
+                    <td class="px-5 py-3">
+                        <div class="flex items-center gap-3 min-w-0">
+                            ${adminAvatarHtml(user.full_name || user.email, 10)}
+                            <div class="min-w-0">
+                                <div class="font-semibold text-gray-900 text-sm truncate">${escapeHtml(user.full_name || '—')}</div>
+                                <div class="text-xs text-gray-500 truncate">${escapeHtml(user.email || '—')}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-5 py-3">${adminRoleBadge(user.user_type)}</td>
+                    <td class="px-5 py-3 text-sm text-gray-700 truncate">${escapeHtml(companyLabel)}</td>
+                    <td class="px-5 py-3 text-sm text-gray-600">${lastLogin}</td>
+                    <td class="px-5 py-3">${adminStatusPill(user.is_active)}</td>
+                    <td class="px-5 py-3 text-right">
+                        <div class="inline-flex items-center gap-1">
+                            <button onclick="editUser(${user.id})" title="Edit" class="w-8 h-8 rounded-md text-blue-600 hover:bg-blue-50 transition flex items-center justify-center">
+                                <i class="fas fa-pen text-sm"></i>
+                            </button>
+                            <button onclick="deleteUser(${user.id}, ${safeEmail})" title="Delete" class="w-8 h-8 rounded-md text-rose-600 hover:bg-rose-50 transition flex items-center justify-center">
+                                <i class="fas fa-trash text-sm"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
         }
 
         // Enhanced show create company modal
@@ -1345,11 +1803,131 @@
                 } else if (sectionId === 'users' && currentUser && 
                           (currentUser.user_type === 'super_admin' || currentUser.user_type === 'tenant_admin')) {
                     await loadUsers();
+                } else if (sectionId === 'integrations') {
+                    await loadIntegrationsStatus();
                 }
             } catch (error) {
                 console.error(`Error loading data for section ${sectionId}:`, error);
             }
         }
+
+        // ===== Integrations =====
+        function _setPill(el, ok, label) {
+            if (!el) return;
+            el.textContent = label;
+            el.className = 'text-xs font-medium px-2 py-1 rounded-full ' +
+                (ok ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-700');
+        }
+        function _setBtn(btn, configured, connected, providerLabel) {
+            if (!btn) return;
+            if (!configured) {
+                btn.textContent = 'Not configured';
+                btn.disabled = true;
+                btn.className = btn.className.replace(/bg-\S+/g, '').trim() +
+                    ' w-full bg-gray-200 text-gray-500 py-2 rounded-lg text-sm font-medium cursor-not-allowed';
+                return;
+            }
+            btn.disabled = false;
+            if (connected) {
+                btn.textContent = 'Reconnect ' + providerLabel;
+            } else {
+                btn.textContent = 'Connect ' + providerLabel;
+            }
+        }
+        async function loadIntegrationsStatus() {
+            try {
+                const res = await fetch('/api/integrations/status', { credentials: 'include' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+
+                // Microsoft
+                const ms = data.microsoft || {};
+                _setPill(document.getElementById('msStatusPill'),
+                    !!ms.connected,
+                    !ms.client_configured ? 'Not configured' : (ms.connected ? 'Connected' : 'Not connected'));
+                document.getElementById('msStatusText').textContent =
+                    !ms.client_configured ? 'Server is missing Microsoft client credentials.' :
+                    ms.connected ? ('Connected as ' + (ms.account_email || 'Microsoft user')) :
+                    'Click Connect to authorise your Microsoft account.';
+                _setBtn(document.getElementById('msActionBtn'), !!ms.client_configured, !!ms.connected, 'Microsoft');
+
+                // Google
+                const gg = data.google || {};
+                _setPill(document.getElementById('googleStatusPill'),
+                    !!gg.connected,
+                    !gg.client_configured ? 'Not configured' : (gg.connected ? 'Connected' : 'Not connected'));
+                document.getElementById('googleStatusText').textContent =
+                    !gg.client_configured ? 'Server is missing Google client credentials.' :
+                    gg.connected ? ('Connected as ' + (gg.account_email || 'Google user')) :
+                    'Click Connect to authorise your Google account.';
+                _setBtn(document.getElementById('googleActionBtn'), !!gg.client_configured, !!gg.connected, 'Google');
+
+                // SMTP
+                const smtp = data.smtp || {};
+                _setPill(document.getElementById('smtpStatusPill'),
+                    !!smtp.configured,
+                    smtp.configured ? 'Configured' : 'Not configured');
+                document.getElementById('smtpStatusText').textContent = smtp.configured
+                    ? ('Sending from ' + (smtp.from || smtp.host || 'configured SMTP server'))
+                    : 'SMTP credentials are not set on the server.';
+            } catch (err) {
+                console.error('loadIntegrationsStatus failed', err);
+                ['msStatusText','googleStatusText','smtpStatusText'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = 'Failed to load status.';
+                });
+            }
+        }
+        function connectIntegration(provider) {
+            // Full-page redirect so the browser follows the OAuth handshake.
+            window.location.href = '/api/oauth/' + provider + '/start';
+        }
+        // Show banner if we came back from a callback
+        (function _integrationsCallbackBanner() {
+            try {
+                const qs = new URLSearchParams(window.location.search);
+                const whichRaw = qs.get('integration');
+                const status = qs.get('status');
+                if (!whichRaw) return;
+                // Allow-list providers; reject anything else to prevent reflected XSS / spoofed banners.
+                const ALLOWED = { google: 'Google', microsoft: 'Microsoft', smtp: 'SMTP' };
+                const whichLabel = ALLOWED[whichRaw.toLowerCase()];
+                if (!whichLabel) return;
+                const banner = document.getElementById('integrationsBanner');
+                if (!banner) return;
+                let cls, iconClass, text;
+                if (status === 'connected') {
+                    cls = 'bg-green-50 border border-green-200 text-green-800';
+                    iconClass = 'fas fa-check-circle mr-2';
+                    text = whichLabel + ' connected successfully.';
+                } else {
+                    cls = 'bg-red-50 border border-red-200 text-red-800';
+                    iconClass = 'fas fa-exclamation-triangle mr-2';
+                    const errRaw = qs.get('error') || '';
+                    // Truncate + strip control chars; insert via textContent below to neutralise HTML.
+                    const errClean = errRaw.replace(/[\x00-\x1f<>]/g, '').slice(0, 200);
+                    text = whichLabel + ' connection failed' + (errClean ? ': ' + errClean : '.');
+                }
+                banner.className = 'mb-4 p-3 rounded-lg text-sm ' + cls;
+                // Build safely: static <i> element + textContent for the dynamic portion.
+                banner.replaceChildren();
+                const icon = document.createElement('i');
+                icon.className = iconClass;
+                banner.appendChild(icon);
+                banner.appendChild(document.createTextNode(text));
+                banner.classList.remove('hidden');
+                // Auto-navigate to the section
+                if (typeof showSection === 'function') {
+                    setTimeout(() => showSection('integrations'), 0);
+                }
+                // Clean up the URL
+                const url = new URL(window.location.href);
+                url.searchParams.delete('integration');
+                url.searchParams.delete('status');
+                url.searchParams.delete('error');
+                window.history.replaceState({}, '', url.toString());
+            } catch (e) { /* no-op */ }
+        })();
 
         // JD Builder functionality
         let jdSkills = [];
@@ -1412,14 +1990,22 @@
                 return;
             }
 
-            skillsList.innerHTML = jdSkills.map(skill => `
+            skillsList.innerHTML = jdSkills.map((skill, skillIndex) => `
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800">
-                    ${skill}
-                    <button onclick="removeSkill('${skill}')" class="ml-2 text-blue-600 hover:text-blue-800">
+                    ${escapeHtml(skill)}
+                    <button type="button" data-skill-index="${skillIndex}" class="ml-2 text-blue-600 hover:text-blue-800 js-remove-jd-skill">
                         <i class="fas fa-times text-xs"></i>
                     </button>
                 </span>
             `).join('');
+            skillsList.querySelectorAll('.js-remove-jd-skill').forEach((button) => {
+                button.addEventListener('click', () => {
+                    const index = Number(button.dataset.skillIndex);
+                    if (Number.isInteger(index) && jdSkills[index]) {
+                        removeSkill(jdSkills[index]);
+                    }
+                });
+            });
         }
 
         // Add common skills
@@ -1477,7 +2063,7 @@
 
                 if (response.ok) {
                     const result = await response.json();
-                    document.getElementById('jdPreview').innerHTML = result.job_description;
+                    document.getElementById('jdPreview').innerHTML = sanitizeGeneratedHtml(result.job_description);
                     showJDNotification('Job description generated successfully!', 'success');
                     updateJDStats();
                 } else {
@@ -1515,7 +2101,7 @@
 
                 if (response.ok) {
                     const result = await response.json();
-                    document.getElementById('jdPreview').innerHTML = result.enhanced_description;
+                    document.getElementById('jdPreview').innerHTML = sanitizeGeneratedHtml(result.enhanced_description);
                     showJDNotification('Job description enhanced successfully!', 'success');
                     updateJDStats();
                 } else {
@@ -1613,37 +2199,49 @@
             }
         }
 
-        // Download JD
+        // Download JD as PDF
         function downloadJD() {
             const content = document.getElementById('jdPreview').innerHTML;
             const jobTitle = document.getElementById('jdJobTitle').value || 'Job Description';
-            
-            const htmlContent = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>${jobTitle}</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-                        h1, h2, h3 { color: #333; }
-                        ul, ol { margin-left: 20px; }
-                    </style>
-                </head>
-                <body>
-                    ${content}
-                </body>
-                </html>
+
+            if (!content || content.includes('Your job description will appear here')) {
+                showJDNotification('Please generate content first', 'warning');
+                return;
+            }
+
+            if (typeof html2pdf === 'undefined') {
+                showJDNotification('PDF library failed to load. Check your connection.', 'error');
+                return;
+            }
+
+            // Build a clean, print-ready container off-screen
+            const container = document.createElement('div');
+            container.style.padding = '24px';
+            container.style.fontFamily = 'Arial, Helvetica, sans-serif';
+            container.style.color = '#1f2937';
+            container.style.lineHeight = '1.55';
+            container.innerHTML = `
+                <h1 style="font-size:22px;margin:0 0 16px 0;color:#111827;border-bottom:2px solid #6d28d9;padding-bottom:8px;">${jobTitle}</h1>
+                ${content}
             `;
-            
-            const blob = new Blob([htmlContent], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${jobTitle.replace(/[^a-z0-9]/gi, '_')}.html`;
-            a.click();
-            URL.revokeObjectURL(url);
-            
-            showJDNotification('Job description downloaded!', 'success');
+
+            const safeName = jobTitle.replace(/[^a-z0-9]/gi, '_') || 'job_description';
+            const opts = {
+                margin:       [12, 12, 14, 12],
+                filename:     `${safeName}.pdf`,
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+            };
+
+            showJDNotification('Generating PDF…', 'info');
+            html2pdf().set(opts).from(container).save()
+                .then(() => showJDNotification('Job description downloaded as PDF!', 'success'))
+                .catch(err => {
+                    console.error('PDF generation failed:', err);
+                    showJDNotification('PDF generation failed. See console.', 'error');
+                });
         }
 
         // Save JD as template
@@ -1746,6 +2344,309 @@
                 notification.style.opacity = '0';
                 setTimeout(() => notification.remove(), 300);
             }, 3000);
+        }
+
+        // ----- Admin: Change Password -----
+        function showChangePasswordModal() {
+            let modal = document.getElementById('changePasswordModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'changePasswordModal';
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                modal.innerHTML = `
+                    <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold text-gray-900"><i class="fas fa-key mr-2"></i>Change Password</h3>
+                            <button type="button" onclick="hideModal('changePasswordModal')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+                        </div>
+                        <div id="changePasswordMessages" class="hidden mb-3"></div>
+                        <form id="changePasswordForm" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+                                <input type="password" name="current_password" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">New Password (min 8 chars)</label>
+                                <input type="password" name="new_password" required minlength="8" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+                                <input type="password" name="confirm_password" required minlength="8" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div class="flex justify-end space-x-2 pt-2">
+                                <button type="button" onclick="hideModal('changePasswordModal')" class="px-4 py-2 border rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
+                                <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Update Password</button>
+                            </div>
+                        </form>
+                    </div>`;
+                document.body.appendChild(modal);
+                document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const fd = new FormData(e.target);
+                    if (fd.get('new_password') !== fd.get('confirm_password')) {
+                        showMessage('changePasswordMessages', '❌ New passwords do not match.', 'error');
+                        return;
+                    }
+                    const body = new URLSearchParams();
+                    body.append('current_password', fd.get('current_password'));
+                    body.append('new_password', fd.get('new_password'));
+                    try {
+                        const r = await fetch('/api/change-password', { method: 'POST', body });
+                        const data = await r.json();
+                        if (r.ok) {
+                            showMessage('changePasswordMessages', '✅ Password updated successfully.', 'success');
+                            setTimeout(() => { hideModal('changePasswordModal'); e.target.reset(); }, 1200);
+                        } else {
+                            showMessage('changePasswordMessages', `❌ ${data.detail || 'Failed to update password.'}`, 'error');
+                        }
+                    } catch (err) {
+                        showMessage('changePasswordMessages', '❌ Network error. Please try again.', 'error');
+                    }
+                });
+            }
+            const msgs = document.getElementById('changePasswordMessages');
+            if (msgs) { msgs.classList.add('hidden'); msgs.innerHTML = ''; }
+            const form = document.getElementById('changePasswordForm');
+            if (form) form.reset();
+            modal.classList.remove('hidden');
+        }
+
+        // ----- Super Admin: View Users in a Company -----
+        async function viewCompanyUsers(companyId) {
+            try {
+                const r = await fetch(`/api/companies/${companyId}/users`);
+                if (!r.ok) {
+                    const err = await r.json().catch(() => ({}));
+                    alert(`Failed to load users: ${err.detail || r.status}`);
+                    return;
+                }
+                const data = await r.json();
+                const users = data.users || [];
+                let modal = document.getElementById('companyUsersModal');
+                if (!modal) {
+                    modal = document.createElement('div');
+                    modal.id = 'companyUsersModal';
+                    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                    document.body.appendChild(modal);
+                }
+                const rows = users.map(u => `
+                    <tr class="border-b">
+                        <td class="px-3 py-2">${escapeHtml(u.full_name || '')}</td>
+                        <td class="px-3 py-2">${escapeHtml(u.email || '')}</td>
+                        <td class="px-3 py-2 capitalize">${formatRole(u.user_type)}</td>
+                        <td class="px-3 py-2">${escapeHtml(u.role || '')}</td>
+                        <td class="px-3 py-2">${u.is_active ? '<span class="text-green-600">Active</span>' : '<span class="text-red-600">Inactive</span>'}</td>
+                    </tr>`).join('');
+                modal.innerHTML = `
+                    <div class="bg-white rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[80vh] overflow-auto">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold text-gray-900"><i class="fas fa-users mr-2"></i>Company Users (${users.length})</h3>
+                            <button type="button" onclick="hideModal('companyUsersModal')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+                        </div>
+                        ${users.length === 0 ? '<p class="text-gray-500 text-sm">No users in this company yet.</p>' : `
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-50 text-left text-gray-600 uppercase text-xs">
+                                <tr><th class="px-3 py-2">Name</th><th class="px-3 py-2">Email</th><th class="px-3 py-2">Type</th><th class="px-3 py-2">Role</th><th class="px-3 py-2">Status</th></tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>`}
+                    </div>`;
+                modal.classList.remove('hidden');
+            } catch (err) {
+                console.error(err);
+                alert('Network error loading company users.');
+            }
+        }
+
+        // ----- Super Admin: Edit Company -----
+        async function editCompany(companyId) {
+            try {
+                const r = await fetch('/api/companies');
+                const data = await r.json();
+                const company = (data.companies || []).find(c => c.id === companyId);
+                if (!company) { alert('Company not found.'); return; }
+                let modal = document.getElementById('editCompanyModal');
+                if (!modal) {
+                    modal = document.createElement('div');
+                    modal.id = 'editCompanyModal';
+                    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                    document.body.appendChild(modal);
+                }
+                modal.innerHTML = `
+                    <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold text-gray-900"><i class="fas fa-edit mr-2"></i>Edit Company</h3>
+                            <button type="button" onclick="hideModal('editCompanyModal')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+                        </div>
+                        <div id="editCompanyMessages" class="hidden mb-3"></div>
+                        <form id="editCompanyForm" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+                                <input type="text" name="company_name" value="${escapeAttr(company.company_name || '')}" required class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Subscription Plan</label>
+                                <select name="subscription_plan" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                    ${['basic','professional','enterprise'].map(p => `<option value="${p}" ${company.subscription_plan===p?'selected':''}>${p[0].toUpperCase()+p.slice(1)}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Max Users</label>
+                                    <input type="number" name="max_users" min="1" value="${company.max_users ?? 10}" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Max Resumes</label>
+                                    <input type="number" name="max_resumes" min="1" value="${company.max_resumes ?? 1000}" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                </div>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="editCompanyActive" name="is_active" value="true" ${company.is_active ? 'checked' : ''} class="mr-2">
+                                <label for="editCompanyActive" class="text-sm text-gray-700">Active</label>
+                            </div>
+                            <div class="flex justify-end space-x-2 pt-2">
+                                <button type="button" onclick="hideModal('editCompanyModal')" class="px-4 py-2 border rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
+                                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>
+                            </div>
+                        </form>
+                    </div>`;
+                modal.classList.remove('hidden');
+                document.getElementById('editCompanyForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const body = new URLSearchParams();
+                    const fd = new FormData(e.target);
+                    body.append('company_name', fd.get('company_name'));
+                    body.append('subscription_plan', fd.get('subscription_plan'));
+                    body.append('max_users', fd.get('max_users'));
+                    body.append('max_resumes', fd.get('max_resumes'));
+                    body.append('is_active', fd.get('is_active') ? 'true' : 'false');
+                    try {
+                        const resp = await fetch(`/api/companies/${companyId}`, { method: 'PUT', body });
+                        const out = await resp.json();
+                        if (resp.ok) {
+                            showMessage('editCompanyMessages', '✅ Company updated successfully.', 'success');
+                            setTimeout(() => { hideModal('editCompanyModal'); loadCompanies(); }, 1000);
+                        } else {
+                            showMessage('editCompanyMessages', `❌ ${out.detail || 'Failed to update company.'}`, 'error');
+                        }
+                    } catch (err) {
+                        showMessage('editCompanyMessages', '❌ Network error.', 'error');
+                    }
+                });
+            } catch (err) {
+                console.error(err);
+                alert('Failed to load company details.');
+            }
+        }
+
+        // ----- Edit User (Super Admin / Tenant Admin) -----
+        async function deleteUser(userId, userEmail) {
+            const label = userEmail ? `"${userEmail}"` : `user #${userId}`;
+            if (!confirm(`Delete ${label}? This action cannot be undone.\n\nTheir resume uploads and search history will be preserved (the uploader reference will be cleared).`)) {
+                return;
+            }
+            try {
+                const r = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+                if (r.ok) {
+                    loadUsers();
+                } else {
+                    let detail = `HTTP ${r.status}`;
+                    try { const j = await r.json(); detail = j.detail || detail; } catch (_) {}
+                    alert(`Failed to delete user: ${detail}`);
+                }
+            } catch (err) {
+                alert(`Network error deleting user: ${err.message || err}`);
+            }
+        }
+
+        async function editUser(userId) {
+            try {
+                // Find the user in the currently-loaded users list
+                const resp = await fetch('/api/users');
+                const data = await resp.json();
+                const targetUser = (data.users || []).find(u => u.id === userId);
+                if (!targetUser) { alert('User not found.'); return; }
+
+                let modal = document.getElementById('editUserModal');
+                if (!modal) {
+                    modal = document.createElement('div');
+                    modal.id = 'editUserModal';
+                    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                    document.body.appendChild(modal);
+                }
+
+                const isSuper = (window.currentUser && window.currentUser.user_type === 'super_admin');
+                const typeOptions = (isSuper
+                    ? ['super_admin', 'tenant_admin', 'tenant_user']
+                    : ['tenant_admin', 'tenant_user']
+                ).map(t => `<option value="${t}" ${targetUser.user_type === t ? 'selected' : ''}>${t.replace('_',' ').replace(/\b\w/g, c => c.toUpperCase())}</option>`).join('');
+
+                const safeName = escapeAttr(targetUser.full_name || '');
+                const safeEmail = escapeAttr(targetUser.email || '');
+
+                modal.innerHTML = `
+                    <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold text-gray-900"><i class="fas fa-user-edit mr-2"></i>Edit User</h3>
+                            <button type="button" onclick="hideModal('editUserModal')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+                        </div>
+                        <div id="editUserMessages" class="hidden mb-3"></div>
+                        <form id="editUserForm" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                                <input type="text" name="full_name" value="${safeName}" required class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                                <input type="email" name="email" value="${safeEmail}" required class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">User Type</label>
+                                <select name="user_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg">${typeOptions}</select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">New Password <span class="text-gray-400 text-xs">(leave blank to keep current)</span></label>
+                                <input type="password" name="new_password" minlength="8" placeholder="At least 8 characters" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="editUserActive" name="is_active" value="true" ${targetUser.is_active ? 'checked' : ''} class="mr-2">
+                                <label for="editUserActive" class="text-sm text-gray-700">Active</label>
+                            </div>
+                            <div class="flex justify-end space-x-2 pt-2">
+                                <button type="button" onclick="hideModal('editUserModal')" class="px-4 py-2 border rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
+                                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>
+                            </div>
+                        </form>
+                    </div>`;
+                modal.classList.remove('hidden');
+
+                document.getElementById('editUserForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const fd = new FormData(e.target);
+                    const body = new URLSearchParams();
+                    body.append('full_name', fd.get('full_name') || '');
+                    body.append('email', fd.get('email') || '');
+                    body.append('user_type', fd.get('user_type') || '');
+                    body.append('is_active', fd.get('is_active') ? 'true' : 'false');
+                    const newPw = fd.get('new_password');
+                    if (newPw) body.append('new_password', newPw);
+                    try {
+                        const r = await fetch(`/api/users/${userId}`, { method: 'PUT', body });
+                        const out = await r.json().catch(() => ({}));
+                        if (r.ok) {
+                            showMessage('editUserMessages', '✅ User updated successfully.', 'success');
+                            setTimeout(() => { hideModal('editUserModal'); loadUsers(); }, 800);
+                        } else {
+                            showMessage('editUserMessages', `❌ ${out.detail || 'Failed to update user.'}`, 'error');
+                        }
+                    } catch (err) {
+                        showMessage('editUserMessages', '❌ Network error.', 'error');
+                    }
+                });
+            } catch (err) {
+                console.error(err);
+                alert('Failed to load user details.');
+            }
         }
 
         // Initialize

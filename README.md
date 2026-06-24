@@ -220,6 +220,30 @@ This single script automatically provisions **Cloud SQL + GCS Bucket + Cloud Tas
 
 ---
 
+## 🏠 Local-Mode (VPS) Shim Layer — `vps_local/`
+
+Smart HR ships with a drop-in shim package, [`vps_local/`](vps_local/), that lets the same `main.py` run on a self-hosted VPS without any Google Cloud subscriptions, while keeping the GCP code paths intact for production. When the environment variable `SMARTHR_LOCAL_MODE=1` is set, `import vps_local` (at the top of `main.py`) registers replacement modules in `sys.modules` **before** any `from google.cloud import …` statement is evaluated.
+
+| Production import           | Replaced at runtime by                  | What it actually does                                                                        |
+| --------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `google.cloud.storage`      | [`vps_local/storage_shim.py`](vps_local/storage_shim.py)            | Reads/writes files under `${SMARTHR_STORAGE_ROOT:-/app/storage}/<bucket>/…` |
+| `google.cloud.discoveryengine_v1` | [`vps_local/discovery_shim.py`](vps_local/discovery_shim.py)  | Indexes + queries embeddings via `pgvector` on the bundled Postgres container               |
+| `vertexai` (model + Vector Search) | [`vps_local/vertexai_shim.py`](vps_local/vertexai_shim.py)    | Routes embedding calls to `sentence-transformers/all-MiniLM-L6-v2` locally                   |
+| `genai.Client(vertexai=True, …)` | `_patch_real_genai_for_ai_studio()` in `vps_local/__init__.py` | Strips the Vertex args and uses `GEMINI_API_KEY` (AI Studio) instead                         |
+
+Because the shim only patches `sys.modules` when `SMARTHR_LOCAL_MODE=1`, the same image works on Cloud Run unchanged — set the variable to `1` for VPS, leave it unset for GCP.
+
+**Single helper for Gemini calls.** All 13 call sites in `main.py` now go through `gemini_client()` (defined near the `PROJECT_ID` block) so the Vertex-vs-AI-Studio decision lives in exactly one place.
+
+**Verification:**
+
+```bash
+SMARTHR_LOCAL_MODE=1 pytest tests/test_local_mode.py
+curl https://your-vps/health/deep   # database, pgvector, storage, gemini all in one probe
+```
+
+---
+
 ## 📖 Usage Flow
 
 1. **Login** → `/login` — Authenticate with email + password

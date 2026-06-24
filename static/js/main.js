@@ -83,12 +83,12 @@ document.addEventListener('DOMContentLoaded', function () {
                         <div class="flex items-center justify-between">
                             <div>
                                 <h2 class="text-2xl font-bold text-gray-900">Vector Search Test</h2>
-                                <p class="mt-1 text-gray-600 text-sm">Test the Google Cloud vector store directly</p>
+                                <p class="mt-1 text-gray-600 text-sm">Test the vector search index directly</p>
                             </div>
                             <div class="flex items-center space-x-2">
                                 <div class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
                                     <i class="fas fa-database mr-1"></i>
-                                    your-resume-datastore
+                                    resume-index
                                 </div>
                             </div>
                         </div>
@@ -130,7 +130,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 </label>
                                 <label class="flex items-center">
                                     <input type="radio" name="searchMethod" value="hr-scorecard" class="mr-2 text-blue-600">
-                                    <span class="text-sm text-gray-700">🏢 HR Scorecard Analysis</span>
+                                    <span class="text-sm text-gray-700">📊 HR Scorecard Analysis</span>
                                 </label>
                             </div>
                         </div>
@@ -265,7 +265,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         </div>
                         <h3 class="text-lg font-medium text-gray-900 mb-2">No Results Found</h3>
                         <p class="text-gray-600 mb-4">Try adjusting your search query or using different keywords.</p>
-                        <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                        <button id="noResultsSamplesBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                             Try Sample Queries
                         </button>
                     </div>
@@ -273,278 +273,10 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>
         `,
         dashboard: `
-            <div id="admin-dashboard" class="p-4 h-full overflow-y-auto bg-gray-50">
-                <div class="max-w-7xl mx-auto">
-                    <!-- Header Section -->
-                    <div class="mb-6">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h2 class="text-2xl font-bold text-gray-900">Analytics Dashboard</h2>
-                                <p class="mt-1 text-gray-600 text-sm">Comprehensive recruitment insights and performance metrics</p>
-                            </div>
-                            <div class="flex items-center space-x-3">
-                                <select class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                    <option>Last 30 days</option>
-                                    <option>Last 7 days</option>
-                                    <option>Last 90 days</option>
-                                    <option>This year</option>
-                                </select>
-                                <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
-                                    <i class="fas fa-download mr-2"></i>Export Report
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- KPI Cards -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                        <!-- Total Resumes -->
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                                    <i class="fas fa-file-alt text-blue-600 text-lg"></i>
-                                </div>
-                                <div class="flex items-center space-x-1 text-green-600 text-sm font-medium">
-                                    <i class="fas fa-arrow-up text-xs"></i>
-                                    <span>12%</span>
-                                </div>
-                            </div>
-                            <div class="mb-2">
-                                <h3 class="text-2xl font-bold text-gray-900">1,247</h3>
-                                <p class="text-gray-600 text-sm font-medium">Total Resumes</p>
-                            </div>
-                            <p class="text-xs text-gray-500">+156 from last month</p>
-                        </div>
-
-                        <!-- Active Searches -->
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                                    <i class="fas fa-search text-purple-600 text-lg"></i>
-                                </div>
-                                <div class="flex items-center space-x-1 text-green-600 text-sm font-medium">
-                                    <i class="fas fa-arrow-up text-xs"></i>
-                                    <span>8%</span>
-                                </div>
-                            </div>
-                            <div class="mb-2">
-                                <h3 class="text-2xl font-bold text-gray-900">89</h3>
-                                <p class="text-gray-600 text-sm font-medium">Active Searches</p>
-                            </div>
-                            <p class="text-xs text-gray-500">+7 from last week</p>
-                        </div>
-
-                        <!-- Match Success Rate -->
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                                    <i class="fas fa-bullseye text-green-600 text-lg"></i>
-                                </div>
-                                <div class="flex items-center space-x-1 text-green-600 text-sm font-medium">
-                                    <i class="fas fa-arrow-up text-xs"></i>
-                                    <span>15%</span>
-                                </div>
-                            </div>
-                            <div class="mb-2">
-                                <h3 class="text-2xl font-bold text-gray-900">87.5%</h3>
-                                <p class="text-gray-600 text-sm font-medium">Match Success Rate</p>
-                            </div>
-                            <p class="text-xs text-gray-500">+11.2% improvement</p>
-                        </div>
-
-                        <!-- Avg. Response Time -->
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
-                                    <i class="fas fa-clock text-yellow-600 text-lg"></i>
-                                </div>
-                                <div class="flex items-center space-x-1 text-red-600 text-sm font-medium">
-                                    <i class="fas fa-arrow-down text-xs"></i>
-                                    <span>5%</span>
-                                </div>
-                            </div>
-                            <div class="mb-2">
-                                <h3 class="text-2xl font-bold text-gray-900">2.3s</h3>
-                                <p class="text-gray-600 text-sm font-medium">Avg. Response Time</p>
-                            </div>
-                            <p class="text-xs text-gray-500">-0.1s faster</p>
-                        </div>
-                    </div>
-
-                    <!-- Charts Row 1 -->
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                        <!-- Search Trends Line Chart -->
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                            <div class="flex items-center justify-between mb-6">
-                                <div>
-                                    <h3 class="text-lg font-semibold text-gray-900">Search Trends</h3>
-                                    <p class="text-sm text-gray-600">Daily search volume over time</p>
-                                </div>
-                                <div class="flex items-center space-x-2">
-                                    <div class="flex items-center space-x-1">
-                                        <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
-                                        <span class="text-xs text-gray-600">Searches</span>
-                                    </div>
-                                    <div class="flex items-center space-x-1">
-                                        <div class="w-3 h-3 bg-green-500 rounded-full"></div>
-                                        <span class="text-xs text-gray-600">Matches</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="h-64">
-                                <canvas id="searchTrendsChart"></canvas>
-                            </div>
-                        </div>
-
-                        <!-- Skills Distribution Pie Chart -->
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                            <div class="flex items-center justify-between mb-6">
-                                <div>
-                                    <h3 class="text-lg font-semibold text-gray-900">Top Skills Searched</h3>
-                                    <p class="text-sm text-gray-600">Most requested skills distribution</p>
-                                </div>
-                                <button class="text-gray-400 hover:text-gray-600">
-                                    <i class="fas fa-ellipsis-h"></i>
-                                </button>
-                            </div>
-                            <div class="h-64">
-                                <canvas id="skillsChart"></canvas>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Charts Row 2 -->
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                        <!-- Department Performance Bar Chart -->
-                        <div class="lg:col-span-2 bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                            <div class="flex items-center justify-between mb-6">
-                                <div>
-                                    <h3 class="text-lg font-semibold text-gray-900">Department Performance</h3>
-                                    <p class="text-sm text-gray-600">Hiring success rate by department</p>
-                                </div>
-                                <select class="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none">
-                                    <option>This Quarter</option>
-                                    <option>Last Quarter</option>
-                                    <option>This Year</option>
-                                </select>
-                            </div>
-                            <div class="h-64">
-                                <canvas id="departmentChart"></canvas>
-                            </div>
-                        </div>
-
-                        <!-- System Health -->
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                            <h3 class="text-lg font-semibold text-gray-900 mb-4">System Health</h3>
-                            <div class="space-y-4">
-                                <div>
-                                    <div class="flex justify-between items-center mb-2">
-                                        <span class="text-sm text-gray-600">Database Performance</span>
-                                        <span class="text-sm font-medium text-green-600">98%</span>
-                                    </div>
-                                    <div class="w-full bg-gray-200 rounded-full h-2">
-                                        <div class="bg-green-500 h-2 rounded-full" style="width: 98%"></div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <div class="flex justify-between items-center mb-2">
-                                        <span class="text-sm text-gray-600">AI Processing</span>
-                                        <span class="text-sm font-medium text-blue-600">94%</span>
-                                    </div>
-                                    <div class="w-full bg-gray-200 rounded-full h-2">
-                                        <div class="bg-blue-500 h-2 rounded-full" style="width: 94%"></div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <div class="flex justify-between items-center mb-2">
-                                        <span class="text-sm text-gray-600">API Response</span>
-                                        <span class="text-sm font-medium text-yellow-600">87%</span>
-                                    </div>
-                                    <div class="w-full bg-gray-200 rounded-full h-2">
-                                        <div class="bg-yellow-500 h-2 rounded-full" style="width: 87%"></div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Bottom Stats -->
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <!-- Top Recruiters -->
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Top Recruiters</h3>
-                            <div class="space-y-3">
-                                <div class="flex items-center justify-between">
-                                    <div class="flex items-center space-x-3">
-                                        <div class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                                            <span class="text-white text-xs font-bold">JS</span>
-                                        </div>
-                                        <div>
-                                            <p class="text-sm font-medium text-gray-900">John Smith</p>
-                                            <p class="text-xs text-gray-500">Senior Recruiter</p>
-                                        </div>
-                                    </div>
-                                    <span class="text-sm font-bold text-green-600">47 hires</span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <div class="flex items-center space-x-3">
-                                        <div class="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
-                                            <span class="text-white text-xs font-bold">AD</span>
-                                        </div>
-                                        <div>
-                                            <p class="text-sm font-medium text-gray-900">Alice Davis</p>
-                                            <p class="text-xs text-gray-500">Lead Recruiter</p>
-                                        </div>
-                                    </div>
-                                    <span class="text-sm font-bold text-green-600">42 hires</span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <div class="flex items-center space-x-3">
-                                        <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                                            <span class="text-white text-xs font-bold">BW</span>
-                                        </div>
-                                        <div>
-                                            <p class="text-sm font-medium text-gray-900">Bob Wilson</p>
-                                            <p class="text-xs text-gray-500">Recruiter</p>
-                                        </div>
-                                    </div>
-                                    <span class="text-sm font-bold text-green-600">38 hires</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Quick Actions -->
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-                            <div class="space-y-3">
-                                <button class="w-full flex items-center space-x-3 p-3 text-left hover:bg-gray-50 rounded-lg transition-colors">
-                                    <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                                        <i class="fas fa-search text-blue-600 text-sm"></i>
-                                    </div>
-                                    <span class="text-sm font-medium text-gray-900">New Search</span>
-                                </button>
-                                <button class="w-full flex items-center space-x-3 p-3 text-left hover:bg-gray-50 rounded-lg transition-colors">
-                                    <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                                        <i class="fas fa-upload text-green-600 text-sm"></i>
-                                    </div>
-                                    <span class="text-sm font-medium text-gray-900">Upload Resume</span>
-                                </button>
-                                <button class="w-full flex items-center space-x-3 p-3 text-left hover:bg-gray-50 rounded-lg transition-colors">
-                                    <div class="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                                        <i class="fas fa-chart-bar text-purple-600 text-sm"></i>
-                                    </div>
-                                    <span class="text-sm font-medium text-gray-900">Generate Report</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
             <!-- Tenant User Dashboard -->
             <div id="user-dashboard" class="p-4 h-full overflow-y-auto bg-gray-50" style="display: none;">
                 <div class="max-w-7xl mx-auto">
-                    <!-- Resource Usage Section (for tenant admin) -->
+                    <!-- Resource Usage Section (for tenant users) -->
                     <div id="resource-usage-section" class="hidden mb-6">
                         <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-6 text-white shadow-lg">
                             <h3 class="text-xl font-bold mb-4 flex items-center">
@@ -614,7 +346,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     <!-- Candidate Status Cards -->
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                         <!-- Card Example (repeat for each status) -->
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 flex flex-col items-center justify-center min-h-[180px]">
+                        <div role="button" tabindex="0" onclick="openCandidatesByStatus('selected')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openCandidatesByStatus('selected');}" class="cursor-pointer bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md hover:border-emerald-300 hover:-translate-y-0.5 transition-all duration-200 flex flex-col items-center justify-center min-h-[180px]">
                             <div class="flex flex-col items-center mb-3">
                                 <div class="w-14 h-14 flex items-center justify-center rounded-xl mb-2 bg-emerald-100">
                                     <i class="fas fa-check-circle text-emerald-600 text-2xl"></i>
@@ -624,7 +356,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <p class="text-gray-700 text-base font-semibold mb-1">Selected</p>
                             <p class="text-xs text-gray-500">Ready to hire</p>
                         </div>
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 flex flex-col items-center justify-center min-h-[180px]">
+                        <div role="button" tabindex="0" onclick="openCandidatesByStatus('rejected')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openCandidatesByStatus('rejected');}" class="cursor-pointer bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md hover:border-red-300 hover:-translate-y-0.5 transition-all duration-200 flex flex-col items-center justify-center min-h-[180px]">
                             <div class="flex flex-col items-center mb-3">
                                 <div class="w-14 h-14 flex items-center justify-center rounded-xl mb-2 bg-red-100">
                                     <i class="fas fa-times-circle text-red-600 text-2xl"></i>
@@ -634,7 +366,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <p class="text-gray-700 text-base font-semibold mb-1">Rejected</p>
                             <p class="text-xs text-gray-500">This month</p>
                         </div>
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 flex flex-col items-center justify-center min-h-[180px]">
+                        <div role="button" tabindex="0" onclick="openCandidatesByStatus('shortlisted')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openCandidatesByStatus('shortlisted');}" class="cursor-pointer bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md hover:border-yellow-300 hover:-translate-y-0.5 transition-all duration-200 flex flex-col items-center justify-center min-h-[180px]">
                             <div class="flex flex-col items-center mb-3">
                                 <div class="w-14 h-14 flex items-center justify-center rounded-xl mb-2 bg-yellow-100">
                                     <i class="fas fa-star text-yellow-600 text-2xl"></i>
@@ -644,7 +376,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <p class="text-gray-700 text-base font-semibold mb-1">Shortlisted</p>
                             <p class="text-xs text-gray-500">Awaiting review</p>
                         </div>
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 flex flex-col items-center justify-center min-h-[180px]">
+                        <div role="button" tabindex="0" onclick="openCandidatesByStatus('interviewed')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openCandidatesByStatus('interviewed');}" class="cursor-pointer bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md hover:border-green-300 hover:-translate-y-0.5 transition-all duration-200 flex flex-col items-center justify-center min-h-[180px]">
                             <div class="flex flex-col items-center mb-3">
                                 <div class="w-14 h-14 flex items-center justify-center rounded-xl mb-2 bg-green-100">
                                     <i class="fas fa-video text-green-600 text-2xl"></i>
@@ -702,7 +434,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
                             <div class="flex items-center justify-between mb-6">
                                 <h3 class="text-lg font-semibold text-gray-900">📅 Schedule</h3>
-                                <button class="text-gray-400 hover:text-gray-600">
+                                <button type="button" onclick="openGeneralScheduleModal()" title="Add a new scheduled item" class="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:text-white hover:bg-blue-600 transition-colors">
                                     <i class="fas fa-plus"></i>
                                 </button>
                             </div>
@@ -774,8 +506,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     <div class="w-full max-w-3xl mb-8">
                         <div class="relative">
                             <input type="text" id="chat-input" class="w-full px-6 py-4 text-base border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm" placeholder="Describe your ideal candidate or job requirements...">
+                            <input type="file" id="jd-upload-input" accept=".pdf,.doc,.docx,.txt" class="hidden">
                             <div class="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-2">
-                                <button class="p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                                <button id="jd-upload-button" type="button" title="Upload Job Description (PDF, DOCX, or TXT)" class="p-2 text-gray-400 hover:text-blue-600 transition-colors">
                                     <i class="fas fa-paperclip text-sm"></i>
                                 </button>
                                 <button id="send-button" class="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
@@ -783,6 +516,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 </button>
                             </div>
                         </div>
+                        <div id="jd-upload-status" class="hidden mt-2 text-xs text-gray-600"></div>
                     </div>
 
                     <!-- Search Options -->
@@ -878,6 +612,9 @@ document.addEventListener('DOMContentLoaded', function () {
                         <!-- Table Body -->
                         <div id="history-table-body" class="divide-y divide-gray-200">
                         </div>
+                        <!-- Pagination Footer -->
+                        <div id="history-pagination" class="hidden px-6 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between text-sm text-gray-600">
+                        </div>
                     </div>
                 </div>
             </div>
@@ -950,7 +687,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                         <i class="fas fa-cloud-upload-alt text-blue-600 text-2xl"></i>
                                     </div>
                                     <h3 class="text-lg font-semibold text-gray-900 mb-2">Drop files here or click to browse</h3>
-                                    <p class="text-gray-600 text-sm mb-4">Support for PDF, DOC, DOCX files (max 100MB per file)</p>
+                                    <p class="text-gray-600 text-sm mb-4">Support for PDF, DOC, DOCX files (max 10MB per file, 100MB per batch)</p>
                                     <button id="browse-files" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
                                         <i class="fas fa-folder-open mr-2"></i>Browse Files
                                     </button>
@@ -1239,43 +976,6 @@ document.addEventListener('DOMContentLoaded', function () {
                             </div>
                         </div>
                         
-                        <!-- Search Preferences -->
-                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Search Preferences</h3>
-                            <div class="space-y-4">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <span class="text-gray-700 text-sm font-medium">Auto-save search queries</span>
-                                        <p class="text-xs text-gray-500">Automatically save your search history</p>
-                                    </div>
-                                    <label class="relative inline-flex items-center cursor-pointer">
-                                        <input type="checkbox" class="sr-only peer" checked>
-                                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                    </label>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <span class="text-gray-700 text-sm font-medium">Email notifications</span>
-                                        <p class="text-xs text-gray-500">Receive notifications about search results</p>
-                                    </div>
-                                    <label class="relative inline-flex items-center cursor-pointer">
-                                        <input type="checkbox" class="sr-only peer">
-                                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                    </label>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <span class="text-gray-700 text-sm font-medium">Show advanced filters</span>
-                                        <p class="text-xs text-gray-500">Display additional search options</p>
-                                    </div>
-                                    <label class="relative inline-flex items-center cursor-pointer">
-                                        <input type="checkbox" class="sr-only peer" checked>
-                                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        
                         <!-- Company Information -->
                         <div id="company-info-section" class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
                             <h3 class="text-lg font-semibold text-gray-900 mb-4">Company Information</h3>
@@ -1293,16 +993,16 @@ document.addEventListener('DOMContentLoaded', function () {
                             <div class="space-y-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-2">Display Name</label>
-                                    <input type="text" id="display-name" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Your display name">
+                                    <input type="text" id="display-name" class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700" placeholder="Your display name" readonly>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-                                    <input type="email" id="email-address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="your.email@company.com" readonly>
-                                    <p class="text-xs text-gray-500 mt-1">Contact your administrator to change your email</p>
+                                    <input type="email" id="email-address" class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700" placeholder="your.email@company.com" readonly>
                                 </div>
-                                <button class="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm font-medium">
-                                    <i class="fas fa-save mr-2"></i>Save Changes
-                                </button>
+                                <p class="text-xs text-gray-500">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Contact your administrator to change your name or email.
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -1432,6 +1132,72 @@ document.addEventListener('DOMContentLoaded', function () {
                     e.target.value = 1;
                 } else if (value > 100) {
                     e.target.value = 100;
+                }
+            });
+        }
+
+        // Wire JD-upload (paperclip) button -> hidden file input -> backend parser
+        const jdUploadBtn = document.getElementById('jd-upload-button');
+        const jdUploadInput = document.getElementById('jd-upload-input');
+        const jdUploadStatus = document.getElementById('jd-upload-status');
+        if (jdUploadBtn && jdUploadInput) {
+            jdUploadBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                jdUploadInput.click();
+            });
+            jdUploadInput.addEventListener('change', async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                const maxBytes = 10 * 1024 * 1024;
+                if (file.size > maxBytes) {
+                    if (jdUploadStatus) {
+                        jdUploadStatus.classList.remove('hidden');
+                        jdUploadStatus.classList.add('text-red-600');
+                        jdUploadStatus.textContent = 'File too large (max 10 MB).';
+                    }
+                    jdUploadInput.value = '';
+                    return;
+                }
+                if (jdUploadStatus) {
+                    jdUploadStatus.classList.remove('hidden', 'text-red-600');
+                    jdUploadStatus.classList.add('text-gray-600');
+                    jdUploadStatus.textContent = 'Reading "' + file.name + '"...';
+                }
+                try {
+                    const fd = new FormData();
+                    fd.append('file', file);
+                    const resp = await fetch('/api/parse-jd-file', { method: 'POST', body: fd });
+                    if (!resp.ok) {
+                        let msg = 'Failed to read file (' + resp.status + ').';
+                        try {
+                            const j = await resp.json();
+                            if (j && j.detail) msg = j.detail;
+                        } catch (_) { }
+                        throw new Error(msg);
+                    }
+                    const data = await resp.json();
+                    const text = (data && data.text) ? String(data.text).trim() : '';
+                    if (!text) {
+                        throw new Error('No text could be extracted from the file.');
+                    }
+                    if (chatInput) {
+                        chatInput.value = text;
+                        chatInput.focus();
+                    }
+                    if (jdUploadStatus) {
+                        jdUploadStatus.classList.remove('text-red-600');
+                        jdUploadStatus.classList.add('text-green-600');
+                        jdUploadStatus.textContent = 'Loaded "' + file.name + '" (' + text.length + ' chars). You can edit before searching.';
+                    }
+                } catch (err) {
+                    console.error('JD upload failed:', err);
+                    if (jdUploadStatus) {
+                        jdUploadStatus.classList.remove('hidden', 'text-green-600', 'text-gray-600');
+                        jdUploadStatus.classList.add('text-red-600');
+                        jdUploadStatus.textContent = err && err.message ? err.message : 'Upload failed.';
+                    }
+                } finally {
+                    jdUploadInput.value = '';
                 }
             });
         }
@@ -1715,8 +1481,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
                         <i class="fas fa-spinner fa-spin text-blue-600 text-lg"></i>
                     </div>
-                    <div class="text-gray-600 text-sm">Searching for candidates...</div>
-                    <div class="text-gray-500 text-xs mt-2">Analyzing resumes with AI</div>
+                    <div id="search-progress-step" class="text-gray-600 text-sm">Searching for candidates...</div>
+                    <div id="search-progress-detail" class="text-gray-500 text-xs mt-2">Analyzing resumes with AI</div>
+                    <div class="w-full max-w-xs mx-auto mt-3 bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                        <div id="search-progress-bar" class="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style="width:0%"></div>
+                    </div>
                 </div>
             `;
         }
@@ -1730,11 +1499,52 @@ document.addEventListener('DOMContentLoaded', function () {
                         <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                             <i class="fas fa-search text-gray-400 text-2xl"></i>
                         </div>
-                        <h3 class="text-lg font-medium text-gray-600 mb-2">Searching candidates...</h3>
-                        <p class="text-sm text-gray-500">Please wait while we analyze the resumes</p>
+                        <h3 id="search-progress-title" class="text-lg font-medium text-gray-600 mb-2">Searching candidates...</h3>
+                        <p id="search-progress-subtitle" class="text-sm text-gray-500">Please wait while we analyze the resumes</p>
                     </div>
                 </div>
             `;
+        }
+    }
+
+    // Update the progress UI from a task-status payload.
+    window.updateSearchProgress = function (status) {
+        try {
+            const progress = (status && status.progress) || {};
+            const step = progress.step || status.status || '';
+            const cur = progress.current_candidate;
+            const total = progress.total_candidates;
+            const pct = (typeof progress.progress_percent === 'number')
+                ? progress.progress_percent
+                : (cur && total ? Math.round(cur / total * 100) : 0);
+            const cacheHits = progress.cache_hits || 0;
+
+            const stepLabels = {
+                'extracting_keywords': 'Extracting keywords from job description-',
+                'optimizing_query':    'Optimizing search query-',
+                'searching_candidates':'Searching candidate database-',
+                'generating_scorecards': total
+                    ? `Analyzing candidate ${cur || 0} / ${total} (${pct}%)-`
+                    : 'Analyzing candidates-',
+                'saving_results':      'Saving results-',
+                'completed':           'Done.',
+            };
+            const label = stepLabels[step] || (step ? `${step}-` : 'Working-');
+
+            const stepEl    = document.getElementById('search-progress-step');
+            const detailEl  = document.getElementById('search-progress-detail');
+            const barEl     = document.getElementById('search-progress-bar');
+            const titleEl   = document.getElementById('search-progress-title');
+            const subEl     = document.getElementById('search-progress-subtitle');
+            if (stepEl)   stepEl.textContent = label;
+            if (titleEl)  titleEl.textContent = label;
+            if (detailEl) detailEl.textContent = cacheHits
+                ? `${cacheHits} reused from cache`
+                : 'Powered by Vertex AI Search + Gemini';
+            if (subEl)    subEl.textContent   = detailEl ? detailEl.textContent : '';
+            if (barEl && pct >= 0) barEl.style.width = Math.max(2, Math.min(100, pct)) + '%';
+        } catch (e) {
+            console.warn('updateSearchProgress error', e);
         }
     }
 
@@ -1928,11 +1738,15 @@ document.addEventListener('DOMContentLoaded', function () {
                 return response.json();
             })
             .then(data => {
-                // HR scorecard search returns data directly (no need for conversion)
-                // The response already has the proper format with HR scorecard analysis
-                console.log('HR Scorecard search response:', data);
+                // If backend submitted a Cloud Task, poll until completed
+                // and then fetch results.
+                if (data && data.task_id && (data.status === 'pending' || data.success === true) && !Array.isArray(data.results)) {
+                    console.log('HR Scorecard task submitted, polling status:', data.task_id);
+                    return pollHRScorecardTask(data.task_id);
+                }
 
-                // Pass through all the fields from the HR scorecard response
+                // Legacy/synchronous path
+                console.log('HR Scorecard search response:', data);
                 return {
                     results: data.results || [],
                     total_results: data.total_results || 0,
@@ -1949,6 +1763,90 @@ document.addEventListener('DOMContentLoaded', function () {
                     top_scorecard: data.top_scorecard || null
                 };
             });
+    }
+
+    // Poll an HR-scorecard Cloud Task until it completes (or fails / times out)
+    // and return the normalized results payload from the task-results endpoint.
+    function pollHRScorecardTask(taskId, opts) {
+        opts = opts || {};
+        // Adaptive backoff: poll quickly at first so a fast search returns
+        // immediately, then ramp up to avoid hammering the backend on long
+        // searches. Caller may still pass `intervalMs` to override.
+        const fixedIntervalMs = opts.intervalMs;
+        const backoffSchedule = [800, 1200, 1800, 2500, 3500, 4000];
+        const maxIntervalMs = 4000;
+        const timeoutMs = opts.timeoutMs || 10 * 60 * 1000;
+        const startedAt = Date.now();
+        let pollCount = 0;
+
+        function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+        function nextDelay() {
+            if (fixedIntervalMs) return fixedIntervalMs;
+            const idx = Math.min(pollCount, backoffSchedule.length - 1);
+            pollCount += 1;
+            return backoffSchedule[idx] || maxIntervalMs;
+        }
+
+        function fetchStatus() {
+            return fetch('/api/hr-scorecard-task-status/' + encodeURIComponent(taskId), {
+                method: 'GET', credentials: 'same-origin'
+            }).then(function (r) {
+                if (!r.ok) throw new Error('Task status check failed (' + r.status + ')');
+                return r.json();
+            });
+        }
+
+        function fetchResults() {
+            return fetch('/api/hr-scorecard-task-results/' + encodeURIComponent(taskId), {
+                method: 'GET', credentials: 'same-origin'
+            }).then(function (r) {
+                if (!r.ok) throw new Error('Task results fetch failed (' + r.status + ')');
+                return r.json();
+            });
+        }
+
+        function loop() {
+            return fetchStatus().then(function (status) {
+                const s = status && status.status;
+                console.log('HR Scorecard task status:', s, status && status.progress);
+                try { if (window.updateSearchProgress) window.updateSearchProgress(status); } catch (e) {}
+
+                if (s === 'completed') {
+                    return fetchResults().then(function (data) {
+                        return {
+                            results: data.results || [],
+                            total_results: data.total_results || (data.results ? data.results.length : 0),
+                            query: data.query || '',
+                            job_title: data.job_title || 'Position',
+                            search_strategy: data.search_strategy || 'hr_scorecard_comprehensive',
+                            hr_scorecards: data.hr_scorecards || [],
+                            hr_metrics: data.hr_metrics || {},
+                            standardized_keywords: data.standardized_keywords || {},
+                            enhanced_search: true,
+                            all_analyses: data.all_analyses || [],
+                            analyzed_count: data.analyzed_count || 0,
+                            top_result_analysis: data.top_result_analysis || null,
+                            top_scorecard: data.top_scorecard || null,
+                            task_id: taskId
+                        };
+                    });
+                }
+
+                if (s === 'failed') {
+                    const msg = (status && (status.error_message || (status.progress && status.progress.error))) || 'Task failed';
+                    throw new Error(msg);
+                }
+
+                if (Date.now() - startedAt > timeoutMs) {
+                    throw new Error('Search is taking too long. Please try again.');
+                }
+
+                return delay(nextDelay()).then(loop);
+            });
+        }
+
+        return loop();
     }
 
     // Make generateEnhancedResults available globally
@@ -2009,6 +1907,63 @@ document.addEventListener('DOMContentLoaded', function () {
             candidateCount.textContent = `${highScoreResults.length} results`;
         }
 
+        // Inject "Export All" button into the split-view header (idempotent).
+        try {
+            const headerEl = candidateCount ? candidateCount.closest('.split-view-header') : null;
+            if (headerEl && !headerEl.querySelector('#export-all-btn') && highScoreResults.length > 0) {
+                const btn = document.createElement('button');
+                btn.id = 'export-all-btn';
+                btn.type = 'button';
+                btn.title = 'Export all candidates as a single PDF';
+                btn.innerHTML = '<i class="fas fa-file-export mr-1"></i> Export All';
+                btn.style.cssText = 'margin-left:8px;padding:4px 10px;border-radius:6px;background:#4f46e5;color:#fff;font-size:12px;font-weight:600;border:0;cursor:pointer;';
+                btn.onmouseover = function () { btn.style.background = '#4338ca'; };
+                btn.onmouseout = function () { btn.style.background = '#4f46e5'; };
+                btn.onclick = function () { exportAllCandidatesReport(); };
+                headerEl.appendChild(btn);
+            } else if (headerEl) {
+                const existing = headerEl.querySelector('#export-all-btn');
+                if (existing) existing.style.display = highScoreResults.length > 0 ? '' : 'none';
+            }
+        } catch (e) {
+            console.warn('Could not inject Export All button:', e);
+        }
+
+        // Inject "Only matches" toggle + criteria hint based on whether any
+        // candidate carries a criteria_match block.
+        try {
+            const anyCriteria = (highScoreResults || []).some(c => c && c.criteria_match && c.criteria_match.evaluated);
+            const anyMisses = (highScoreResults || []).some(c => c && c.criteria_match && (c.criteria_match.misses || []).length > 0);
+            const headerEl2 = document.getElementById('candidate-list-header')
+                || document.querySelector('.candidate-list-header')
+                || document.querySelector('#results-container .results-header');
+            if (headerEl2 && anyCriteria && !headerEl2.querySelector('#criteria-only-toggle')) {
+                const tog = document.createElement('label');
+                tog.id = 'criteria-only-toggle';
+                tog.title = 'Hide candidates missing any required criterion';
+                tog.style.cssText = 'margin-left:8px;display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#374151;cursor:pointer;user-select:none;';
+                tog.innerHTML = '<input type="checkbox" id="criteria-only-toggle-cb" style="margin:0;"> Only matches';
+                tog.querySelector('input').addEventListener('change', (e) => {
+                    const list = document.getElementById('candidate-list');
+                    if (list) list.classList.toggle('hide-misses', e.target.checked);
+                });
+                headerEl2.appendChild(tog);
+                if (!anyMisses) tog.style.opacity = '0.5';
+            }
+            // Hint when query had no detectable hard criteria.
+            const noCriteria = !anyCriteria && (highScoreResults || []).length > 0;
+            const listParent = document.getElementById('candidate-list')?.parentElement;
+            if (listParent && noCriteria && !listParent.querySelector('#criteria-hint')) {
+                const hint = document.createElement('div');
+                hint.id = 'criteria-hint';
+                hint.style.cssText = 'font-size:11px;color:#6b7280;margin:4px 0 8px;font-style:italic;';
+                hint.textContent = 'Tip: add hard filters like "5+ years", "speaks French", or "based in Dubai" to narrow results.';
+                listParent.insertBefore(hint, listParent.firstChild);
+            }
+        } catch (e) {
+            console.warn('Could not inject criteria UI:', e);
+        }
+
         // Clear and populate candidate list
         const candidateList = document.getElementById('candidate-list');
         if (candidateList) {
@@ -2025,26 +1980,41 @@ document.addEventListener('DOMContentLoaded', function () {
                 const candidateRole = analysisData?.candidate_overview?.position_applied_for || 'Position';
                 const candidateLocation = analysisData?.candidate_overview?.location || 'Not specified';
                 const matchStatus = getMatchStatus(score);
+                const esc = window.escapeHtml || ((value) => {
+                    const div = document.createElement('div');
+                    div.textContent = value == null ? '' : String(value);
+                    return div.innerHTML;
+                });
+                const safeScore = (window.safeNumber || ((value) => Number(value) || 0))(score, 0, 0, 100);
+                const safeStatusClass = String(matchStatus || '')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9_-]+/g, '-')
+                    .replace(/^-+|-+$/g, '') || 'status';
 
                 // Create list item
                 const listItem = document.createElement('div');
                 listItem.className = 'candidate-list-item';
                 listItem.dataset.candidateIndex = index;
+                const cmHere = candidate && candidate.criteria_match;
+                if (cmHere && cmHere.evaluated && (cmHere.misses || []).length > 0) {
+                    listItem.dataset.hasMisses = '1';
+                }
                 listItem.innerHTML = `
                     <div class="candidate-list-avatar">
-                        ${candidateName.charAt(0).toUpperCase()}
+                        ${esc(candidateName.charAt(0).toUpperCase())}
                     </div>
                     <div class="candidate-list-info">
-                        <div class="candidate-list-name">${candidateName}</div>
-                        <div class="candidate-list-role">${candidateRole}</div>
+                        <div class="candidate-list-name">${esc(candidateName)}</div>
+                        <div class="candidate-list-role">${esc(candidateRole)}</div>
                         <div class="candidate-list-location">
                             <i class="fas fa-map-marker-alt"></i>
-                            ${candidateLocation}
+                            ${esc(candidateLocation)}
                         </div>
+                        ${renderCriteriaBadges(candidate)}
                     </div>
                     <div class="candidate-list-score">
-                        <div class="candidate-list-score-value">${score}%</div>
-                        <div class="candidate-list-score-status ${matchStatus.toLowerCase().replace(' ', '-')}">${matchStatus}</div>
+                        <div class="candidate-list-score-value">${safeScore}%</div>
+                        <div class="candidate-list-score-status ${safeStatusClass}">${esc(matchStatus)}</div>
                     </div>
                 `;
 
@@ -2181,6 +2151,28 @@ document.addEventListener('DOMContentLoaded', function () {
     window.getMatchStatus = function (score) {
         return score >= 80 ? 'Strong Fit' : score >= 60 ? 'Medium Fit' : 'Weak Fit';
     }
+
+    // Render small green/red badges showing which user-specified hard
+    // criteria (years of experience, languages, location) the candidate
+    // matched. Returns '' if the search had no hard criteria.
+    window.renderCriteriaBadges = function (candidate) {
+        const cm = candidate && candidate.criteria_match;
+        if (!cm || !cm.evaluated) return '';
+        const esc = window.escapeHtml || ((v) => {
+            const d = document.createElement('div'); d.textContent = v == null ? '' : String(v); return d.innerHTML;
+        });
+        const items = [];
+        for (const m of (cm.matches || [])) {
+            items.push(`<span class="criteria-badge criteria-badge-match" title="matches required ${esc(m.criterion)}">✓ ${esc(m.required)}</span>`);
+        }
+        for (const m of (cm.misses || [])) {
+            const pen = (m && typeof m.penalty === 'number') ? m.penalty : 25;
+            items.push(`<span class="criteria-badge criteria-badge-miss" title="missing required ${esc(m.criterion)} (-${pen} score)">✗ ${esc(m.required)}</span>`);
+        }
+        if (!items.length) return '';
+        return `<div class="criteria-badges">${items.join('')}</div>`;
+    };
+    const renderCriteriaBadges = window.renderCriteriaBadges;
 
     // Function to select a candidate and show their details
     // Make selectCandidate available globally
@@ -2322,6 +2314,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 careerTimeline = analysisData?.career_timeline || [];
                 tenurePrediction = analysisData?.tenure_prediction || {};
 
+                // career_timeline may arrive as a string in older / migrated
+                // payloads; force it to an array so .slice().map() is safe.
+                if (!Array.isArray(careerTimeline)) {
+                    if (careerTimeline && typeof careerTimeline === 'object') {
+                        careerTimeline = Object.values(careerTimeline);
+                    } else {
+                        careerTimeline = [];
+                    }
+                }
+
                 // Handle both new and old structures for analysis summary
                 analysisSummary = analysisData?.analysis_summary || {};
                 aiSummary = analysisSummary.ai_analysis || analysisData?.ai_summary || 'No AI analysis available';
@@ -2370,37 +2372,56 @@ document.addEventListener('DOMContentLoaded', function () {
                 resumeHighlights: resumeHighlights.length
             });
 
+            const esc = window.escapeHtml || ((value) => {
+                const div = document.createElement('div');
+                div.textContent = value == null ? '' : String(value);
+                return div.innerHTML;
+            });
+            const safeNum = window.safeNumber || ((value, fallback = 0, min = 0, max = 100) => {
+                const number = Number(value);
+                return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+            });
+            const safeClassName = (value) => String(value || '')
+                .toLowerCase()
+                .replace(/[^a-z0-9_-]+/g, '-')
+                .replace(/^-+|-+$/g, '') || 'item';
+            const safeScore = safeNum(score, 0, 0, 100);
+            const safeEmailValue = String(candidateEmail || '').trim();
+            const canEmailCandidate = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(safeEmailValue);
+            const candidateFilePath = candidate.file_path || '';
+            card.dataset.candidateName = finalCandidateName;
+
             try {
                 card.innerHTML = `
                 <!-- Professional Header -->
                 <div class="professional-card-header">
                     <div class="professional-header-content">
                         <div class="professional-candidate-avatar">
-                            ${finalCandidateName.charAt(0).toUpperCase()}
+                            ${esc(finalCandidateName.charAt(0).toUpperCase())}
                         </div>
                         <div class="professional-candidate-info">
-                            <h1>${finalCandidateName}</h1>
-                            <div class="professional-candidate-role">${candidateRole}</div>
+                            <h1>${esc(finalCandidateName)}</h1>
+                            <div class="professional-candidate-role">${esc(candidateRole)}</div>
                             <div class="professional-candidate-location">
                                 <i class="fas fa-map-marker-alt"></i>
-                                ${candidateLocation} • ${experienceYears} experience
+                                ${esc(candidateLocation)} &bull; ${esc(experienceYears)} experience
                             </div>
                             <div class="professional-contact-info">
                                 <div class="professional-contact-item">
                                     <i class="fas fa-envelope"></i>
-                                    ${candidateEmail}
+                                    ${esc(candidateEmail)}
                                 </div>
                                 <div class="professional-contact-item">
                                     <i class="fas fa-phone"></i>
-                                    ${candidatePhone}
+                                    ${esc(candidatePhone)}
                                 </div>
                             </div>
                         </div>
                         <div class="professional-match-score">
-                            <div class="professional-score-circle" style="--score-deg: ${score * 3.6}deg;">
-                                <div class="professional-score-text">${score}%</div>
+                            <div class="professional-score-circle" style="--score-deg: ${safeScore * 3.6}deg;">
+                                <div class="professional-score-text">${safeScore}%</div>
                             </div>
-                            <div class="professional-match-status">${matchStatus}</div>
+                            <div class="professional-match-status">${esc(matchStatus)}</div>
                         </div>
                     </div>
                 </div>
@@ -2417,7 +2438,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         <div class="professional-ai-summary">
                             <!-- AI Analysis Content -->
                             <div class="analysis-content">
-                                <p>${aiSummary}</p>
+                                <p>${esc(aiSummary)}</p>
                             </div>
 
                             <!-- Resume Highlights -->
@@ -2428,7 +2449,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                     ${resumeHighlights.slice(0, 3).map((highlight, snippetIndex) => {
                     // Handle both string and object formats
                     const highlightText = typeof highlight === 'string' ? highlight : (highlight.text || highlight.snippet || 'No highlight available');
-                    return `<li class="analysis-highlight-item">${highlightText}</li>`;
+                    return `<li class="analysis-highlight-item">${esc(highlightText)}</li>`;
                 }).join('')}
                                 </ul>
                             </div>
@@ -2456,18 +2477,18 @@ document.addEventListener('DOMContentLoaded', function () {
                     return !hiddenSections.includes(key.toLowerCase());
                 }).map(([key, data]) => {
                     const skillName = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                    const scoreValue = data.score || 0;
+                    const scoreValue = safeNum(data.score || 0, 0, 0, 100);
                     const comment = data.comment || 'No detailed analysis available';
                     return `
-                                <div class="professional-score-item ${key.toLowerCase().replace(/_/g, '-')}">
+                                <div class="professional-score-item ${safeClassName(key)}">
                                     <div class="professional-score-header">
-                                        <div class="professional-score-name">${skillName}</div>
+                                        <div class="professional-score-name">${esc(skillName)}</div>
                                         <div class="professional-score-value">${scoreValue}%</div>
                                     </div>
                                     <div class="professional-score-bar">
                                         <div class="professional-score-fill" style="width: ${scoreValue}%; animation-delay: ${Math.random() * 0.5}s;"></div>
                                     </div>
-                                    <div class="professional-score-comment">${comment}</div>
+                                    <div class="professional-score-comment">${esc(comment)}</div>
                                 </div>
                                 `;
                 }).join('')}
@@ -2489,15 +2510,15 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <div class="professional-timeline-content">
                                         <div class="professional-timeline-header">
                                             <div class="professional-timeline-left">
-                                                <div class="professional-timeline-role">${item.role || 'Position'}</div>
-                                                <div class="professional-timeline-company">${item.company || 'Company'}</div>
+                                                <div class="professional-timeline-role">${esc(item.role || 'Position')}</div>
+                                                <div class="professional-timeline-company">${esc(item.company || 'Company')}</div>
                                             </div>
-                                            <div class="professional-timeline-period">${item.year_range || item.period || 'Period'}</div>
+                                            <div class="professional-timeline-period">${esc(item.year_range || item.period || 'Period')}</div>
                                         </div>
                                         ${item.key_skills && item.key_skills.length > 0 ? `
                                         <div class="professional-timeline-skills">
                                             ${item.key_skills.slice(0, 6).map(skill =>
-                    `<span class="professional-skill-tag">${skill}</span>`
+                    `<span class="professional-skill-tag">${esc(skill)}</span>`
                 ).join('')}
                                         </div>
                                         ` : ''}
@@ -2530,7 +2551,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                         Expected Tenure
                                     </div>
                                     <div class="professional-score-value" style="color: #10b981; font-size: 1.1rem;">
-                                        ${tenurePrediction.estimated_tenure || 'Not specified'}
+                                        ${esc(tenurePrediction.estimated_tenure || 'Not specified')}
                                     </div>
                                 </div>
                             </div>
@@ -2542,7 +2563,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                         Retention Score
                                     </div>
                                     <div class="professional-score-value" style="color: #f59e0b; font-size: 1.1rem;">
-                                        ${tenurePrediction.tenure_score || 0}%
+                                        ${safeNum(tenurePrediction.tenure_score || 0, 0, 0, 100)}%
                                     </div>
                                 </div>
                             </div>
@@ -2554,7 +2575,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                         Confidence Level
                                     </div>
                                     <div class="professional-score-value" style="color: #8b5cf6; font-size: 1.1rem;">
-                                        ${tenurePrediction.confidence_level || 'Medium'}
+                                        ${esc(tenurePrediction.confidence_level || 'Medium')}
                                     </div>
                                 </div>
                             </div>
@@ -2568,19 +2589,19 @@ document.addEventListener('DOMContentLoaded', function () {
                                 return !hiddenFactors.includes(factor.toLowerCase());
                             }).map(([factor, data]) => {
                                 const factorName = factor.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                                const factorScore = data.score || 0;
+                                const factorScore = safeNum(data.score || 0, 0, 0, 100);
                                 const scoreClass = factorScore >= 80 ? 'technical' : factorScore >= 60 ? 'leadership' : 'soft';
                                 return `
                                     <!-- Factor Cards (3) -->
                                     <div class="professional-score-item ${scoreClass}">
                                         <div class="professional-score-header">
-                                            <div class="professional-score-name">${factorName}</div>
+                                            <div class="professional-score-name">${esc(factorName)}</div>
                                             <div class="professional-score-value">${factorScore}%</div>
                                         </div>
                                         <div class="professional-score-bar">
                                             <div class="professional-score-fill" style="width: ${factorScore}%;"></div>
                                         </div>
-                                        <div class="professional-score-comment">${data.analysis || 'Good performance'}</div>
+                                        <div class="professional-score-comment">${esc(data.analysis || 'Good performance')}</div>
                                     </div>
                                     `;
                             }).join('') : ''
@@ -2605,7 +2626,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <h4><i class="fas fa-check-circle"></i> Matched Keywords (${keywordCoverage.matched_keywords.length})</h4>
                                     <div class="professional-keyword-tags">
                                         ${keywordCoverage.matched_keywords.map(keyword =>
-                            `<span class="professional-keyword-tag matched">${keyword}</span>`
+                            `<span class="professional-keyword-tag matched">${esc(keyword)}</span>`
                         ).join('')}
                                     </div>
                                 </div>
@@ -2620,7 +2641,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <h4><i class="fas fa-exclamation-circle"></i> Missing Keywords (${keywordCoverage.missing_keywords.length})</h4>
                                     <div class="professional-keyword-tags">
                                         ${keywordCoverage.missing_keywords.map(keyword =>
-                            `<span class="professional-keyword-tag missing">${keyword}</span>`
+                            `<span class="professional-keyword-tag missing">${esc(keyword)}</span>`
                         ).join('')}
                                     </div>
                                 </div>
@@ -2650,8 +2671,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <label class="hr-checkbox-item selected">
                                 <input type="checkbox" 
                                        class="hr-checkbox" 
-                                       data-status="selected"
-                                       onchange="setCandidateStatus('${finalCandidateName}', 'selected', this)">
+                                       data-status="selected">
                                 <span class="hr-checkbox-label">
                                     <i class="fas fa-check-circle"></i>
                                     Selected
@@ -2660,8 +2680,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <label class="hr-checkbox-item shortlisted">
                                 <input type="checkbox" 
                                        class="hr-checkbox" 
-                                       data-status="shortlisted"
-                                       onchange="setCandidateStatus('${finalCandidateName}', 'shortlisted', this)">
+                                       data-status="shortlisted">
                                 <span class="hr-checkbox-label">
                                     <i class="fas fa-star"></i>
                                     Shortlisted
@@ -2670,8 +2689,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <label class="hr-checkbox-item interviewed">
                                 <input type="checkbox" 
                                        class="hr-checkbox" 
-                                       data-status="interviewed"
-                                       onchange="setCandidateStatus('${finalCandidateName}', 'interviewed', this)">
+                                       data-status="interviewed">
                                 <span class="hr-checkbox-label">
                                     <i class="fas fa-video"></i>
                                     Interviewed
@@ -2680,8 +2698,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <label class="hr-checkbox-item rejected">
                                 <input type="checkbox" 
                                        class="hr-checkbox" 
-                                       data-status="rejected"
-                                       onchange="setCandidateStatus('${finalCandidateName}', 'rejected', this)">
+                                       data-status="rejected">
                                 <span class="hr-checkbox-label">
                                     <i class="fas fa-times-circle"></i>
                                     Rejected
@@ -2698,31 +2715,29 @@ document.addEventListener('DOMContentLoaded', function () {
                             <textarea 
                                 id="comments-${index}" 
                                 class="hr-comments-textarea"
-                                data-candidate="${finalCandidateName}"
                                 placeholder="Add your comments, interview notes, or feedback about this candidate..."
-                                rows="3"
-                                onchange="saveCandidateComment('${finalCandidateName}', this.value)"></textarea>
+                                rows="3"></textarea>
                         </div>
                         
                         <!-- Contact & Download Buttons -->
                         <div class="professional-action-buttons">
-                            <button onclick="window.location.href='mailto:${candidateEmail}'" 
-                                    class="professional-action-btn primary">
+                            <button type="button"
+                                    class="professional-action-btn primary js-contact-candidate">
                                 <i class="fas fa-envelope"></i> 
                                 Contact Candidate
                             </button>
-                            <button onclick="scheduleInterview('${finalCandidateName}', '${candidateEmail}')" 
-                                    class="professional-action-btn secondary">
+                            <button type="button"
+                                    class="professional-action-btn secondary js-schedule-interview">
                                 <i class="fas fa-calendar-plus"></i> 
                                 Schedule Interview
                             </button>
-                            <button onclick="downloadResume('${candidate.file_path}')" 
-                                    class="professional-action-btn tertiary">
+                            <button type="button"
+                                    class="professional-action-btn tertiary js-download-resume">
                                 <i class="fas fa-download"></i> 
                                 Download Resume
                             </button>
-                            <button onclick="exportCandidateReport('${finalCandidateName}', ${index}, '${candidate.file_path}')" 
-                                    class="professional-action-btn quaternary">
+                            <button type="button"
+                                    class="professional-action-btn quaternary js-export-candidate-report">
                                 <i class="fas fa-file-export"></i> 
                                 Export Report
                             </button>
@@ -2730,6 +2745,39 @@ document.addEventListener('DOMContentLoaded', function () {
                     </div>
                 </div>
             `;
+
+                card.querySelectorAll('.hr-checkbox').forEach((checkbox) => {
+                    checkbox.addEventListener('change', () => {
+                        setCandidateStatus(finalCandidateName, checkbox.dataset.status, checkbox);
+                    });
+                });
+
+                const commentsTextarea = card.querySelector('.hr-comments-textarea');
+                if (commentsTextarea) {
+                    commentsTextarea.addEventListener('change', () => {
+                        saveCandidateComment(finalCandidateName, commentsTextarea.value);
+                    });
+                }
+
+                card.querySelector('.js-contact-candidate')?.addEventListener('click', () => {
+                    if (canEmailCandidate) {
+                        window.location.href = `mailto:${safeEmailValue}`;
+                    } else {
+                        showNotification('No valid email address is available for this candidate.', 'error');
+                    }
+                });
+
+                card.querySelector('.js-schedule-interview')?.addEventListener('click', () => {
+                    scheduleInterview(finalCandidateName, canEmailCandidate ? safeEmailValue : '');
+                });
+
+                card.querySelector('.js-download-resume')?.addEventListener('click', () => {
+                    downloadResume(candidateFilePath);
+                });
+
+                card.querySelector('.js-export-candidate-report')?.addEventListener('click', () => {
+                    exportCandidateReport(finalCandidateName, index, candidateFilePath);
+                });
 
                 resultsContainer.appendChild(card);
 
@@ -2812,163 +2860,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    function generateMockResults(query) {
-        const resultsContainer = document.createElement('div');
-        resultsContainer.classList.add('space-y-3');
-
-        // Results header
-        const header = document.createElement('div');
-        header.classList.add('bot-message', 'px-3', 'py-2', 'rounded-lg', 'shadow-lg');
-        header.innerHTML = `
-            <div class="flex items-center mb-2">
-                <div class="w-5 h-5 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center mr-2">
-                    <i class="fas fa-check text-white text-xs"></i>
-                </div>
-                <div class="font-semibold text-gray-800 text-xs">Analysis Complete</div>
-            </div>
-            <p class="text-gray-700 mb-2 text-xs">Found <strong>10 highly qualified candidates</strong> matching your criteria. Here are the top matches ranked by compatibility:</p>
-        `;
-        resultsContainer.appendChild(header);
-
-        // Statistics Cards
-        const statsContainer = document.createElement('div');
-        statsContainer.classList.add('grid', 'grid-cols-1', 'md:grid-cols-2', 'lg:grid-cols-4', 'gap-3', 'mb-6');
-
-        const stats = [
-            { title: 'Total Resumes', value: '1,247', change: '+12%', changeDesc: 'from last month', icon: 'fas fa-file-alt', bgColor: 'bg-blue-100', iconColor: 'text-blue-600' },
-            { title: 'Active Searches', value: '89', change: '+8%', changeDesc: 'from last week', icon: 'fas fa-search', bgColor: 'bg-purple-100', iconColor: 'text-purple-600' },
-            { title: 'Matched Candidates', value: '456', change: '+15%', changeDesc: 'success rate', icon: 'fas fa-user-check', bgColor: 'bg-green-100', iconColor: 'text-green-600' },
-            { title: 'Avg. Match Score', value: '92%', change: '+3%', changeDesc: 'improvement', icon: 'fas fa-trophy', bgColor: 'bg-yellow-100', iconColor: 'text-yellow-600' }
-        ];
-
-        stats.forEach((stat, index) => {
-            const statCard = document.createElement('div');
-            statCard.classList.add('bg-white', 'rounded-lg', 'p-3', 'shadow-sm', 'border', 'border-gray-200', 'fade-in-up');
-            statCard.style.animationDelay = `${(index + 1) * 0.1}s`; // Start after AI message
-
-            statCard.innerHTML = `
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-xs font-medium text-gray-600">${stat.title}</p>
-                        <p class="text-lg font-bold text-gray-900">${stat.value}</p>
-                    </div>
-                    <div class="w-8 h-8 ${stat.bgColor} rounded-lg flex items-center justify-center">
-                        <i class="${stat.icon} ${stat.iconColor} text-sm"></i>
-                    </div>
-                </div>
-                <div class="mt-2 flex items-center text-xs">
-                    <span class="text-green-600 font-medium">${stat.change}</span>
-                    <span class="text-gray-600 ml-1">${stat.changeDesc}</span>
-                </div>
-            `;
-
-            statsContainer.appendChild(statCard);
-        });
-
-        resultsContainer.appendChild(statsContainer);
-
-        // Generate candidate cards
-        const candidatesContainer = document.createElement('div');
-        candidatesContainer.classList.add('grid', 'gap-3');
-
-        const candidates = [
-            { name: 'Sarah Chen', role: 'Senior Python Developer', experience: '6 years', skills: ['Python', 'Django', 'PostgreSQL', 'AWS'], score: 96 },
-            { name: 'Michael Rodriguez', role: 'Full Stack Engineer', experience: '5 years', skills: ['Python', 'React', 'Node.js', 'MongoDB'], score: 94 },
-            { name: 'Emily Johnson', role: 'Backend Developer', experience: '4 years', skills: ['Python', 'Flask', 'Redis', 'Docker'], score: 92 },
-            { name: 'David Kim', role: 'Software Engineer', experience: '7 years', skills: ['Python', 'FastAPI', 'MySQL', 'Kubernetes'], score: 91 },
-            { name: 'Lisa Wang', role: 'Python Developer', experience: '3 years', skills: ['Python', 'Pandas', 'Jupyter', 'Git'], score: 89 }
-        ];
-
-        candidates.forEach((candidate, index) => {
-            const card = document.createElement('div');
-            card.classList.add('resume-card', 'bg-white', 'rounded-xl', 'p-6', 'shadow-sm', 'border', 'border-gray-200', 'hover:shadow-md', 'transition-all', 'duration-200', 'fade-in-up');
-            card.style.animationDelay = `${(index + 5) * 0.1}s`; // Start after AI message + stats cards
-
-            card.innerHTML = `
-                <!-- Header Section -->
-                <div class="flex items-start justify-between mb-6">
-                    <div class="flex items-start space-x-4">
-                        <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-sm">
-                            <span class="text-white font-bold text-sm">${candidate.name.split(' ').map(n => n[0]).join('')}</span>
-                        </div>
-                        <div class="flex-1">
-                            <h3 class="text-lg font-bold text-gray-900 mb-1">${candidate.name}</h3>
-                            <p class="text-gray-600 font-medium mb-1">${candidate.role}</p>
-                            <div class="flex items-center text-sm text-gray-500">
-                                <i class="fas fa-briefcase mr-1.5 text-xs"></i>
-                                <span>${candidate.experience} of experience</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="text-right">
-                        <div class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg shadow-sm">
-                            <span class="font-bold text-sm">${candidate.score}%</span>
-                        </div>
-                        <p class="text-xs text-gray-500 mt-2 font-medium">Match Score</p>
-                    </div>
-                </div>
-                
-                <!-- Skills Section -->
-                <div class="mb-6">
-                    <h4 class="text-sm font-semibold text-gray-800 mb-3 flex items-center">
-                        <i class="fas fa-code mr-2 text-blue-600"></i>
-                        Key Skills & Technologies
-                    </h4>
-                    <div class="flex flex-wrap gap-2">
-                        ${candidate.skills.map(skill => `
-                            <span class="inline-flex items-center px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium border border-blue-100 hover:bg-blue-100 transition-colors">
-                                ${skill}
-                            </span>
-                        `).join('')}
-                    </div>
-                </div>
-                
-                <!-- Match Analysis Section -->
-                <div class="mb-6 p-4 bg-gray-50 rounded-lg">
-                    <h4 class="text-sm font-semibold text-gray-800 mb-2 flex items-center">
-                        <i class="fas fa-lightbulb mr-2 text-yellow-600"></i>
-                        AI Match Analysis
-                    </h4>
-                    <p class="text-gray-700 leading-relaxed text-sm">
-                        <strong>${candidate.name}</strong> demonstrates exceptional alignment with your requirements through ${candidate.experience} of specialized experience. 
-                        Their proven expertise in <strong>${candidate.skills.slice(0, 2).join(' and ')}</strong> combined with hands-on experience in 
-                        ${candidate.skills.slice(2, 4).join(' and ')} makes them an ideal candidate for this position.
-                    </p>
-                </div>
-                
-                <!-- Action Buttons -->
-                <div class="flex items-center justify-between pt-4 border-t border-gray-100">
-                    <div class="flex space-x-3">
-                        <button class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm">
-                            <i class="fas fa-file-alt mr-2 text-sm"></i>
-                            View Full Resume
-                        </button>
-                        <button class="inline-flex items-center px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium">
-                            <i class="fas fa-envelope mr-2 text-sm"></i>
-                            Send Message
-                        </button>
-                        <button class="inline-flex items-center px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm">
-                            <i class="fas fa-phone mr-2 text-sm"></i>
-                            Schedule Call
-                        </button>
-                    </div>
-                    <div class="flex items-center space-x-2">
-                        <button class="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50">
-                            <i class="fas fa-heart text-sm"></i>
-                        </button>
-                        <button class="p-2 text-gray-400 hover:text-gray-600 transition-colors rounded-lg hover:bg-gray-100">
-                            <i class="fas fa-share-alt text-sm"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-
-            candidatesContainer.appendChild(card);
-        });
-
-        resultsContainer.appendChild(candidatesContainer);
-        return resultsContainer;
-    }
 
     function initializeVectorSearchPage() {
         const vectorQuery = document.getElementById('vectorQuery');
@@ -2979,6 +2870,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const vectorSearchLoading = document.getElementById('vectorSearchLoading');
         const vectorSearchResults = document.getElementById('vectorSearchResults');
         const noResults = document.getElementById('noResults');
+
+        // Vector search page DOM not present (e.g. on /dashboard) - bail out cleanly.
+        if (!vectorSearchBtn || !vectorQuery) return;
 
         // Handle search button click
         vectorSearchBtn.addEventListener('click', () => {
@@ -2999,6 +2893,15 @@ document.addEventListener('DOMContentLoaded', function () {
         sampleQueriesBtn.addEventListener('click', () => {
             sampleQueriesSection.classList.toggle('hidden');
         });
+
+        // "Try Sample Queries" button on the No Results state opens the same panel.
+        const noResultsSamplesBtn = document.getElementById('noResultsSamplesBtn');
+        if (noResultsSamplesBtn) {
+            noResultsSamplesBtn.addEventListener('click', () => {
+                sampleQueriesSection.classList.remove('hidden');
+                sampleQueriesSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        }
 
         // Handle sample query buttons
         const sampleQueryButtons = document.querySelectorAll('.sample-query-btn');
@@ -3114,6 +3017,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const formData = new FormData();
             formData.append('query', query);
             formData.append('result_count', resultCount);
+            window.__lastSearchQuery = query;
 
             if (searchMethod === 'enhanced') {
                 formData.append('use_llm_pipeline', 'true');
@@ -3378,8 +3282,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function initializeHistoryPage() {
+        // Reset paging state when entering the page so we always start on page 1.
+        window.__historyPageState = { page: 1, pageSize: 25, total: 0 };
         // Load search history from database
-        loadSearchHistoryFromDB();
+        loadSearchHistoryFromDB(1, 25);
 
         // Handle start searching button
         const startSearchingBtn = document.getElementById('start-searching');
@@ -3391,9 +3297,13 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    async function loadSearchHistoryFromDB() {
+    async function loadSearchHistoryFromDB(page, pageSize) {
+        const state = window.__historyPageState = window.__historyPageState || { page: 1, pageSize: 25, total: 0 };
+        if (typeof page === 'number' && page >= 1) state.page = page;
+        if (typeof pageSize === 'number' && pageSize >= 1) state.pageSize = pageSize;
         try {
-            const response = await fetch('/api/search-history', {
+            const qs = `?page=${encodeURIComponent(state.page)}&page_size=${encodeURIComponent(state.pageSize)}`;
+            const response = await fetch(`/api/search-history${qs}`, {
                 method: 'GET',
                 credentials: 'same-origin', // Ensure cookies are sent
                 headers: {
@@ -3408,12 +3318,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const data = await response.json();
 
-            if (data.success && data.history) {
+            if (data.success && Array.isArray(data.history)) {
+                state.total = Number.isFinite(data.total) ? data.total : data.history.length;
+                state.page = data.page || state.page;
+                state.pageSize = data.page_size || state.pageSize;
                 displaySearchHistory(data.history);
+                renderHistoryPagination();
             } else {
                 console.error('Search history response indicates failure:', data);
                 // Show empty state
+                state.total = 0;
                 displaySearchHistory([]);
+                renderHistoryPagination();
             }
         } catch (error) {
             console.error('Error loading search history:', error);
@@ -3559,8 +3475,70 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    function attachHistoryEventListeners() {
-        // Attach click listeners to view buttons
+    function renderHistoryPagination() {
+        const container = document.getElementById('history-pagination');
+        if (!container) return;
+        const state = window.__historyPageState || { page: 1, pageSize: 25, total: 0 };
+        const total = Math.max(0, Number(state.total) || 0);
+        const pageSize = Math.max(1, Number(state.pageSize) || 25);
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+        const page = Math.min(Math.max(1, Number(state.page) || 1), totalPages);
+
+        if (total === 0) {
+            container.classList.add('hidden');
+            container.innerHTML = '';
+            return;
+        }
+
+        const from = (page - 1) * pageSize + 1;
+        const to = Math.min(total, page * pageSize);
+        const prevDisabled = page <= 1;
+        const nextDisabled = page >= totalPages;
+        const btnBase = 'inline-flex items-center px-3 py-1.5 rounded-md border text-xs font-medium transition-colors';
+        const btnEnabled = 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100';
+        const btnDisabled = 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed';
+
+        container.classList.remove('hidden');
+        container.innerHTML = `
+            <div>
+                Showing <span class="font-semibold text-gray-900">${from}</span>-<span class="font-semibold text-gray-900">${to}</span>
+                of <span class="font-semibold text-gray-900">${total}</span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <label class="text-xs text-gray-500 mr-2">
+                    Page size:
+                    <select id="history-page-size" class="ml-1 border border-gray-300 rounded px-1 py-0.5 text-xs">
+                        ${[10, 25, 50, 100].map(s => `<option value="${s}" ${s === pageSize ? 'selected' : ''}>${s}</option>`).join('')}
+                    </select>
+                </label>
+                <button id="history-prev-page" class="${btnBase} ${prevDisabled ? btnDisabled : btnEnabled}" ${prevDisabled ? 'disabled' : ''}>
+                    <i class="fas fa-chevron-left mr-1 text-[10px]"></i> Prev
+                </button>
+                <span class="text-xs text-gray-600">Page <span class="font-semibold text-gray-900">${page}</span> / ${totalPages}</span>
+                <button id="history-next-page" class="${btnBase} ${nextDisabled ? btnDisabled : btnEnabled}" ${nextDisabled ? 'disabled' : ''}>
+                    Next <i class="fas fa-chevron-right ml-1 text-[10px]"></i>
+                </button>
+            </div>
+        `;
+
+        const prevBtn = document.getElementById('history-prev-page');
+        const nextBtn = document.getElementById('history-next-page');
+        const sizeSel = document.getElementById('history-page-size');
+        if (prevBtn && !prevDisabled) {
+            prevBtn.addEventListener('click', () => loadSearchHistoryFromDB(page - 1, pageSize));
+        }
+        if (nextBtn && !nextDisabled) {
+            nextBtn.addEventListener('click', () => loadSearchHistoryFromDB(page + 1, pageSize));
+        }
+        if (sizeSel) {
+            sizeSel.addEventListener('change', (e) => {
+                const newSize = parseInt(e.target.value, 10) || 25;
+                loadSearchHistoryFromDB(1, newSize);
+            });
+        }
+    }
+
+    function attachHistoryEventListeners() {        // Attach click listeners to view buttons
         document.querySelectorAll('.view-search').forEach(button => {
             button.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -3587,8 +3565,9 @@ document.addEventListener('DOMContentLoaded', function () {
                         });
 
                         if (response.ok) {
-                            // Reload search history
-                            loadSearchHistoryFromDB();
+                            // Reload current page (clamp later if it becomes empty).
+                            const st = window.__historyPageState || { page: 1, pageSize: 25 };
+                            loadSearchHistoryFromDB(st.page, st.pageSize);
                             showNotification('Search deleted successfully', 'success');
                         } else {
                             showNotification('Failed to delete search', 'error');
@@ -3662,10 +3641,37 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (clearButton && !clearButton.hasAttribute('data-initialized')) {
             clearButton.setAttribute('data-initialized', 'true');
-            clearButton.addEventListener('click', () => {
-                if (confirm('Are you sure you want to clear all search history? This action cannot be undone.')) {
-                    // TODO: Implement clear all functionality
-                    console.log('Clear all history');
+            clearButton.addEventListener('click', async () => {
+                if (!confirm('Are you sure you want to clear all search history? This action cannot be undone.')) return;
+                clearButton.disabled = true;
+                const originalLabel = clearButton.innerHTML;
+                clearButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Clearing...';
+                try {
+                    const resp = await fetch('/api/search-history', { method: 'DELETE', credentials: 'same-origin' });
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    const data = await resp.json();
+                    window.originalHistoryData = [];
+                    const tableBody = document.getElementById('history-table-body');
+                    if (tableBody) {
+                        tableBody.innerHTML = `
+                            <div class="col-span-12 text-center py-12">
+                                <i class="fas fa-inbox text-gray-300 text-3xl mb-3"></i>
+                                <p class="text-gray-500">No search history yet</p>
+                            </div>`;
+                    }
+                    if (typeof showNotification === 'function') {
+                        showNotification(`Cleared ${data.deleted || 0} search${(data.deleted||0)===1?'':'es'}`, 'success');
+                    }
+                } catch (err) {
+                    console.error('Failed to clear history:', err);
+                    if (typeof showNotification === 'function') {
+                        showNotification('Failed to clear history: ' + err.message, 'error');
+                    } else {
+                        alert('Failed to clear history: ' + err.message);
+                    }
+                } finally {
+                    clearButton.disabled = false;
+                    clearButton.innerHTML = originalLabel;
                 }
             });
         }
@@ -3922,209 +3928,35 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // New dashboard initialization function
     function initializeDashboard() {
-        // Get dashboard elements immediately
-        const adminDash = document.getElementById('admin-dashboard');
+        // Single real-data dashboard for all roles (admin-only fake template removed)
         const userDash = document.getElementById('user-dashboard');
-
-        // Show user dashboard with loading state by default
-        if (userDash) {
-            userDash.style.display = 'block';
-            if (adminDash) adminDash.style.display = 'none';
-
-            // Show loading state immediately
-            showDashboardLoadingState();
+        if (!userDash) {
+            console.error('Dashboard element not found');
+            return;
         }
+        userDash.style.display = 'block';
+        showDashboardLoadingState();
 
-        // Wait a bit for DOM to be ready and user data to load
         setTimeout(() => {
-            console.log('Dashboard elements found:', { adminDash: !!adminDash, userDash: !!userDash });
-            console.log('Current user:', window.currentUser);
-
-            if (!adminDash || !userDash) {
-                console.error('Dashboard elements not found');
-                return;
-            }
-
-            // Check user type and show appropriate dashboard
             if (window.currentUser && window.currentUser.user_type) {
-                console.log('User type:', window.currentUser.user_type);
-
-                if (window.currentUser.user_type === 'super_admin') {
-                    console.log('Showing admin dashboard for super_admin');
-                    adminDash.style.display = 'block';
-                    userDash.style.display = 'none';
-                    initializeDashboardCharts();
-                } else {
-                    console.log('Showing user dashboard for tenant_admin and tenant_user');
-                    adminDash.style.display = 'none';
-                    userDash.style.display = 'block';
-                    initializeUserDashboard();
-                }
+                console.log('Loading dashboard for user type:', window.currentUser.user_type);
+                initializeUserDashboard();
             } else {
-                console.log('No user data available, retrying...');
-                // Retry after user data loads
                 setTimeout(() => {
                     if (window.currentUser) {
-                        initializeDashboard();
+                        initializeUserDashboard();
                     } else {
-                        console.log('Still no user data, defaulting to admin dashboard');
-                        adminDash.style.display = 'block';
-                        userDash.style.display = 'none';
-                        initializeDashboardCharts();
+                        console.log('No user data; loading dashboard with defaults');
+                        initializeUserDashboard();
                     }
                 }, 1000);
             }
         }, 100);
     }
 
-    function initializeDashboardCharts() {
-        // Show loading state for charts first
-        showChartsLoadingState();
-
-        // Wait for DOM to be ready and then load charts with a delay
-        setTimeout(() => {
-            // Search Trends Line Chart
-            const searchTrendsCtx = document.getElementById('searchTrendsChart');
-            if (searchTrendsCtx) {
-                new Chart(searchTrendsCtx, {
-                    type: 'line',
-                    data: {
-                        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-                        datasets: [{
-                            label: 'Searches',
-                            data: [65, 78, 90, 81, 96, 85, 103, 98, 87, 105, 92, 110],
-                            borderColor: '#3B82F6',
-                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                            tension: 0.4,
-                            fill: true
-                        }, {
-                            label: 'Matches',
-                            data: [45, 52, 68, 59, 71, 62, 78, 73, 65, 82, 69, 86],
-                            borderColor: '#10B981',
-                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                            tension: 0.4,
-                            fill: true
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                display: false
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                grid: {
-                                    color: '#F3F4F6'
-                                }
-                            },
-                            x: {
-                                grid: {
-                                    display: false
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-
-            // Skills Distribution Pie Chart
-            const skillsCtx = document.getElementById('skillsChart');
-            if (skillsCtx) {
-                new Chart(skillsCtx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: ['JavaScript', 'Python', 'React', 'Node.js', 'Java', 'Other'],
-                        datasets: [{
-                            data: [25, 20, 18, 15, 12, 10],
-                            backgroundColor: [
-                                '#3B82F6',
-                                '#8B5CF6',
-                                '#10B981',
-                                '#F59E0B',
-                                '#EF4444',
-                                '#6B7280'
-                            ],
-                            borderWidth: 0
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                position: 'bottom',
-                                labels: {
-                                    padding: 20,
-                                    usePointStyle: true
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-
-            // Department Performance Bar Chart
-            const departmentCtx = document.getElementById('departmentChart');
-            if (departmentCtx) {
-                new Chart(departmentCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: ['Engineering', 'Design', 'Marketing', 'Sales', 'HR', 'Operations'],
-                        datasets: [{
-                            label: 'Success Rate (%)',
-                            data: [92, 87, 94, 89, 91, 85],
-                            backgroundColor: [
-                                '#3B82F6',
-                                '#8B5CF6',
-                                '#10B981',
-                                '#F59E0B',
-                                '#EF4444',
-                                '#6B7280'
-                            ],
-                            borderRadius: 8,
-                            borderSkipped: false
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                display: false
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                max: 100,
-                                grid: {
-                                    color: '#F3F4F6'
-                                },
-                                ticks: {
-                                    callback: function (value) {
-                                        return value + '%';
-                                    }
-                                }
-                            },
-                            x: {
-                                grid: {
-                                    display: false
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-
-            // Remove loading states from chart containers
-            removeChartsLoadingState();
-
-        }, 1500); // 1.5 second delay to show loading state
-    }
+    // initializeDashboardCharts: stub. Admin-only fake-data charts removed;
+    // dashboard now uses real /api/dashboard-stats data via initializeUserDashboard.
+    function initializeDashboardCharts() { /* no-op */ }
 
     // Show loading state for charts
     function showChartsLoadingState() {
@@ -4171,12 +4003,21 @@ document.addEventListener('DOMContentLoaded', function () {
         loadConfigAndPopulateFields();
 
         // File input handling
-        browseFiles.addEventListener('click', () => {
+        browseFiles.addEventListener('click', (e) => {
+            e.stopPropagation();
             fileInput.click();
         });
 
         fileInput.addEventListener('change', (e) => {
             handleFiles(e.target.files);
+            // Reset value so picking the same file twice still fires `change`.
+            e.target.value = '';
+        });
+
+        // Clicking anywhere on the drop zone also opens the file picker --
+        // the `cursor-pointer` class advertises this behaviour.
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
         });
 
         // Drag and drop handling
@@ -4248,7 +4089,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         function handleFiles(files) {
-            const maxFileSize = 100 * 1024 * 1024; // 100MB in bytes
+            // Per-file limit aligned with backend MAX_FILE_SIZE (main.py).
+            const maxFileSize = 10 * 1024 * 1024; // 10MB in bytes
 
             for (let file of files) {
                 if (!file.name.match(/\.(pdf|doc|docx)$/i)) {
@@ -4310,7 +4152,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Create current batch with current batch size
                 const currentBatch = createBatches(remainingFiles, currentBatchSize, MAX_BATCH_SIZE_MB)[0];
                 if (!currentBatch || currentBatch.length === 0) {
-                    console.error('❌ Unable to create batch - breaking upload loop');
+                    console.error('? Unable to create batch - breaking upload loop');
                     break;
                 }
 
@@ -4334,7 +4176,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 let batchSuccess = false;
 
                 try {
-                    const batchResult = await uploadBatch(currentBatch, uploadFolder, batchNumber, '∞');
+                    const batchResult = await uploadBatch(currentBatch, uploadFolder, batchNumber, '8');
                     batchResults.push(batchResult);
                     batchSuccess = true;
 
@@ -4346,7 +4188,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 currentBatch[index].progress = 100;
                                 currentBatch[index].error = result.error;
                                 currentBatch[index].gcs_path = result.gcs_path;
-                                currentBatch[index].batchInfo = `Batch ${batchNumber} - ${result.success ? 'Success' : 'Failed'}`;
+                                currentBatch[index].batchInfo = `Batch ${batchNumber} · ${result.success ? 'Success' : 'Failed'}`;
                             }
                         });
 
@@ -4365,25 +4207,25 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     // Track successful batch size
                     batchSizeHistory.push(currentBatchSize);
-                    console.log(`✅ Batch ${batchNumber} completed successfully with size ${currentBatchSize}`);
+                    console.log(`? Batch ${batchNumber} completed successfully with size ${currentBatchSize}`);
 
                     // Optionally increase batch size if we've had consecutive successes
                     if (batchSizeHistory.length >= 2 &&
                         batchSizeHistory.slice(-2).every(size => size === currentBatchSize) &&
                         currentBatchSize < 50) {
                         currentBatchSize = Math.min(currentBatchSize * 2, 50);
-                        console.log(`📈 Increasing batch size to ${currentBatchSize} after consecutive successes`);
+                        console.log(`⬆️ Increasing batch size to ${currentBatchSize} after consecutive successes`);
                     }
 
                 } catch (error) {
-                    console.error(`❌ Batch ${batchNumber} failed (size: ${currentBatchSize}):`, error);
+                    console.error(`? Batch ${batchNumber} failed (size: ${currentBatchSize}):`, error);
                     batchSuccess = false;
 
                     // Mark all files in this batch as failed temporarily
                     currentBatch.forEach(fileItem => {
                         fileItem.status = 'retrying';
                         fileItem.error = error.message || 'Batch upload failed - retrying with smaller batch';
-                        fileItem.batchInfo = `Batch ${batchNumber} - Retrying`;
+                        fileItem.batchInfo = `Batch ${batchNumber} · Retrying`;
                     });
                     updateUploadQueue();
 
@@ -4391,7 +4233,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (currentBatchSize > MIN_BATCH_SIZE) {
                         // Reduce batch size (halve it, but ensure it's at least 1)
                         const newBatchSize = Math.max(Math.floor(currentBatchSize / 2), MIN_BATCH_SIZE);
-                        console.log(`📉 Reducing batch size from ${currentBatchSize} to ${newBatchSize}`);
+                        console.log(`⬇️ Reducing batch size from ${currentBatchSize} to ${newBatchSize}`);
                         currentBatchSize = newBatchSize;
 
                         // Reset batch info for retry
@@ -4410,11 +4252,11 @@ document.addEventListener('DOMContentLoaded', function () {
                         continue; // Retry with smaller batch size
                     } else {
                         // Even minimum batch size failed - mark files as failed
-                        console.error(`❌ Batch failed even with minimum size (${MIN_BATCH_SIZE}) - marking files as failed`);
+                        console.error(`? Batch failed even with minimum size (${MIN_BATCH_SIZE}) - marking files as failed`);
                         currentBatch.forEach(fileItem => {
                             fileItem.status = 'failed';
                             fileItem.error = error.message || 'Upload failed even with minimum batch size';
-                            fileItem.batchInfo = `Batch ${batchNumber} - Failed`;
+                            fileItem.batchInfo = `Batch ${batchNumber} · Failed`;
                         });
                         totalFailed += currentBatch.length;
 
@@ -4461,7 +4303,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (usedAdaptiveStrategy) {
                 const uniqueBatchSizes = [...new Set(batchSizeHistory)].sort((a, b) => b - a);
-                strategyInfo = ` (Adaptive strategy used: ${uniqueBatchSizes.join('→')} files per batch)`;
+                strategyInfo = ` (Adaptive strategy used: ${uniqueBatchSizes.join('?')} files per batch)`;
             } else {
                 strategyInfo = ` (Maintained optimal batch size of 50)`;
             }
@@ -4617,15 +4459,15 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <p class="text-sm font-medium text-gray-900">${fileItem.file.name}</p>
                                     <div class="flex items-center space-x-2 text-xs text-gray-500">
                                         <span>${formatFileSize(fileItem.file.size)}</span>
-                                        <span>•</span>
+                                        <span class="text-gray-300">·</span>
                                         <span class="text-blue-600">Adaptive Batching</span>
-                                        ${fileItem.batchInfo ? `<span>•</span><span class="${statusColor}">${fileItem.batchInfo}</span>` : ''}
+                                        ${fileItem.batchInfo ? `<span class="text-gray-300">·</span><span class="${statusColor}">${fileItem.batchInfo}</span>` : ''}
                                     </div>
                                 </div>
                             </div>
                             <div class="flex items-center space-x-3">
                                 <div class="flex items-center space-x-2">
-                                    <span class="text-xs ${statusColor}">
+                                    <span class="text-xs ${statusColor} capitalize">
                                         ${statusIcon} ${fileItem.status}
                                     </span>
                                     ${fileItem.status === 'uploading' ? `
@@ -4760,7 +4602,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Make removeFile function global
         window.removeFile = function (fileId) {
-            selectedFiles = selectedFiles.filter(file => file.id !== fileId);
+            // ``fileId`` arrives as a string from inline onclick attributes while
+            // ``file.id`` is stored as a number (Date.now() + Math.random()).
+            // Compare as strings so identifiers actually match.
+            const key = String(fileId);
+            selectedFiles = selectedFiles.filter(file => String(file.id) !== key);
             updateUploadQueue();
         };
 
@@ -4851,13 +4697,39 @@ document.addEventListener('DOMContentLoaded', function () {
                     body: formData
                 });
 
-                const result = await response.json();
+                let result;
+                try {
+                    result = await response.json();
+                } catch (_) {
+                    result = {};
+                }
 
-                if (result.success) {
-                    showLimitNotification(
-                        `Successfully processed ${result.total_files || 0} files from ${result.total_emails || 0} emails`,
-                        'success'
-                    );
+                if (response.ok) {
+                    const batchStats = result.batch_stats || {};
+                    const emailStats = result.email_stats || {};
+                    const totalAttachments =
+                        Number(emailStats.total_attachments) ||
+                        Number(batchStats.total) || 0;
+                    const successfulCount =
+                        Number(emailStats.successful_uploads) ||
+                        Number(batchStats.successful) || 0;
+                    const failedCount =
+                        Number(emailStats.failed_uploads) ||
+                        Number(batchStats.failed) || 0;
+                    const totalEmails = Number(emailStats.total_emails) || 0;
+
+                    if (totalAttachments === 0) {
+                        showLimitNotification(
+                            result.message || 'No resume attachments were found in the scanned emails.',
+                            'info'
+                        );
+                    } else {
+                        showLimitNotification(
+                            `Processed ${successfulCount}/${totalAttachments} attachment(s) from ${totalEmails} email(s)` +
+                                (failedCount > 0 ? ` (${failedCount} failed)` : ''),
+                            failedCount > 0 ? 'warning' : 'success'
+                        );
+                    }
 
                     // Clear the form
                     document.getElementById('email-provider').value = '';
@@ -4869,14 +4741,16 @@ document.addEventListener('DOMContentLoaded', function () {
                     const totalUploaded = document.getElementById('total-uploaded');
                     const successfulUploads = document.getElementById('successful-uploads');
                     if (totalUploaded) {
-                        totalUploaded.textContent = parseInt(totalUploaded.textContent) + (result.total_files || 0);
+                        totalUploaded.textContent = parseInt(totalUploaded.textContent || '0') + totalAttachments;
                     }
                     if (successfulUploads) {
-                        successfulUploads.textContent = parseInt(successfulUploads.textContent) + (result.successful_uploads || 0);
+                        successfulUploads.textContent = parseInt(successfulUploads.textContent || '0') + successfulCount;
                     }
 
                 } else {
-                    showLimitNotification(result.message || 'Failed to scrape emails', 'error');
+                    const msg = (result && (result.detail || result.message)) ||
+                        `Failed to scrape emails (HTTP ${response.status})`;
+                    showLimitNotification(msg, 'error');
                 }
 
             } catch (error) {
@@ -4961,6 +4835,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Global function to show analysis modal
     window.showAnalysisModal = function (candidateName, analysisData) {
+        const esc = window.escapeHtml || ((value) => {
+            const div = document.createElement('div');
+            div.textContent = value == null ? '' : String(value);
+            return div.innerHTML;
+        });
+        const sanitize = window.sanitizeGeneratedHtml || ((html) => html || '');
         // Create modal HTML
         const modalHTML = `
             <div id="analysisModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -4970,7 +4850,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         <div class="flex items-center justify-between">
                             <div>
                                 <h2 class="text-xl font-bold text-gray-900">Complete AI Analysis</h2>
-                                <p class="text-gray-600 text-sm">${candidateName}</p>
+                                <p class="text-gray-600 text-sm">${esc(candidateName)}</p>
                             </div>
                             <button onclick="closeAnalysisModal()" class="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors">
                                 <i class="fas fa-times text-gray-600"></i>
@@ -4980,7 +4860,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     
                     <!-- Modal Content -->
                     <div class="p-6">
-                        ${generateAnalysisContent(analysisData)}
+                        ${sanitize(generateAnalysisContent(analysisData))}
                     </div>
                 </div>
             </div>
@@ -5268,7 +5148,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 <!-- Keyword Coverage -->
                 <div class="bg-white rounded-xl p-6 border border-gray-200">
-                    <h4 class="text-lg font-semibold text-gray-900 mb-4">🔍 Keyword Coverage</h4>
+                    <h4 class="text-lg font-semibold text-gray-900 mb-4">🔑 Keyword Coverage</h4>
                     <div class="mb-4">
                         <div class="flex items-center justify-between mb-2">
                             <span class="text-gray-700">Keywords Matched</span>
@@ -5281,7 +5161,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <h5 class="font-medium text-green-700 mb-2">✅ Matched Keywords</h5>
+                            <h5 class="font-medium text-green-700 mb-2">? Matched Keywords</h5>
                             <div class="flex flex-wrap gap-1">
                                 ${(keywords.matched_keywords || []).map(keyword =>
             `<span class="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">${keyword}</span>`
@@ -5289,7 +5169,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             </div>
                         </div>
                         <div>
-                            <h5 class="font-medium text-red-700 mb-2">❌ Missing Keywords</h5>
+                            <h5 class="font-medium text-red-700 mb-2">? Missing Keywords</h5>
                             <div class="flex flex-wrap gap-1">
                                 ${(keywords.missing_keywords || []).map(keyword =>
             `<span class="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs">${keyword}</span>`
@@ -5316,7 +5196,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         ${(scorecard.analysis_summary && scorecard.analysis_summary.resume_highlights && scorecard.analysis_summary.resume_highlights.length > 0) ||
                 (scorecard.resume_snippets && scorecard.resume_snippets.length > 0) ? `
                             <div class="mb-6">
-                                <h5 class="text-md font-medium text-gray-800 mb-3">📝 Resume Highlights</h5>
+                                <h5 class="text-md font-medium text-gray-800 mb-3">⭐ Resume Highlights</h5>
                                 <div class="space-y-3">
                                     ${((scorecard.analysis_summary && scorecard.analysis_summary.resume_highlights) || scorecard.resume_snippets || []).map(highlight => `
                                         <div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg relative">
@@ -5332,14 +5212,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
                         <!-- HR Recommendations -->
                         <div>
-                            <h5 class="text-md font-medium text-gray-800 mb-3">🎯 HR Recommendations</h5>
+                            <h5 class="text-md font-medium text-gray-800 mb-3">💼 HR Recommendations</h5>
                             <div class="space-y-3">
                                 ${(() => {
                 const rec = scorecard.analysis_summary ? scorecard.analysis_summary.hr_recommendations : recommendations;
                 return `
                                         <div class="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                                             <span class="font-medium text-green-800">
-                                                ${rec && rec.action === 'Shortlist' ? '✅' : '⭕'} ${rec ? rec.action : 'No action specified'}
+                                                ${rec && rec.action === 'Shortlist' ? '?' : '?'} ${rec ? rec.action : 'No action specified'}
                                             </span>
                                             <span class="text-sm text-green-600">${rec ? rec.priority : 'Normal'} Priority</span>
                                         </div>
@@ -5379,7 +5259,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <!-- Benchmark & Recommendations -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="bg-white rounded-xl p-6 border border-gray-200">
-                        <h4 class="text-lg font-semibold text-gray-900 mb-4">📊 Benchmark Position</h4>
+                        <h4 class="text-lg font-semibold text-gray-900 mb-4">🎯 Benchmark Position</h4>
                         <div class="text-center">
                             <div class="text-2xl font-bold text-blue-600 mb-2">
                                 ${scorecard.benchmark_position || 'Not calculated'}
@@ -5389,7 +5269,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     </div>
 
                     <div class="bg-white rounded-xl p-6 border border-gray-200">
-                        <h4 class="text-lg font-semibold text-gray-900 mb-4">⚡ Quick Actions</h4>
+                        <h4 class="text-lg font-semibold text-gray-900 mb-4">? Quick Actions</h4>
                         <div class="space-y-3">
                             <div class="text-center">
                                 <div class="text-2xl font-bold text-green-600 mb-2">
@@ -5412,7 +5292,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <!-- Additional Details -->
                 ${Object.keys(detailed).length > 0 ? `
                     <div class="bg-white rounded-xl p-6 border border-gray-200">
-                        <h4 class="text-lg font-semibold text-gray-900 mb-4">📋 Additional Details</h4>
+                        <h4 class="text-lg font-semibold text-gray-900 mb-4">📝 Additional Details</h4>
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
                             ${Object.entries(detailed).map(([key, value]) => `
                                 <div>
@@ -5428,6 +5308,39 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>
         `;
     }
+
+    // ------------------------------------------------------------------
+    // Re-export closure-scoped helpers to `window` so dynamically-rendered
+    // onclick="-" attributes can reach them. Functions defined directly
+    // inside this DOMContentLoaded callback are NOT global by default.
+    // Add new entries here whenever you add a function that an inline
+    // onclick attribute references.
+    // ------------------------------------------------------------------
+    try {
+        const _exports = {
+            showLoadingMessage: typeof showLoadingMessage !== 'undefined' ? showLoadingMessage : null,
+            hideLoadingMessage: typeof hideLoadingMessage !== 'undefined' ? hideLoadingMessage : null,
+            updateSearchProgress: typeof updateSearchProgress !== 'undefined' ? updateSearchProgress : null,
+            generateEnhancedResults: typeof generateEnhancedResults !== 'undefined' ? generateEnhancedResults : null,
+            pollHRScorecardTask: typeof pollHRScorecardTask !== 'undefined' ? pollHRScorecardTask : null,
+            exportCandidateReport: typeof exportCandidateReport !== 'undefined' ? exportCandidateReport : null,
+            exportAllCandidatesReport: typeof exportAllCandidatesReport !== 'undefined' ? exportAllCandidatesReport : null,
+            setCandidateStatus: typeof setCandidateStatus !== 'undefined' ? setCandidateStatus : null,
+            removeFile: typeof removeFile !== 'undefined' ? removeFile : null,
+            removeSkill: typeof removeSkill !== 'undefined' ? removeSkill : null,
+            closeAnalysisModal: typeof closeAnalysisModal !== 'undefined' ? closeAnalysisModal : null,
+            loadSavedSearch: typeof loadSavedSearch !== 'undefined' ? loadSavedSearch : null,
+            loadPage: typeof loadPage !== 'undefined' ? loadPage : null,
+            showNotification: typeof showNotification !== 'undefined' ? showNotification : null,
+            loadCandidateStatusCounts: typeof loadCandidateStatusCounts !== 'undefined' ? loadCandidateStatusCounts : null,
+            loadUpcomingEvents: typeof loadUpcomingEvents !== 'undefined' ? loadUpcomingEvents : null,
+        };
+        Object.keys(_exports).forEach(function (k) {
+            if (typeof _exports[k] === 'function' && typeof window[k] !== 'function') {
+                window[k] = _exports[k];
+            }
+        });
+    } catch (e) { console.warn('Handler re-export failed:', e); }
 
     // Set active navigation link
     setActiveLink(dashboardLink);
@@ -5449,336 +5362,837 @@ function downloadResume(filePath) {
     }
 }
 
-// Helper function to export candidate report as PDF
-function exportCandidateReport(candidateName, candidateIndex, filePath) {
-    console.log('Export button clicked for:', candidateName, 'Index:', candidateIndex, 'File:', filePath);
+// =============================================================================
+// PDF EXPORT - Improved candidate / bulk reports (jsPDF + autotable)
+// =============================================================================
 
+// Lazy-load jsPDF + jspdf-autotable. Returns a Promise resolved when both are
+// available on `window.jspdf` (UMD). Cached after first load.
+let _pdfLibsPromise = null;
+function ensurePdfLibsLoaded() {
+    if (window.jspdf && window.jspdf.jsPDF && window.jspdf.autoTable) {
+        return Promise.resolve();
+    }
+    if (_pdfLibsPromise) return _pdfLibsPromise;
+
+    function loadScript(src) {
+        return new Promise(function (resolve, reject) {
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload = resolve;
+            s.onerror = function () { reject(new Error('Failed to load ' + src)); };
+            document.head.appendChild(s);
+        });
+    }
+
+    _pdfLibsPromise = (window.jspdf && window.jspdf.jsPDF
+        ? Promise.resolve()
+        : loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'))
+        .then(function () {
+            return loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+        })
+        .then(function () {
+            if (window.PDFLib && window.PDFLib.PDFDocument) return;
+            return loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js')
+                .catch(function (e) {
+                    // pdf-lib is only required for merging attached resumes; report builds without it.
+                    console.warn('pdf-lib failed to load; resume attachments will be skipped.', e);
+                });
+        });
+    return _pdfLibsPromise;
+}
+
+// Color band for a numeric score (0-100). Returns RGB array.
+// Matches HR scorecard UI thresholds (getScoreColor in dashboard): 80 / 60.
+function _scoreColor(score) {
+    const s = Number(score) || 0;
+    if (s >= 80) return [22, 163, 74];   // green-600  (Strong Fit)
+    if (s >= 60) return [202, 138, 4];   // yellow-600 (Medium Fit)
+    return [220, 38, 38];                // red-600    (Weak Fit)
+}
+
+function _safe(val, fallback) {
+    if (val === null || val === undefined || val === '') return fallback || 'Not specified';
+    return String(val);
+}
+
+function _humanize(key) {
+    return String(key || '').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+}
+
+// Brand palette (matches the site: primary blue #3B82F6 / blue-700 / emerald accent).
+// Kept as a single source of truth so the report stays on-brand.
+const _BRAND = {
+    blue50:  [239, 246, 255],
+    blue100: [219, 234, 254],
+    blue200: [191, 219, 254],
+    blue400: [96, 165, 250],
+    blue500: [59, 130, 246],   // primary
+    blue600: [37, 99, 235],
+    blue700: [29, 78, 216],
+    blue800: [30, 64, 175],    // primary-dark
+    blue900: [30, 58, 138],
+    slate50: [248, 250, 252],
+    slate100: [241, 245, 249],
+    slate200: [226, 232, 240],
+    slate500: [100, 116, 139],
+    slate600: [71, 85, 105],
+    slate700: [51, 65, 85],
+    slate800: [30, 41, 59],
+    slate900: [15, 23, 42],
+    emerald50:  [236, 253, 245],
+    emerald600: [5, 150, 105],
+    emerald700: [4, 120, 87],
+    amber50:    [255, 251, 235],
+    amber600:   [217, 119, 6],
+    rose50:     [255, 241, 242],
+    rose600:    [225, 29, 72],
+    rose700:    [190, 18, 60],
+};
+
+function _setFill(doc, rgb)  { doc.setFillColor(rgb[0], rgb[1], rgb[2]); }
+function _setText(doc, rgb)  { doc.setTextColor(rgb[0], rgb[1], rgb[2]); }
+function _setDraw(doc, rgb)  { doc.setDrawColor(rgb[0], rgb[1], rgb[2]); }
+
+// Draw a section header bar: soft blue fill + accent stripe + numbered title.
+// Returns new y position (below the underline).
+function _drawSectionHeader(doc, num, title, y, pageWidth, margin) {
+    const barH = 8;
+    // Soft blue-50 background bar
+    _setFill(doc, _BRAND.blue50);
+    doc.rect(margin, y, pageWidth - 2 * margin, barH, 'F');
+    // Left accent block (blue-600)
+    _setFill(doc, _BRAND.blue600);
+    doc.rect(margin, y, 2, barH, 'F');
+    // Title text
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.8);
+    _setText(doc, _BRAND.blue800);
+    doc.text(String(num).padStart(2, '0') + '   ' + title, margin + 5, y + 5.6);
+    return y + barH + 4;
+}
+
+// Render a single candidate's report into an existing jsPDF doc.
+// Adds a new page first if `addPage` is true.
+// opts.jobTitle is used as a fallback when the candidate analysis itself
+// doesn't carry a position_applied_for value.
+function _renderCandidateSection(doc, analysisData, candidateName, opts) {
+    opts = opts || {};
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    const contentWidth = pageWidth - 2 * margin;
+    const overview = analysisData.candidate_overview || {};
+    const score = Number(overview.overall_match_score || analysisData.match_score || 0);
+    const status = _safe(overview.match_status, 'Unreviewed');
+    const recommendation = _safe(analysisData.recommendation || overview.recommendation, '');
+    const positionLabel = String(overview.position_applied_for || opts.jobTitle || '').trim();
+
+    if (opts.addPage) doc.addPage();
+
+    // Helper: ensure at least `need` mm of vertical space; new page if not.
+    const ensureSpace = function (cy, need) {
+        if (cy + need > pageHeight - 14) { doc.addPage(); return 20; }
+        return cy;
+    };
+
+    // ---- Header banner (brand blue) -------------------------------------
+    _setFill(doc, _BRAND.blue700);
+    doc.rect(0, 0, pageWidth, 40, 'F');
+    _setFill(doc, _BRAND.blue400);   // accent stripe
+    doc.rect(0, 40, pageWidth, 1.6, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    _setText(doc, _BRAND.blue200);
+    doc.text('SMART HR  \u2022  CANDIDATE ANALYSIS', margin, 10);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(_safe(overview.name || candidateName), margin, 20);
+    if (positionLabel) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        _setText(doc, _BRAND.blue100);
+        doc.text(positionLabel, margin, 28);
+    }
+    // Compact meta row (experience / location) under the position
+    const meta = [];
+    if (overview.experience_years) meta.push(String(overview.experience_years));
+    if (overview.location) meta.push(String(overview.location));
+    if (meta.length) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        _setText(doc, _BRAND.blue200);
+        doc.text(meta.join('   \u2022   '), margin, positionLabel ? 34 : 28);
+    }
+    // Score badge (top right)
+    const badgeColor = _scoreColor(score);
+    doc.setFillColor.apply(doc, badgeColor);
+    doc.roundedRect(pageWidth - margin - 38, 9, 38, 24, 3.5, 3.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(17);
+    doc.setTextColor(255, 255, 255);
+    doc.text(score + '%', pageWidth - margin - 19, 21, { align: 'center' });
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.text(status.toUpperCase(), pageWidth - margin - 19, 28, { align: 'center' });
+
+    let y = 50;
+    let sec = 1;
+    _setText(doc, _BRAND.slate900);
+
+    // ---- 1. Candidate snapshot (boxed grid) -----------------------------
+    y = _drawSectionHeader(doc, sec++, 'Candidate Snapshot', y, pageWidth, margin);
+    doc.autoTable({
+        startY: y,
+        margin: { left: margin, right: margin },
+        theme: 'grid',
+        styles: { fontSize: 9, cellPadding: 2.4, lineColor: _BRAND.slate200, lineWidth: 0.15, textColor: _BRAND.slate800 },
+        columnStyles: {
+            0: { fontStyle: 'bold', cellWidth: 32, textColor: _BRAND.slate600, fillColor: _BRAND.slate50 },
+            1: { cellWidth: contentWidth / 2 - 32 },
+            2: { fontStyle: 'bold', cellWidth: 32, textColor: _BRAND.slate600, fillColor: _BRAND.slate50 },
+            3: { cellWidth: contentWidth / 2 - 32 },
+        },
+        body: [
+            ['Email', _safe(overview.email, '-'), 'Phone', _safe(overview.phone, '-')],
+            ['Location', _safe(overview.location, '-'), 'Experience', _safe(overview.experience_years, '-')],
+            ['Position', positionLabel || '-', 'Match Status', status],
+            ['Score', score + '%', 'Recommendation', recommendation || '-'],
+        ],
+    });
+    y = doc.lastAutoTable.finalY + 7;
+
+    // ---- 2. AI summary (callout box) ------------------------------------
+    if (analysisData.ai_summary) {
+        const text = String(analysisData.ai_summary);
+        const wrapWidth = contentWidth - 10;
+        const lines = doc.splitTextToSize(text, wrapWidth);
+        const boxH = lines.length * 4.5 + 7;
+        y = ensureSpace(y, 12 + boxH);
+        y = _drawSectionHeader(doc, sec++, 'AI Summary', y, pageWidth, margin);
+        // Soft callout: blue-50 fill, blue-400 left border
+        _setFill(doc, _BRAND.blue50);
+        doc.rect(margin, y, contentWidth, boxH, 'F');
+        _setFill(doc, _BRAND.blue400);
+        doc.rect(margin, y, 1.8, boxH, 'F');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        _setText(doc, _BRAND.slate800);
+        let ty = y + 5.5;
+        lines.forEach(function (ln) {
+            if (ty > pageHeight - 14) { doc.addPage(); ty = 20; }
+            doc.text(ln, margin + 5, ty);
+            ty += 4.5;
+        });
+        y = y + boxH + 7;
+    }
+
+    // ---- 3. Score breakdown table ---------------------------------------
+    if (analysisData.score_breakdown && typeof analysisData.score_breakdown === 'object') {
+        const rows = Object.entries(analysisData.score_breakdown)
+            .filter(function (kv) { return kv[1] && typeof kv[1] === 'object' && 'score' in kv[1]; })
+            .map(function (kv) {
+                const sc = Number(kv[1].score) || 0;
+                return [_humanize(kv[0]), sc + '%', _safe(kv[1].comment, '-')];
+            });
+        if (rows.length) {
+            y = ensureSpace(y, 30);
+            y = _drawSectionHeader(doc, sec++, 'Score Breakdown', y, pageWidth, margin);
+            doc.autoTable({
+                startY: y,
+                margin: { left: margin, right: margin },
+                head: [['Category', 'Score', 'Assessment']],
+                body: rows,
+                styles: { fontSize: 8.7, cellPadding: 2.3, overflow: 'linebreak', lineColor: _BRAND.slate200, lineWidth: 0.15, textColor: _BRAND.slate800 },
+                headStyles: { fillColor: _BRAND.blue600, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'left' },
+                alternateRowStyles: { fillColor: _BRAND.slate50 },
+                columnStyles: {
+                    0: { cellWidth: 52, fontStyle: 'bold' },
+                    1: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+                    2: { cellWidth: contentWidth - 72 },
+                },
+                didParseCell: function (data) {
+                    if (data.section === 'body' && data.column.index === 1) {
+                        const sc = parseInt(data.cell.raw, 10);
+                        if (!isNaN(sc)) {
+                            const c = _scoreColor(sc);
+                            data.cell.styles.fillColor = c;
+                            data.cell.styles.textColor = [255, 255, 255];
+                        }
+                    }
+                },
+            });
+            y = doc.lastAutoTable.finalY + 6;
+        }
+    }
+
+    // ---- 4. Strengths vs Concerns (parallel) ----------------------------
+    const strengths = (analysisData.key_strengths || analysisData.strengths || []).filter(Boolean);
+    const concerns = (analysisData.potential_concerns || analysisData.concerns || analysisData.red_flags || []).filter(Boolean);
+    if (strengths.length || concerns.length) {
+        y = ensureSpace(y, 30);
+        y = _drawSectionHeader(doc, sec++, 'Strengths & Concerns', y, pageWidth, margin);
+        const maxRows = Math.max(strengths.length, concerns.length);
+        const body = [];
+        for (let i = 0; i < maxRows; i++) {
+            body.push([
+                strengths[i] ? String(strengths[i]) : '',
+                concerns[i] ? String(concerns[i]) : '',
+            ]);
+        }
+        doc.autoTable({
+            startY: y,
+            margin: { left: margin, right: margin },
+            head: [['Key Strengths (' + strengths.length + ')', 'Potential Concerns (' + concerns.length + ')']],
+            body: body,
+            styles: { fontSize: 8.7, cellPadding: 2.6, overflow: 'linebreak', lineColor: _BRAND.slate200, lineWidth: 0.15 },
+            headStyles: {
+                fillColor: _BRAND.slate100, textColor: _BRAND.slate700, fontStyle: 'bold',
+            },
+            columnStyles: {
+                0: { cellWidth: contentWidth / 2, textColor: _BRAND.emerald700, fillColor: _BRAND.emerald50 },
+                1: { cellWidth: contentWidth / 2, textColor: _BRAND.rose700, fillColor: _BRAND.rose50 },
+            },
+        });
+        y = doc.lastAutoTable.finalY + 7;
+    }
+
+    // ---- 5. Keyword coverage --------------------------------------------
+    if (analysisData.keyword_coverage) {
+        const kc = analysisData.keyword_coverage;
+        const matched = (kc.matched_keywords || []).filter(Boolean);
+        const missing = (kc.missing_keywords || []).filter(Boolean);
+        if (matched.length || missing.length) {
+            y = ensureSpace(y, 30);
+            y = _drawSectionHeader(doc, sec++, 'Keyword Coverage', y, pageWidth, margin);
+            const totalK = matched.length + missing.length;
+            const pct = totalK ? Math.round((matched.length / totalK) * 100) : 0;
+            // Progress bar
+            const barW = contentWidth;
+            const barY = y;
+            _setFill(doc, _BRAND.slate200);
+            doc.roundedRect(margin, barY, barW, 3.5, 1.5, 1.5, 'F');
+            _setFill(doc, _BRAND.emerald600);
+            const fillW = Math.max(0, (barW * pct) / 100);
+            if (fillW > 0) doc.roundedRect(margin, barY, fillW, 3.5, 1.5, 1.5, 'F');
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8.5);
+            _setText(doc, _BRAND.slate600);
+            doc.text(matched.length + ' / ' + totalK + ' matched  (' + pct + '%)', margin, barY + 9);
+            y = barY + 12;
+            doc.autoTable({
+                startY: y,
+                margin: { left: margin, right: margin },
+                head: [['Matched Keywords (' + matched.length + ')', 'Missing Keywords (' + missing.length + ')']],
+                body: [[matched.join(', ') || '-', missing.join(', ') || '-']],
+                styles: { fontSize: 8.7, cellPadding: 2.6, overflow: 'linebreak', lineColor: _BRAND.slate200, lineWidth: 0.15 },
+                headStyles: { fillColor: _BRAND.slate100, textColor: _BRAND.slate700, fontStyle: 'bold' },
+                columnStyles: {
+                    0: { cellWidth: contentWidth / 2, textColor: _BRAND.emerald700, fillColor: _BRAND.emerald50 },
+                    1: { cellWidth: contentWidth / 2, textColor: _BRAND.rose700, fillColor: _BRAND.rose50 },
+                },
+            });
+            y = doc.lastAutoTable.finalY + 7;
+        }
+    }
+
+    // ---- 6. Career timeline ---------------------------------------------
+    if (Array.isArray(analysisData.career_timeline) && analysisData.career_timeline.length) {
+        y = ensureSpace(y, 30);
+        y = _drawSectionHeader(doc, sec++, 'Career Timeline', y, pageWidth, margin);
+        const rows = analysisData.career_timeline.slice(0, 12).map(function (item) {
+            return [
+                _safe(item.year_range || item.period, '-'),
+                _safe(item.role, '-'),
+                _safe(item.company, '-'),
+                Array.isArray(item.key_skills) ? item.key_skills.slice(0, 6).join(', ') : '',
+            ];
+        });
+        doc.autoTable({
+            startY: y,
+            margin: { left: margin, right: margin },
+            head: [['Period', 'Role', 'Company', 'Key Skills']],
+            body: rows,
+            styles: { fontSize: 8.6, cellPadding: 2.2, overflow: 'linebreak', lineColor: _BRAND.slate200, lineWidth: 0.15, textColor: _BRAND.slate800 },
+            headStyles: { fillColor: _BRAND.blue600, textColor: [255, 255, 255], fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: _BRAND.slate50 },
+            columnStyles: {
+                0: { cellWidth: 26 },
+                1: { cellWidth: 44, fontStyle: 'bold' },
+                2: { cellWidth: 44 },
+                3: { cellWidth: contentWidth - 114 },
+            },
+        });
+        y = doc.lastAutoTable.finalY + 7;
+    }
+
+    // ---- 7. Tenure prediction -------------------------------------------
+    if (analysisData.tenure_prediction) {
+        const tp = analysisData.tenure_prediction;
+        y = ensureSpace(y, 30);
+        y = _drawSectionHeader(doc, sec++, 'Tenure Prediction', y, pageWidth, margin);
+        doc.autoTable({
+            startY: y,
+            margin: { left: margin, right: margin },
+            theme: 'grid',
+            styles: { fontSize: 9, cellPadding: 2.2, lineColor: _BRAND.slate200, lineWidth: 0.15, textColor: _BRAND.slate800 },
+            columnStyles: {
+                0: { fontStyle: 'bold', cellWidth: 50, textColor: _BRAND.slate600, fillColor: _BRAND.slate50 },
+                1: { cellWidth: contentWidth - 50 },
+            },
+            body: [
+                ['Estimated Tenure', _safe(tp.estimated_tenure, '-')],
+                ['Retention Score', _safe(tp.tenure_score, '-') + (tp.tenure_score ? '%' : '')],
+                ['Confidence', _safe(tp.confidence_level, '-')],
+            ],
+        });
+        y = doc.lastAutoTable.finalY + 5;
+
+        if (tp.factors && typeof tp.factors === 'object') {
+            const fRows = Object.entries(tp.factors)
+                .filter(function (kv) { return kv[1] && typeof kv[1] === 'object'; })
+                .map(function (kv) { return [_humanize(kv[0]), (kv[1].score || 0) + '%', _safe(kv[1].analysis, '-')]; });
+            if (fRows.length) {
+                y = ensureSpace(y, 24);
+                doc.autoTable({
+                    startY: y,
+                    margin: { left: margin, right: margin },
+                    head: [['Tenure Factor', 'Score', 'Analysis']],
+                    body: fRows,
+                    styles: { fontSize: 8.6, cellPadding: 2.2, overflow: 'linebreak', lineColor: _BRAND.slate200, lineWidth: 0.15, textColor: _BRAND.slate800 },
+                    headStyles: { fillColor: _BRAND.blue600, textColor: [255, 255, 255], fontStyle: 'bold' },
+                    alternateRowStyles: { fillColor: _BRAND.slate50 },
+                    columnStyles: { 0: { cellWidth: 52, fontStyle: 'bold' }, 1: { cellWidth: 20, halign: 'center', fontStyle: 'bold' }, 2: { cellWidth: contentWidth - 72 } },
+                    didParseCell: function (data) {
+                        if (data.section === 'body' && data.column.index === 1) {
+                            const sc = parseInt(data.cell.raw, 10);
+                            if (!isNaN(sc)) {
+                                const c = _scoreColor(sc);
+                                data.cell.styles.fillColor = c;
+                                data.cell.styles.textColor = [255, 255, 255];
+                            }
+                        }
+                    },
+                });
+                y = doc.lastAutoTable.finalY + 4;
+            }
+        }
+    }
+}
+
+// Add running footer to every page (page X of Y, generation timestamp).
+function _addPdfFooter(doc, label) {
+    const pageCount = doc.internal.getNumberOfPages();
+    const w = doc.internal.pageSize.getWidth();
+    const h = doc.internal.pageSize.getHeight();
+    const stamp = new Date().toLocaleString();
+    for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        // Thin separator line above footer
+        _setDraw(doc, _BRAND.slate200);
+        doc.setLineWidth(0.2);
+        doc.line(14, h - 10, w - 14, h - 10);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        _setText(doc, _BRAND.slate500);
+        doc.text(label || 'Smart HR - AI Recruitment Report', 14, h - 6);
+        doc.text(stamp + '   |   Page ' + i + ' of ' + pageCount, w - 14, h - 6, { align: 'right' });
+    }
+}
+
+// Export a single candidate's report (uses the shared _renderCandidateSection
+// renderer so single-export and bulk-export look identical).
+function exportCandidateReport(candidateName, candidateIndex, filePath) {
     try {
-        // Get analysis data from the card's data attributes
         const card = document.querySelector('.professional-resume-card[data-candidate-index="' + candidateIndex + '"]');
         if (!card) {
-            console.error('Could not find candidate card for index:', candidateIndex);
             showNotification('Error: Could not find candidate data for export', 'error');
             return;
         }
-
         const analysisDataString = card.getAttribute('data-analysis-data');
         if (!analysisDataString) {
-            console.error('No analysis data found for candidate:', candidateName);
             showNotification('Error: No analysis data available for export', 'error');
             return;
         }
-
         let analysisData;
         try {
             analysisData = JSON.parse(analysisDataString);
         } catch (parseError) {
-            console.error('Error parsing analysis data:', parseError);
             showNotification('Error: Invalid analysis data format', 'error');
             return;
         }
 
-        // Check if jsPDF is available
-        if (!window.jspdf) {
-            // Try to load jsPDF dynamically
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-            script.onload = function () {
-                exportCandidateReport(candidateName, candidateIndex, filePath);
-            };
-            document.head.appendChild(script);
-            return;
-        }
-
-        // Create a comprehensive PDF report
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF();
-
-        // Set document properties
-        doc.setProperties({
-            title: `HR Analysis Report - ${candidateName}`,
-            author: 'HR Agent System',
-            subject: 'Candidate Analysis Report',
-            creator: 'HR Agent System'
-        });
-
-        let yPosition = 20;
-        const pageWidth = doc.internal.pageSize.width;
-        const pageHeight = doc.internal.pageSize.height;
-        const margin = 20;
-        const contentWidth = pageWidth - 2 * margin;
-
-        // Helper function to check if we need a new page
-        function checkNewPage(requiredHeight = 20) {
-            if (yPosition + requiredHeight > pageHeight - margin) {
-                doc.addPage();
-                yPosition = 20;
-                return true;
-            }
-            return false;
-        }
-
-        // Helper function to add text with word wrap
-        function addText(text, x, y, options = {}) {
-            const fontSize = options.fontSize || 10;
-            const maxWidth = options.maxWidth || contentWidth;
-            const lineHeight = options.lineHeight || fontSize * 1.2;
-
-            doc.setFontSize(fontSize);
-            if (options.bold) doc.setFont(undefined, 'bold');
-            else doc.setFont(undefined, 'normal');
-
-            const lines = doc.splitTextToSize(text, maxWidth);
-            lines.forEach((line, index) => {
-                if (y + (index * lineHeight) > pageHeight - margin) {
-                    doc.addPage();
-                    y = 20;
-                }
-                doc.text(line, x, y + (index * lineHeight));
-            });
-
-            return y + (lines.length * lineHeight);
-        }
-
-        // Header
-        doc.setFillColor(139, 92, 246);
-        doc.rect(0, 0, pageWidth, 40, 'F');
-
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(20);
-        doc.setFont(undefined, 'bold');
-        doc.text('HR ANALYSIS REPORT', margin, 25);
-
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'normal');
-        doc.text(`Generated: ${new Date().toLocaleDateString()}`, pageWidth - 80, 25);
-
-        yPosition = 60;
-        doc.setTextColor(0, 0, 0);
-
-        // Candidate Overview
-        const candidateOverview = analysisData.candidate_overview || {};
-
-        doc.setFontSize(16);
-        doc.setFont(undefined, 'bold');
-        doc.text('CANDIDATE OVERVIEW', margin, yPosition);
-        yPosition += 15;
-
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'normal');
-
-        const overviewData = [
-            ['Name:', candidateOverview.name || candidateName],
-            ['Position Applied:', candidateOverview.position_applied_for || 'Not specified'],
-            ['Location:', candidateOverview.location || 'Not available'],
-            ['Experience:', candidateOverview.experience_years || 'Not specified'],
-            ['Email:', candidateOverview.email || 'Not available'],
-            ['Phone:', candidateOverview.phone || 'Not available'],
-            ['Overall Match Score:', `${candidateOverview.overall_match_score || 'N/A'}%`],
-            ['Match Status:', candidateOverview.match_status || 'Not specified']
-        ];
-
-        overviewData.forEach(([label, value]) => {
-            checkNewPage();
-            doc.setFont(undefined, 'bold');
-            doc.text(label, margin, yPosition);
-            doc.setFont(undefined, 'normal');
-            doc.text(value, margin + 50, yPosition);
-            yPosition += 12;
-        });
-
-        yPosition += 10;
-
-        // Score Breakdown
-        if (analysisData.score_breakdown) {
-            checkNewPage(60);
-            doc.setFontSize(16);
-            doc.setFont(undefined, 'bold');
-            doc.text('SCORE BREAKDOWN', margin, yPosition);
-            yPosition += 15;
-
-            Object.entries(analysisData.score_breakdown).forEach(([category, data]) => {
-                checkNewPage(25);
-
-                const categoryName = category.replace(/_/g, ' ').toUpperCase();
-                doc.setFontSize(12);
-                doc.setFont(undefined, 'bold');
-                doc.text(categoryName, margin, yPosition);
-
-                doc.setFont(undefined, 'normal');
-                doc.text(`Score: ${data.score || 'N/A'}%`, margin + 100, yPosition);
-                yPosition += 12;
-
-                if (data.comment) {
-                    yPosition = addText(data.comment, margin + 10, yPosition, {
-                        fontSize: 10,
-                        maxWidth: contentWidth - 10
-                    });
-                    yPosition += 5;
-                }
-
-                yPosition += 5;
-            });
-        }
-
-        // Keywords Analysis
-        if (analysisData.keyword_coverage) {
-            checkNewPage(60);
-            doc.setFontSize(16);
-            doc.setFont(undefined, 'bold');
-            doc.text('KEYWORDS ANALYSIS', margin, yPosition);
-            yPosition += 15;
-
-            const keywordCoverage = analysisData.keyword_coverage;
-
-            if (keywordCoverage.matched_keywords && keywordCoverage.matched_keywords.length > 0) {
-                checkNewPage(30);
-                doc.setFontSize(12);
-                doc.setFont(undefined, 'bold');
-                doc.text(`MATCHED KEYWORDS (${keywordCoverage.matched_keywords.length})`, margin, yPosition);
-                yPosition += 12;
-
-                doc.setFont(undefined, 'normal');
-                const matchedText = keywordCoverage.matched_keywords.join(', ');
-                yPosition = addText(matchedText, margin + 10, yPosition, {
-                    fontSize: 10,
-                    maxWidth: contentWidth - 10
+        showNotification('Generating PDF report-', 'info');
+        ensurePdfLibsLoaded()
+            .then(function () {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+                doc.setProperties({
+                    title: 'Smart HR - Candidate Report - ' + candidateName,
+                    author: 'Smart HR',
+                    subject: 'Candidate Analysis Report',
+                    creator: 'Smart HR',
                 });
-                yPosition += 10;
-            }
-
-            if (keywordCoverage.missing_keywords && keywordCoverage.missing_keywords.length > 0) {
-                checkNewPage(30);
-                doc.setFontSize(12);
-                doc.setFont(undefined, 'bold');
-                doc.text(`MISSING KEYWORDS (${keywordCoverage.missing_keywords.length})`, margin, yPosition);
-                yPosition += 12;
-
-                doc.setFont(undefined, 'normal');
-                const missingText = keywordCoverage.missing_keywords.join(', ');
-                yPosition = addText(missingText, margin + 10, yPosition, {
-                    fontSize: 10,
-                    maxWidth: contentWidth - 10
+                _renderCandidateSection(doc, analysisData, candidateName, {
+                    addPage: false,
+                    jobTitle: (window.searchResultsData && (window.searchResultsData.job_title || window.searchResultsData.position)) || ''
                 });
-                yPosition += 10;
-            }
-        }
-
-        // Career Timeline
-        if (analysisData.career_timeline && analysisData.career_timeline.length > 0) {
-            checkNewPage(60);
-            doc.setFontSize(16);
-            doc.setFont(undefined, 'bold');
-            doc.text('CAREER TIMELINE', margin, yPosition);
-            yPosition += 15;
-
-            analysisData.career_timeline.slice(0, 4).forEach((item, index) => {
-                checkNewPage(40);
-
-                doc.setFontSize(12);
-                doc.setFont(undefined, 'bold');
-                doc.text(`${index + 1}. ${item.role || 'Position'}`, margin, yPosition);
-                yPosition += 12;
-
-                doc.setFont(undefined, 'normal');
-                doc.text(`Company: ${item.company || 'Not specified'}`, margin + 10, yPosition);
-                yPosition += 10;
-
-                doc.text(`Period: ${item.year_range || item.period || 'Not specified'}`, margin + 10, yPosition);
-                yPosition += 10;
-
-                if (item.key_skills && item.key_skills.length > 0) {
-                    doc.text(`Key Skills: ${item.key_skills.slice(0, 5).join(', ')}`, margin + 10, yPosition);
-                    yPosition += 10;
-                }
-
-                yPosition += 8;
+                _addPdfFooter(doc, 'Smart HR - Candidate Report');
+                const fileName = 'HR_Report_' + candidateName.replace(/[^a-zA-Z0-9]/g, '_') + '_' + new Date().toISOString().split('T')[0] + '.pdf';
+                doc.save(fileName);
+                showNotification('Report exported as ' + fileName, 'success');
+            })
+            .catch(function (err) {
+                console.error('PDF export failed:', err);
+                showNotification('Could not generate PDF: ' + (err && err.message ? err.message : 'unknown error'), 'error');
             });
-        }
-
-        // Tenure Prediction
-        if (analysisData.tenure_prediction) {
-            checkNewPage(60);
-            doc.setFontSize(16);
-            doc.setFont(undefined, 'bold');
-            doc.text('TENURE PREDICTION', margin, yPosition);
-            yPosition += 15;
-
-            const tenurePrediction = analysisData.tenure_prediction;
-
-            doc.setFontSize(12);
-            doc.setFont(undefined, 'normal');
-
-            const tenureData = [
-                ['Expected Tenure:', tenurePrediction.estimated_tenure || 'Not specified'],
-                ['Retention Score:', `${tenurePrediction.tenure_score || 'N/A'}%`],
-                ['Confidence Level:', tenurePrediction.confidence_level || 'Not specified']
-            ];
-
-            tenureData.forEach(([label, value]) => {
-                checkNewPage();
-                doc.setFont(undefined, 'bold');
-                doc.text(label, margin, yPosition);
-                doc.setFont(undefined, 'normal');
-                doc.text(value, margin + 50, yPosition);
-                yPosition += 12;
-            });
-
-            if (tenurePrediction.factors) {
-                yPosition += 10;
-                checkNewPage(30);
-                doc.setFontSize(14);
-                doc.setFont(undefined, 'bold');
-                doc.text('FACTORS ANALYSIS', margin, yPosition);
-                yPosition += 15;
-
-                Object.entries(tenurePrediction.factors).forEach(([factor, data]) => {
-                    checkNewPage(25);
-
-                    const factorName = factor.replace(/_/g, ' ').toUpperCase();
-                    doc.setFontSize(12);
-                    doc.setFont(undefined, 'bold');
-                    doc.text(factorName, margin, yPosition);
-
-                    doc.setFont(undefined, 'normal');
-                    doc.text(`Score: ${data.score || 'N/A'}%`, margin + 100, yPosition);
-                    yPosition += 12;
-
-                    if (data.analysis) {
-                        yPosition = addText(data.analysis, margin + 10, yPosition, {
-                            fontSize: 10,
-                            maxWidth: contentWidth - 10
-                        });
-                        yPosition += 5;
-                    }
-
-                    yPosition += 5;
-                });
-            }
-        }
-
-        // Footer
-        const totalPages = doc.internal.getNumberOfPages();
-        for (let i = 1; i <= totalPages; i++) {
-            doc.setPage(i);
-            doc.setFontSize(8);
-            doc.setTextColor(128, 128, 128);
-            doc.text(`Page ${i} of ${totalPages}`, pageWidth - 30, pageHeight - 10);
-            doc.text('Generated by HR Agent System', margin, pageHeight - 10);
-        }
-
-        // Save the PDF
-        const fileName = `HR_Report_${candidateName.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-        doc.save(fileName);
-
-        // Show success notification
-        showNotification(`Report exported successfully as ${fileName}`, 'success');
-
     } catch (error) {
         console.error('Error generating PDF report:', error);
         showNotification('Error generating PDF report. Please try again.', 'error');
     }
 }
+
+// (Legacy single-candidate ad-hoc PDF renderer removed in 2026-05 cleanup;
+//  exportCandidateReport above now delegates to _renderCandidateSection.)
+
+
+// Helper function to show analysis modal
+
+// Bulk export: one PDF containing a cover summary + per-candidate sections for
+// the current search results.
+function exportAllCandidatesReport() {
+    const data = window.searchResultsData;
+    if (!data || !Array.isArray(data.results) || data.results.length === 0) {
+        showNotification('No results to export.', 'warning');
+        return;
+    }
+    const candidates = data.results
+        .filter(function (r) { return r && r.gemini_analysis; })
+        .map(function (r) {
+            const a = r.gemini_analysis;
+            const ad = a.hr_scorecard || a.analysis_json || {};
+            const overview = ad.candidate_overview || {};
+            const name = overview.name || r.document_name || 'Unknown Candidate';
+            const score = Number(overview.overall_match_score || a.match_score || 0);
+            return { name: name, score: score, analysisData: ad, filePath: r.file_path };
+        })
+        .sort(function (a, b) { return b.score - a.score; });
+
+    if (candidates.length === 0) {
+        showNotification('No analyzed candidates available to export.', 'warning');
+        return;
+    }
+
+    showNotification('Generating bulk PDF report (' + candidates.length + ' candidates)-', 'info');
+    ensurePdfLibsLoaded()
+        .then(function () {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            const margin = 14;
+            const contentWidth = pageWidth - 2 * margin;
+
+            // Smart job-title fallback so the cover/sections never look empty
+            // at the top even when the search payload omits job_title.
+            const jobTitle = (function () {
+                const raw = data.job_title || data.position || data.role || '';
+                if (raw && String(raw).trim()) return String(raw).trim();
+                if (data.query) {
+                    const firstLine = String(data.query).split(/[\r\n]/)[0].trim();
+                    if (firstLine) return firstLine.length > 70 ? firstLine.slice(0, 67) + '...' : firstLine;
+                }
+                return 'Candidate Shortlist';
+            })();
+
+            doc.setProperties({
+                title: 'HR Search Report - ' + jobTitle,
+                author: 'Smart HR',
+                subject: 'Candidate shortlist',
+                creator: 'Smart HR',
+            });
+
+            // -- Cover page (brand blue) -----------------------------------
+            _setFill(doc, _BRAND.blue700);
+            doc.rect(0, 0, pageWidth, 68, 'F');
+            _setFill(doc, _BRAND.blue400);    // accent stripe
+            doc.rect(0, 68, pageWidth, 1.8, 'F');
+            _setText(doc, _BRAND.blue200);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9.5);
+            doc.text('SMART HR  \u2022  AI RECRUITMENT', margin, 14);
+            doc.setTextColor(255, 255, 255);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(24);
+            doc.text('Candidate Shortlist Report', margin, 32);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(13);
+            _setText(doc, _BRAND.blue100);
+            // Wrap a long title onto 2 lines if needed
+            const titleLines = doc.splitTextToSize(jobTitle, pageWidth - 2 * margin);
+            doc.text(titleLines.slice(0, 2), margin, 44);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            _setText(doc, _BRAND.blue200);
+            doc.text(
+                'Generated ' + new Date().toLocaleString() + '   \u2022   ' +
+                candidates.length + ' candidate' + (candidates.length === 1 ? '' : 's'),
+                margin, 60
+            );
+
+            _setText(doc, _BRAND.slate900);
+            let y = 80;
+            if (data.query) {
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(10);
+                _setText(doc, _BRAND.blue700);
+                doc.text('Job Description / Query', margin, y);
+                y += 5;
+                // Soft callout box for the query
+                const qLines = doc.splitTextToSize(String(data.query), contentWidth - 8).slice(0, 8);
+                const qBoxH = qLines.length * 4.5 + 6;
+                _setFill(doc, _BRAND.blue50);
+                doc.rect(margin, y, contentWidth, qBoxH, 'F');
+                _setFill(doc, _BRAND.blue400);
+                doc.rect(margin, y, 1.8, qBoxH, 'F');
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                _setText(doc, _BRAND.slate800);
+                let ty = y + 5;
+                qLines.forEach(function (ln) { doc.text(ln, margin + 5, ty); ty += 4.5; });
+                y += qBoxH + 7;
+            }
+
+            // -- Stat cards (4 in a row + avg-score chip) -----------------
+            const metrics = data.hr_metrics || {};
+            const strongN = metrics.strong_fits != null ? metrics.strong_fits : candidates.filter(function (c) { return c.score >= 80; }).length;
+            const mediumN = metrics.medium_fits != null ? metrics.medium_fits : candidates.filter(function (c) { return c.score >= 60 && c.score < 80; }).length;
+            const weakN   = metrics.weak_fits   != null ? metrics.weak_fits   : candidates.filter(function (c) { return c.score < 60; }).length;
+            const avgScore = (candidates.reduce(function (s, c) { return s + c.score; }, 0) / candidates.length);
+
+            const cardDefs = [
+                { label: 'Total',           value: String(candidates.length), fill: _BRAND.blue50,    accent: _BRAND.blue600,    text: _BRAND.blue800 },
+                { label: 'Strong Fits',     value: String(strongN),           fill: _BRAND.emerald50, accent: _BRAND.emerald600, text: _BRAND.emerald700, sub: '>= 80%' },
+                { label: 'Medium Fits',     value: String(mediumN),           fill: _BRAND.amber50,   accent: _BRAND.amber600,   text: _BRAND.amber600,   sub: '60 - 79%' },
+                { label: 'Weak Fits',       value: String(weakN),             fill: _BRAND.rose50,    accent: _BRAND.rose600,    text: _BRAND.rose700,    sub: '< 60%' },
+            ];
+            const gap = 4;
+            const cardW = (contentWidth - gap * (cardDefs.length - 1)) / cardDefs.length;
+            const cardH = 26;
+            cardDefs.forEach(function (cd, i) {
+                const cx = margin + i * (cardW + gap);
+                _setFill(doc, cd.fill);
+                doc.roundedRect(cx, y, cardW, cardH, 2.5, 2.5, 'F');
+                _setFill(doc, cd.accent);
+                doc.rect(cx, y, cardW, 1.6, 'F');
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(18);
+                _setText(doc, cd.text);
+                doc.text(cd.value, cx + 4, y + 13);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(8.5);
+                _setText(doc, _BRAND.slate700);
+                doc.text(cd.label.toUpperCase(), cx + 4, y + 19);
+                if (cd.sub) {
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(7.5);
+                    _setText(doc, _BRAND.slate500);
+                    doc.text(cd.sub, cx + 4, y + 23.5);
+                }
+            });
+            y += cardH + 5;
+
+            // Avg score chip (full-width)
+            const chipH = 10;
+            _setFill(doc, _BRAND.slate50);
+            doc.roundedRect(margin, y, contentWidth, chipH, 2, 2, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9);
+            _setText(doc, _BRAND.slate600);
+            doc.text('AVERAGE MATCH SCORE', margin + 4, y + 6.5);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            const avgColor = _scoreColor(avgScore);
+            doc.setTextColor(avgColor[0], avgColor[1], avgColor[2]);
+            doc.text(avgScore.toFixed(1) + '%', margin + contentWidth - 4, y + 7, { align: 'right' });
+            y += chipH + 8;
+
+            // Ranked candidates table
+            y = _drawSectionHeader(doc, 1, 'Ranked Candidates', y, pageWidth, margin);
+            doc.autoTable({
+                startY: y,
+                margin: { left: margin, right: margin },
+                head: [['#', 'Candidate', 'Position', 'Experience', 'Score', 'Status']],
+                body: candidates.map(function (c, i) {
+                    const ov = c.analysisData.candidate_overview || {};
+                    const pos = (ov.position_applied_for && String(ov.position_applied_for).trim()) || jobTitle || '-';
+                    return [
+                        String(i + 1),
+                        _safe(c.name, '-'),
+                        pos,
+                        _safe(ov.experience_years, '-'),
+                        Math.round(c.score) + '%',
+                        _safe(ov.match_status, '-'),
+                    ];
+                }),
+                styles: { fontSize: 8.8, cellPadding: 2.2, lineColor: _BRAND.slate200, lineWidth: 0.15, textColor: _BRAND.slate800, overflow: 'linebreak' },
+                headStyles: { fillColor: _BRAND.blue600, textColor: [255, 255, 255], fontStyle: 'bold' },
+                alternateRowStyles: { fillColor: _BRAND.slate50 },
+                columnStyles: {
+                    0: { cellWidth: 9, halign: 'center', fontStyle: 'bold', textColor: _BRAND.slate500 },
+                    1: { cellWidth: 48, fontStyle: 'bold', textColor: _BRAND.slate900 },
+                    2: { cellWidth: 50 },
+                    3: { cellWidth: 24 },
+                    4: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
+                    5: { cellWidth: contentWidth - 149 },
+                },
+                didParseCell: function (cell) {
+                    if (cell.section === 'body' && cell.column.index === 4) {
+                        const sc = parseInt(cell.cell.raw, 10);
+                        if (!isNaN(sc)) {
+                            const c = _scoreColor(sc);
+                            cell.cell.styles.fillColor = c;
+                            cell.cell.styles.textColor = [255, 255, 255];
+                        }
+                    }
+                },
+            });
+
+            // One section per candidate on its own page. Track the page range
+            // each candidate's section occupies so we can splice their resume
+            // PDF in right after it during the merge step below.
+            const introEndPage = doc.internal.getNumberOfPages();
+            const sectionPageRanges = [];
+            candidates.forEach(function (c) {
+                const startPage = doc.internal.getNumberOfPages() + 1;
+                _renderCandidateSection(doc, c.analysisData, c.name, { addPage: true, jobTitle: jobTitle });
+                const endPage = doc.internal.getNumberOfPages();
+                sectionPageRanges.push({ startPage: startPage, endPage: endPage });
+            });
+
+            _addPdfFooter(doc, 'Smart HR  \u2022  ' + jobTitle);
+
+            const fileName = 'HR_Shortlist_' + (jobTitle.replace(/[^a-zA-Z0-9]+/g, '_')) + '_' + new Date().toISOString().split('T')[0] + '.pdf';
+
+            // Build the merged PDF: report + each candidate's original resume
+            // appended right after their section. Non-PDF resumes (docx/txt)
+            // and unreachable files are skipped silently with a console note.
+            const baseBytes = doc.output('arraybuffer');
+            return _buildExportWithResumes(baseBytes, candidates, introEndPage, sectionPageRanges)
+                .then(function (mergedBytes) {
+                    const bytes = mergedBytes || new Uint8Array(baseBytes);
+                    const blob = new Blob([bytes], { type: 'application/pdf' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+                    const attachedCount = (window.__lastExportAttachedCount || 0);
+                    const msg = attachedCount > 0
+                        ? ('Exported ' + fileName + ' (' + attachedCount + ' resume' + (attachedCount === 1 ? '' : 's') + ' attached)')
+                        : ('Exported ' + fileName);
+                    showNotification(msg, 'success');
+                });
+        })
+        .catch(function (err) {
+            console.error('Bulk PDF export failed:', err);
+            showNotification('Could not generate bulk PDF: ' + (err && err.message ? err.message : 'unknown error'), 'error');
+        });
+}
+
+// Fetch a candidate's resume from the backend and return its ArrayBuffer
+// (only if the response is a PDF). Returns null on any failure so the
+// export can continue gracefully.
+function _fetchResumePdfBytes(filePath) {
+    if (!filePath) return Promise.resolve(null);
+    return fetch('/api/download-resume?file_path=' + encodeURIComponent(filePath), { credentials: 'same-origin' })
+        .then(function (r) {
+            if (!r.ok) return null;
+            const ct = (r.headers.get('Content-Type') || '').toLowerCase();
+            const lower = String(filePath).toLowerCase();
+            const looksPdf = ct.indexOf('pdf') !== -1 || lower.endsWith('.pdf');
+            if (!looksPdf) return null;
+            return r.arrayBuffer();
+        })
+        .catch(function (e) {
+            console.warn('Resume fetch failed for', filePath, e);
+            return null;
+        });
+}
+
+// Merge the report (jsPDF bytes) with each candidate's original PDF resume,
+// inserted immediately after that candidate's section. Returns merged bytes,
+// or null if pdf-lib is unavailable (caller falls back to the plain report).
+function _buildExportWithResumes(baseBytes, candidates, introEndPage, sectionPageRanges) {
+    window.__lastExportAttachedCount = 0;
+    if (!window.PDFLib || !window.PDFLib.PDFDocument) {
+        return Promise.resolve(null);
+    }
+    const PDFDocument = window.PDFLib.PDFDocument;
+    return Promise.all(candidates.map(function (c) { return _fetchResumePdfBytes(c.filePath); }))
+        .then(function (resumeBuffers) {
+            return Promise.all([
+                PDFDocument.load(baseBytes),
+                PDFDocument.create(),
+                Promise.resolve(resumeBuffers),
+            ]);
+        })
+        .then(function (arr) {
+            const basePdf = arr[0];
+            const merged = arr[1];
+            const resumeBuffers = arr[2];
+
+            // Copy intro pages (cover, summary, ranked list) first.
+            const introIdx = [];
+            for (let i = 0; i < introEndPage; i++) introIdx.push(i);
+            const chain = (introIdx.length
+                ? merged.copyPages(basePdf, introIdx).then(function (pages) {
+                    pages.forEach(function (p) { merged.addPage(p); });
+                })
+                : Promise.resolve());
+
+            return chain.then(function () {
+                // Sequentially copy each candidate's section then their resume.
+                let p = Promise.resolve();
+                candidates.forEach(function (c, i) {
+                    const range = sectionPageRanges[i];
+                    p = p.then(function () {
+                        if (!range) return null;
+                        const idxs = [];
+                        for (let pg = range.startPage; pg <= range.endPage; pg++) idxs.push(pg - 1);
+                        return merged.copyPages(basePdf, idxs).then(function (pages) {
+                            pages.forEach(function (pg) { merged.addPage(pg); });
+                        });
+                    }).then(function () {
+                        const buf = resumeBuffers[i];
+                        if (!buf) return null;
+                        return PDFDocument.load(buf, { ignoreEncryption: true })
+                            .then(function (resPdf) {
+                                const idxs = resPdf.getPageIndices();
+                                return merged.copyPages(resPdf, idxs).then(function (pages) {
+                                    pages.forEach(function (pg) { merged.addPage(pg); });
+                                    window.__lastExportAttachedCount += 1;
+                                });
+                            })
+                            .catch(function (e) {
+                                console.warn('Could not embed resume for', c.name, e);
+                            });
+                    });
+                });
+                return p.then(function () { return merged.save(); });
+            });
+        })
+        .catch(function (e) {
+            console.warn('Resume merge failed, exporting report only:', e);
+            return null;
+        });
+}
+window.exportAllCandidatesReport = exportAllCandidatesReport;
 
 // Helper function to show analysis modal
 function showAnalysisModal(candidateName, analysisData) {
@@ -5794,23 +6208,38 @@ function showAnalysisModal(candidateName, analysisData) {
     // Create modal content
     const modalContent = document.createElement('div');
     modalContent.className = 'bg-white rounded-lg p-6 max-w-4xl max-h-[90vh] overflow-y-auto m-4';
+    const esc = window.escapeHtml || ((value) => {
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+    });
     modalContent.innerHTML = `
         <div class="flex justify-between items-center mb-6">
             <h2 class="text-2xl font-bold text-gray-800">
                 <i class="fas fa-user-circle mr-2"></i>
-                Full Analysis: ${candidateName}
+                Full Analysis: ${esc(candidateName)}
             </h2>
             <button onclick="this.closest('.fixed').remove()" class="text-gray-500 hover:text-gray-700">
                 <i class="fas fa-times text-xl"></i>
             </button>
         </div>
         <div class="bg-gray-50 rounded-lg p-4">
-            <pre class="text-sm text-gray-700 whitespace-pre-wrap">${JSON.stringify(analysisData, null, 2)}</pre>
+            <pre class="text-sm text-gray-700 whitespace-pre-wrap">${esc(JSON.stringify(analysisData, null, 2))}</pre>
         </div>
     `;
 
     modalOverlay.appendChild(modalContent);
     document.body.appendChild(modalOverlay);
+}
+
+function getCandidateCardByName(candidateName) {
+    return Array.from(document.querySelectorAll('.professional-resume-card'))
+        .find((card) => card.dataset.candidateName === candidateName) || null;
+}
+
+function getCandidateCommentsTextarea(candidateName) {
+    const card = getCandidateCardByName(candidateName);
+    return card ? card.querySelector('.hr-comments-textarea') : null;
 }
 
 // HR Actions Functions
@@ -5834,11 +6263,6 @@ async function setCandidateStatus(candidateName, status, checkbox) {
                 formData.append('candidate_name', candidateName);
                 formData.append('action_type', status);
                 formData.append('action_status', 'false');
-
-                // Attach the current user ID so backend can attribute this action correctly
-                if (window.currentUser && window.currentUser.id) {
-                    formData.append('user_id', window.currentUser.id);
-                }
 
                 await fetch('/api/candidate-action', {
                     method: 'POST',
@@ -5871,12 +6295,7 @@ async function setCandidateStatus(candidateName, status, checkbox) {
             formData.append('action_type', status);
             formData.append('action_status', 'true');
 
-            // Attach the current user ID so backend can attribute this action correctly
-            if (window.currentUser && window.currentUser.id) {
-                formData.append('user_id', window.currentUser.id);
-            }
-
-            const comments = document.querySelector(`textarea[data-candidate="${candidateName}"]`);
+            const comments = getCandidateCommentsTextarea(candidateName);
             if (comments && comments.value) {
                 formData.append('comments', comments.value);
             }
@@ -5907,53 +6326,43 @@ async function setCandidateStatus(candidateName, status, checkbox) {
 }
 
 async function updateStatusCheckboxes(candidateName, activeStatus) {
-    // Find all HR checkboxes for this candidate by looking for checkboxes with matching data-status
-    const allCheckboxes = document.querySelectorAll('.hr-checkbox');
+    const candidateCard = getCandidateCardByName(candidateName);
+    if (!candidateCard) {
+        return;
+    }
+    const allCheckboxes = candidateCard.querySelectorAll('.hr-checkbox');
 
     const updatePromises = [];
 
     allCheckboxes.forEach(checkbox => {
-        // Check if this checkbox belongs to the current candidate by checking if the onchange contains the candidate name
-        const onchangeAttr = checkbox.getAttribute('onchange');
-        if (onchangeAttr && onchangeAttr.includes(`'${candidateName}'`)) {
-            const checkboxStatus = checkbox.getAttribute('data-status');
-            if (checkboxStatus === activeStatus) {
-                checkbox.checked = true;
-            } else {
-                // Uncheck other statuses and send API call to update database
-                checkbox.checked = false;
+        const checkboxStatus = checkbox.getAttribute('data-status');
+        if (checkboxStatus === activeStatus) {
+            checkbox.checked = true;
+            return;
+        }
 
-                // Get the search result ID from the candidate card
-                const candidateCard = checkbox.closest('.professional-resume-card');
-                const searchResultId = candidateCard ? candidateCard.getAttribute('data-search-result-id') : null;
+        checkbox.checked = false;
 
-                if (searchResultId) {
-                    // Send API call to mark this status as false
-                    const updatePromise = (async () => {
-                        try {
-                            const formData = new FormData();
-                            formData.append('search_result_id', searchResultId);
-                            formData.append('candidate_name', candidateName);
-                            formData.append('action_type', checkboxStatus);
-                            formData.append('action_status', 'false');
+        const searchResultId = candidateCard.getAttribute('data-search-result-id');
+        if (searchResultId) {
+            const updatePromise = (async () => {
+                try {
+                    const formData = new FormData();
+                    formData.append('search_result_id', searchResultId);
+                    formData.append('candidate_name', candidateName);
+                    formData.append('action_type', checkboxStatus);
+                    formData.append('action_status', 'false');
 
-                            // Attach the current user ID
-                            if (window.currentUser && window.currentUser.id) {
-                                formData.append('user_id', window.currentUser.id);
-                            }
-
-                            await fetch('/api/candidate-action', {
-                                method: 'POST',
-                                body: formData
-                            });
-                        } catch (error) {
-                            console.error(`Error unchecking ${checkboxStatus} status for ${candidateName}:`, error);
-                        }
-                    })();
-
-                    updatePromises.push(updatePromise);
+                    await fetch('/api/candidate-action', {
+                        method: 'POST',
+                        body: formData
+                    });
+                } catch (error) {
+                    console.error(`Error unchecking ${checkboxStatus} status for ${candidateName}:`, error);
                 }
-            }
+            })();
+
+            updatePromises.push(updatePromise);
         }
     });
 
@@ -5965,7 +6374,7 @@ async function updateStatusCheckboxes(candidateName, activeStatus) {
 
 async function saveCandidateComment(candidateName, comment) {
     // Get the search result ID from the candidate card
-    const textarea = document.querySelector(`textarea[data-candidate="${candidateName}"]`);
+    const textarea = getCandidateCommentsTextarea(candidateName);
     const candidateCard = textarea ? textarea.closest('.professional-resume-card') : null;
     const searchResultId = candidateCard ? candidateCard.getAttribute('data-search-result-id') : null;
 
@@ -5992,11 +6401,6 @@ async function saveCandidateComment(candidateName, comment) {
                 formData.append('action_type', currentStatus);
                 formData.append('action_status', 'true');
                 formData.append('comments', comment);
-
-                // Attach the current user ID so backend can attribute this comment correctly
-                if (window.currentUser && window.currentUser.id) {
-                    formData.append('user_id', window.currentUser.id);
-                }
 
                 await fetch('/api/candidate-action', {
                     method: 'POST',
@@ -6025,6 +6429,11 @@ function showStatusNotification(candidateName, status) {
     };
 
     const config = statusConfig[status] || statusConfig['selected']; // Fallback to 'selected' if status not found
+    const esc = window.escapeHtml || ((value) => {
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+    });
 
     notification.innerHTML = `
         <div class="flex items-center">
@@ -6035,7 +6444,7 @@ function showStatusNotification(candidateName, status) {
             </div>
             <div class="ml-3">
                 <p class="text-sm font-medium text-gray-900">Status Updated</p>
-                <p class="text-sm text-gray-500">${candidateName} marked as ${status}</p>
+                <p class="text-sm text-gray-500">${esc(candidateName)} marked as ${esc(status)}</p>
             </div>
             <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-gray-400 hover:text-gray-600">
                 <i class="fas fa-times"></i>
@@ -6067,7 +6476,7 @@ function loadCandidateData() {
     // Apply saved comments
     Object.keys(comments).forEach(candidateName => {
         const comment = comments[candidateName].comment;
-        const textarea = document.querySelector(`textarea[data-candidate="${candidateName}"]`);
+        const textarea = getCandidateCommentsTextarea(candidateName);
         if (textarea) {
             textarea.value = comment;
         }
@@ -6111,14 +6520,27 @@ function initializeJDBuilderPage() {
         if (selectedSkills.length === 0) {
             skillsList.innerHTML = '<span class="text-gray-500 text-sm">Skills will appear here...</span>';
         } else {
-            skillsList.innerHTML = selectedSkills.map(skill => `
+            const esc = window.escapeHtml || ((value) => {
+                const div = document.createElement('div');
+                div.textContent = value == null ? '' : String(value);
+                return div.innerHTML;
+            });
+            skillsList.innerHTML = selectedSkills.map((skill, skillIndex) => `
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800">
-                    ${skill}
-                    <button onclick="removeSkill('${skill}')" class="ml-2 text-blue-600 hover:text-blue-800">
+                    ${esc(skill)}
+                    <button type="button" data-skill-index="${skillIndex}" class="ml-2 text-blue-600 hover:text-blue-800 js-remove-skill">
                         <i class="fas fa-times text-xs"></i>
                     </button>
                 </span>
             `).join('');
+            skillsList.querySelectorAll('.js-remove-skill').forEach((button) => {
+                button.addEventListener('click', () => {
+                    const index = Number(button.dataset.skillIndex);
+                    if (Number.isInteger(index) && selectedSkills[index]) {
+                        removeSkill(selectedSkills[index]);
+                    }
+                });
+            });
         }
 
         // Make removeSkill globally accessible
@@ -6234,13 +6656,34 @@ function initializeJDBuilderPage() {
 
             const data = await response.json();
 
+            function sanitizeGeneratedHtml(html) {
+                const template = document.createElement('template');
+                template.innerHTML = html || '';
+
+                template.content.querySelectorAll('script, iframe, object, embed, link, meta, base, form, input, button').forEach((node) => node.remove());
+                template.content.querySelectorAll('*').forEach((node) => {
+                    Array.from(node.attributes).forEach((attr) => {
+                        const name = attr.name.toLowerCase();
+                        const value = (attr.value || '').trim().toLowerCase();
+                        if (name.startsWith('on') || name === 'srcdoc' || name === 'style') {
+                            node.removeAttribute(attr.name);
+                        }
+                        if ((name === 'href' || name === 'src' || name === 'xlink:href') && value.startsWith('javascript:')) {
+                            node.removeAttribute(attr.name);
+                        }
+                    });
+                });
+
+                return template.innerHTML;
+            }
+
             if (data.success) {
                 // Clean up HTML response to remove any markdown code blocks
                 let cleanedContent = data.job_description;
                 if (cleanedContent.includes('```html')) {
                     cleanedContent = cleanedContent.replace(/```html\s*/g, '').replace(/```\s*$/g, '');
                 }
-                preview.innerHTML = cleanedContent;
+                preview.innerHTML = sanitizeGeneratedHtml(cleanedContent);
                 showNotification('Job description generated successfully!', 'success');
             } else {
                 showNotification('Failed to generate job description: ' + data.error, 'error');
@@ -6293,20 +6736,61 @@ function initializeJDBuilderPage() {
         const content = preview.innerHTML;
         const jobTitle = document.getElementById('jd-job-title').value || 'Job Description';
 
-        if (content) {
-            const blob = new Blob([content], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${jobTitle.replace(/[^a-z0-9]/gi, '_')}.html`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            showNotification('Job description downloaded!', 'success');
-        } else {
+        if (!content || !content.trim() || content.includes('Your job description will appear here')) {
             showNotification('No content to download', 'error');
+            return;
         }
+
+        // Wrap the JD fragment in a self-contained, printable HTML document
+        // with the same look as the in-app preview. Without this, opening
+        // the downloaded file shows unstyled raw text because the preview
+        // styling lives in the parent app's stylesheet.
+        const safeTitle = String(jobTitle).replace(/[<>&"']/g, (c) => ({
+            '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;'
+        })[c]);
+        const generatedAt = new Date().toLocaleString();
+        const fullDoc = [
+            '<!DOCTYPE html>',
+            '<html lang="en">',
+            '<head>',
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            `<title>${safeTitle}</title>`,
+            '<style>',
+            '  :root { color-scheme: light; }',
+            '  * { box-sizing: border-box; }',
+            '  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #1f2937; line-height: 1.6; max-width: 850px; margin: 2.5rem auto; padding: 0 1.5rem; background: #fff; }',
+            '  h1 { font-size: 2rem; font-weight: 700; color: #111827; margin: 0 0 0.5rem 0; line-height: 1.2; }',
+            '  h2 { font-size: 1.25rem; font-weight: 600; color: #1f2937; margin: 1.75rem 0 0.5rem 0; padding-bottom: 0.25rem; border-bottom: 1px solid #e5e7eb; }',
+            '  h3 { font-size: 1.05rem; font-weight: 600; color: #374151; margin: 1rem 0 0.4rem 0; }',
+            '  p { margin: 0 0 0.75rem 0; color: #374151; }',
+            '  p.jd-meta { color: #6b7280; font-size: 0.9rem; margin-bottom: 1.25rem; }',
+            '  ul { list-style: disc outside; padding-left: 1.5rem; margin: 0 0 1rem 0; }',
+            '  li { margin-bottom: 0.35rem; color: #374151; }',
+            '  strong { color: #111827; font-weight: 600; }',
+            '  hr { border: 0; border-top: 1px solid #e5e7eb; margin: 1.25rem 0; }',
+            '  .jd-footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; color: #9ca3af; font-size: 0.8rem; text-align: center; }',
+            '  @media print { body { margin: 0.5in; max-width: none; } h2 { page-break-after: avoid; } li { page-break-inside: avoid; } }',
+            '</style>',
+            '</head>',
+            '<body>',
+            content,
+            `<div class="jd-footer">Generated ${generatedAt} · Smart HR JD Builder</div>`,
+            '</body>',
+            '</html>',
+            ''
+        ].join('\n');
+
+        const blob = new Blob([fullDoc], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${jobTitle.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '')}.html`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showNotification('Job description downloaded!', 'success');
     }
 
     function showProgress(message) {
@@ -6357,32 +6841,103 @@ function loadUserInfo() {
 async function loadCompanyInfo() {
     const companyDetails = document.getElementById('company-details');
 
+    if (!companyDetails) {
+        return;
+    }
+
+    const escapeHtml = (value) => {
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+    };
+
+    const formatNumber = (value) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? number.toLocaleString() : 'N/A';
+    };
+
+    const renderCompanyRows = (company) => `
+        <div class="space-y-3">
+            <div class="flex justify-between gap-4">
+                <span class="text-sm font-medium text-gray-700">Company Name:</span>
+                <span class="text-sm text-gray-900 text-right">${escapeHtml(company.company_name || 'N/A')}</span>
+            </div>
+            <div class="flex justify-between gap-4">
+                <span class="text-sm font-medium text-gray-700">Company Code:</span>
+                <span class="text-sm text-gray-900 text-right">${escapeHtml(company.company_code || 'N/A')}</span>
+            </div>
+            <div class="flex justify-between gap-4">
+                <span class="text-sm font-medium text-gray-700">Subscription:</span>
+                <span class="text-sm text-gray-900 capitalize text-right">${escapeHtml(company.subscription_plan || 'Basic')}</span>
+            </div>
+            <div class="flex justify-between gap-4">
+                <span class="text-sm font-medium text-gray-700">Max Users:</span>
+                <span class="text-sm text-gray-900 text-right">${formatNumber(company.max_users)}</span>
+            </div>
+            <div class="flex justify-between gap-4">
+                <span class="text-sm font-medium text-gray-700">Max Resumes:</span>
+                <span class="text-sm text-gray-900 text-right">${formatNumber(company.max_resumes)}</span>
+            </div>
+            <div class="flex justify-between gap-4">
+                <span class="text-sm font-medium text-gray-700">Max Searches:</span>
+                <span class="text-sm text-gray-900 text-right">${formatNumber(company.max_searches)}</span>
+            </div>
+        </div>
+    `;
+
+    if (window.currentUser && window.currentUser.user_type === 'super_admin') {
+        try {
+            const response = await fetch('/api/companies');
+            if (!response.ok) {
+                throw new Error('Failed to load tenant companies');
+            }
+
+            const data = await response.json();
+            const companies = data.companies || [];
+            const activeCount = companies.filter(company => company.is_active).length;
+
+            if (companies.length === 0) {
+                companyDetails.innerHTML = `
+                    <div class="text-center text-gray-500 py-4">
+                        <i class="fas fa-building text-2xl text-gray-300 mb-2"></i>
+                        <p class="text-sm">No tenant companies created yet</p>
+                    </div>
+                `;
+                return;
+            }
+
+            companyDetails.innerHTML = `
+                <div class="space-y-4">
+                    <div class="flex justify-between gap-4">
+                        <span class="text-sm font-medium text-gray-700">Tenant Companies:</span>
+                        <span class="text-sm text-gray-900 text-right">${formatNumber(companies.length)} total, ${formatNumber(activeCount)} active</span>
+                    </div>
+                    <div class="space-y-3">
+                        ${companies.slice(0, 5).map(company => `
+                            <div class="border border-gray-200 rounded-lg p-3">
+                                ${renderCompanyRows(company)}
+                            </div>
+                        `).join('')}
+                        ${companies.length > 5 ? `<p class="text-xs text-gray-500">${formatNumber(companies.length - 5)} more companies are available in Manage Companies.</p>` : ''}
+                    </div>
+                </div>
+            `;
+            return;
+        } catch (error) {
+            console.error('Error loading tenant company information:', error);
+            companyDetails.innerHTML = `
+                <div class="text-center text-red-500 py-4">
+                    <i class="fas fa-exclamation-triangle text-2xl text-red-300 mb-2"></i>
+                    <p class="text-sm">Failed to load tenant company information</p>
+                </div>
+            `;
+            return;
+        }
+    }
+
     if (window.currentUser && window.currentUser.company) {
         const company = window.currentUser.company;
-        companyDetails.innerHTML = `
-            <div class="space-y-3">
-                <div class="flex justify-between">
-                    <span class="text-sm font-medium text-gray-700">Company Name:</span>
-                    <span class="text-sm text-gray-900">${company.company_name}</span>
-                </div>
-                <div class="flex justify-between">
-                    <span class="text-sm font-medium text-gray-700">Company Code:</span>
-                    <span class="text-sm text-gray-900">${company.company_code}</span>
-                </div>
-                <div class="flex justify-between">
-                    <span class="text-sm font-medium text-gray-700">Subscription:</span>
-                    <span class="text-sm text-gray-900 capitalize">${company.subscription_plan || 'Basic'}</span>
-                </div>
-                <div class="flex justify-between">
-                    <span class="text-sm font-medium text-gray-700">Max Users:</span>
-                    <span class="text-sm text-gray-900">${company.max_users || 'N/A'}</span>
-                </div>
-                <div class="flex justify-between">
-                    <span class="text-sm font-medium text-gray-700">Max Resumes:</span>
-                    <span class="text-sm text-gray-900">${company.max_resumes || 'N/A'}</span>
-                </div>
-            </div>
-        `;
+        companyDetails.innerHTML = renderCompanyRows(company);
     } else {
         companyDetails.innerHTML = `
             <div class="text-center text-gray-500 py-4">
@@ -6593,9 +7148,92 @@ async function handleAddUser(event) {
     }
 }
 
-// Edit user function (placeholder)
-function editUser(userId) {
-    showNotification('Edit user functionality coming soon!', 'info');
+// Edit user - opens a modal allowing role / name / email / status / password updates
+async function editUser(userId) {
+    try {
+        const resp = await fetch('/api/users');
+        if (!resp.ok) throw new Error('Failed to load users');
+        const data = await resp.json();
+        const target = (data.users || []).find(u => u.id === userId);
+        if (!target) {
+            showNotification('User not found', 'error');
+            return;
+        }
+
+        const isSuper = window.currentUser && window.currentUser.user_type === 'super_admin';
+        const types = isSuper
+            ? ['super_admin', 'tenant_admin', 'tenant_user']
+            : ['tenant_admin', 'tenant_user'];
+        const typeOptions = types.map(t => `<option value="${t}" ${target.user_type === t ? 'selected' : ''}>${getUserTypeLabel(t)}</option>`).join('');
+        const safeName = (target.full_name || '').replace(/"/g, '&quot;');
+        const safeEmail = (target.email || '').replace(/"/g, '&quot;');
+
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.innerHTML = `
+            <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-user-edit mr-2"></i>Edit User</h3>
+                    <button type="button" onclick="this.closest('.fixed').remove()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+                </div>
+                <form id="edit-user-form" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                        <input type="text" name="full_name" value="${safeName}" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" name="email" value="${safeEmail}" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">User Type</label>
+                        <select name="user_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">${typeOptions}</select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">New Password <span class="text-gray-400 text-xs">(leave blank to keep)</span></label>
+                        <input type="password" name="new_password" minlength="8" placeholder="At least 8 characters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="edit-user-active" name="is_active" value="true" ${target.is_active ? 'checked' : ''} class="mr-2">
+                        <label for="edit-user-active" class="text-sm text-gray-700">Active</label>
+                    </div>
+                    <div class="flex space-x-3 pt-2">
+                        <button type="button" onclick="this.closest('.fixed').remove()" class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
+                        <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>
+                    </div>
+                </form>
+            </div>`;
+        document.body.appendChild(modal);
+
+        modal.querySelector('#edit-user-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.target);
+            const body = new URLSearchParams();
+            body.append('full_name', fd.get('full_name') || '');
+            body.append('email', fd.get('email') || '');
+            body.append('user_type', fd.get('user_type') || '');
+            body.append('is_active', fd.get('is_active') ? 'true' : 'false');
+            const pw = fd.get('new_password');
+            if (pw) body.append('new_password', pw);
+            try {
+                const r = await fetch(`/api/users/${userId}`, { method: 'PUT', body });
+                const out = await r.json().catch(() => ({}));
+                if (r.ok) {
+                    showNotification('User updated successfully', 'success');
+                    modal.remove();
+                    if (typeof loadUsers === 'function') loadUsers();
+                } else {
+                    showNotification(out.detail || 'Failed to update user', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showNotification('Network error', 'error');
+            }
+        });
+    } catch (err) {
+        console.error('editUser error', err);
+        showNotification('Failed to open edit dialog', 'error');
+    }
 }
 
 // Show notification
@@ -6615,6 +7253,19 @@ function showNotification(message, type = 'info') {
 }
 
 // User Dashboard Functions
+function shouldShowRecruitmentDetailsBanner() {
+    const user = window.currentUser;
+    return !!user && (user.user_type === 'tenant_admin' || user.user_type === 'tenant_user');
+}
+
+function showRecruitmentDetailsBanner() {
+    const resourceUsageSection = document.getElementById('resource-usage-section');
+    if (!resourceUsageSection || !shouldShowRecruitmentDetailsBanner()) return false;
+
+    resourceUsageSection.classList.remove('hidden');
+    return true;
+}
+
 function initializeUserDashboard() {
     // Show loading state for all dashboard elements immediately
     showDashboardLoadingState();
@@ -6631,14 +7282,11 @@ function initializeUserDashboard() {
         currentDateElement.textContent = currentDate;
     }
 
-    // Check if user is tenant admin and show resource usage section
-    if (window.currentUser && window.currentUser.user_type === 'tenant_admin') {
-        const resourceUsageSection = document.getElementById('resource-usage-section');
-        if (resourceUsageSection) {
-            resourceUsageSection.classList.remove('hidden');
-            // Load resource usage data
-            loadResourceUsageData();
-        }
+    // Show the recruitment-overview banner for tenant admins and tenant users.
+    // Tenant admins still get richer numbers from /api/company-resource-usage;
+    // tenant users get the same company-scoped data from /api/dashboard-stats.
+    if (showRecruitmentDetailsBanner()) {
+        loadResourceUsageData();
     }
 
     // Load data with a slight delay to show the loading state
@@ -6718,6 +7366,12 @@ async function loadSearchHistoryForDashboard() {
 function displaySearchHistoryInTable(searches) {
     const tableBody = document.getElementById('search-history-table');
     if (!tableBody) return;
+    const esc = window.escapeHtml || ((value) => {
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+    });
+    const attr = window.escapeAttr || esc;
 
     if (searches.length === 0) {
         tableBody.innerHTML = `
@@ -6750,9 +7404,9 @@ function displaySearchHistoryInTable(searches) {
                 <td class="py-3 px-2">
                     <div class="flex items-center space-x-2">
                         <i class="fas fa-search text-blue-500 text-xs"></i>
-                        <span class="text-sm font-medium text-gray-900" title="${search.search_query.replace(/"/g, '&quot;')}">${truncatedQuery}</span>
+                        <span class="text-sm font-medium text-gray-900" title="${attr(search.search_query)}">${esc(truncatedQuery)}</span>
                     </div>
-                    ${search.job_title ? `<p class="text-xs text-gray-500 mt-1">${search.job_title}</p>` : ''}
+                    ${search.job_title ? `<p class="text-xs text-gray-500 mt-1">${esc(search.job_title)}</p>` : ''}
                 </td>
                 <td class="py-3 px-2">
                     <span class="${resultBadgeClass} px-2 py-1 rounded-full text-xs font-medium">
@@ -6764,7 +7418,7 @@ function displaySearchHistoryInTable(searches) {
                     <p class="text-xs text-gray-400">${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                 </td>
                 <td class="py-3 px-2">
-                    <button onclick="loadSavedSearch(${search.id}, '${search.search_query.replace(/'/g, "\\'")}')" 
+                    <button type="button" data-search-id="${search.id}"
                             class="text-blue-600 hover:text-blue-800 text-xs font-medium">
                         View Results
                     </button>
@@ -6772,6 +7426,15 @@ function displaySearchHistoryInTable(searches) {
             </tr>
         `;
     }).join('');
+    tableBody.querySelectorAll('[data-search-id]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const searchId = Number(button.dataset.searchId);
+            const search = searches.find((item) => Number(item.id) === searchId);
+            if (search) {
+                loadSavedSearch(search.id, search.search_query || '');
+            }
+        });
+    });
 }
 
 async function loadCandidateStatusCounts() {
@@ -6791,6 +7454,11 @@ async function loadCandidateStatusCounts() {
             };
 
             updateCandidateStatusCards(statusData);
+
+            // Activity stats (always populated, even when no actions taken)
+            if (data.activity_stats) {
+                updateActivityStatsCards(data.activity_stats);
+            }
 
             // Also update trending skills if available
             if (data.trending_skills && data.trending_skills.length > 0) {
@@ -6819,6 +7487,28 @@ function updateCandidateStatusCards(data) {
     if (rejectedElement) rejectedElement.textContent = data.rejected;
     if (shortlistedElement) shortlistedElement.textContent = data.shortlisted;
     if (interviewedElement) interviewedElement.textContent = data.interviewed;
+}
+
+function updateActivityStatsCards(stats) {
+    const fmt = (n) => (typeof n === 'number' ? n.toLocaleString() : (n || 0));
+    const set = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = fmt(val);
+    };
+    set('activity-total-searches', stats.total_searches);
+    set('activity-total-candidates', stats.total_candidates);
+    set('activity-total-resumes', stats.total_resumes);
+
+    // For super admins, show companies instead of users in the 4th card.
+    const isSuperAdmin = !!(window.currentUser && window.currentUser.user_type === 'super_admin');
+    const usersLabel = document.getElementById('activity-users-label');
+    if (isSuperAdmin && (stats.total_companies || 0) > 0) {
+        if (usersLabel) usersLabel.textContent = 'Companies';
+        set('activity-total-users', stats.total_companies);
+    } else {
+        if (usersLabel) usersLabel.textContent = 'Users';
+        set('activity-total-users', stats.total_users);
+    }
 }
 
 function updateTrendingSkills(skills) {
@@ -6900,26 +7590,43 @@ function updateUpcomingEvents(events) {
 }
 
 async function loadResourceUsageData() {
-    try {
-        const response = await fetch('/api/company-resource-usage');
-        if (!response.ok) {
-            throw new Error('Failed to fetch resource usage data');
+    // Try the admin-only endpoint first (richer data); fall back to the
+    // dashboard-stats endpoint that every authenticated user can hit.
+    if (window.currentUser && window.currentUser.user_type === 'tenant_admin') {
+        try {
+            const response = await fetch('/api/company-resource-usage');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.resource_usage) {
+                    updateResourceUsageDisplay(data.resource_usage);
+                    return;
+                }
+            }
+        } catch (error) {
+            // ignore - try fallback below
         }
+    }
 
-        const data = await response.json();
-        if (data.success && data.resource_usage) {
-            updateResourceUsageDisplay(data.resource_usage);
+    try {
+        const response = await fetch('/api/dashboard-stats');
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.resource_usage) {
+                updateResourceUsageDisplay(data.resource_usage);
+                return;
+            }
         }
     } catch (error) {
         console.error('Error loading resource usage data:', error);
-        // Show fallback data
-        updateResourceUsageDisplay({
-            resumes: { current: 0, maximum: 1000, usage_percent: 0 },
-            searches: { current: 0, maximum: 10000, usage_percent: 0 },
-            users: { current: 0, maximum: 10 },
-            subscription_plan: 'basic'
-        });
     }
+
+    // Final fallback so the banner doesn't look broken
+    updateResourceUsageDisplay({
+        resumes: { current: 0, maximum: 1000, usage_percent: 0 },
+        searches: { current: 0, maximum: 10000, usage_percent: 0 },
+        users: { current: 0, maximum: 10 },
+        subscription_plan: 'basic'
+    });
 }
 
 function updateResourceUsageDisplay(resourceUsage) {
@@ -7017,8 +7724,8 @@ function refreshUserDashboard() {
     // Refresh dashboard data
     loadUserDashboardData();
 
-    // Refresh resource usage data for tenant admin
-    if (window.currentUser && window.currentUser.user_type === 'tenant_admin') {
+    // Refresh resource usage banner if it's visible
+    if (showRecruitmentDetailsBanner()) {
         loadResourceUsageData();
     }
 }
@@ -7041,31 +7748,431 @@ function showRecentSearches() {
     setActiveLink(document.getElementById('history-link'));
 }
 
-function showSavedCandidates() {
-    showNotification('Saved candidates feature coming soon!', 'info');
-}
-
 // Interview Scheduling Functions
 function scheduleInterview(candidateName, candidateEmail) {
     showInterviewScheduleModal(candidateName, candidateEmail);
 }
 
+// =============================================================================
+// Dashboard stat-card click-through: list candidates by status
+// =============================================================================
+async function openCandidatesByStatus(status) {
+    const mainContent = document.getElementById('main-content');
+    if (!mainContent) return;
+
+    const meta = {
+        selected:    { title: 'Selected Candidates',    desc: 'Candidates marked ready to hire',           icon: 'fa-check-circle', color: 'emerald' },
+        rejected:    { title: 'Rejected Candidates',    desc: 'Candidates you have rejected',              icon: 'fa-times-circle', color: 'red' },
+        shortlisted: { title: 'Shortlisted Candidates', desc: 'Candidates awaiting review',                icon: 'fa-star',         color: 'yellow' },
+        interviewed: { title: 'Interviewed Candidates', desc: 'Candidates with completed interviews',      icon: 'fa-video',        color: 'green' },
+    }[status] || { title: 'Candidates', desc: '', icon: 'fa-users', color: 'gray' };
+
+    const escFn = window.escapeHtml || ((v) => {
+        const d = document.createElement('div');
+        d.textContent = v == null ? '' : String(v);
+        return d.innerHTML;
+    });
+
+    // Render shell with loading state immediately
+    mainContent.innerHTML = `
+        <div class="p-6 max-w-7xl mx-auto">
+            <div class="mb-6 flex items-start justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="w-12 h-12 flex items-center justify-center rounded-xl bg-${meta.color}-100">
+                        <i class="fas ${meta.icon} text-${meta.color}-600 text-2xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-900">${escFn(meta.title)}</h2>
+                        <p class="text-sm text-gray-600">${escFn(meta.desc)}</p>
+                    </div>
+                </div>
+                <button onclick="loadPage('dashboard')" class="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50">
+                    <i class="fas fa-arrow-left mr-2"></i>Back to Dashboard
+                </button>
+            </div>
+
+            <div id="candidates-by-status-body" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div class="animate-pulse space-y-3">
+                    <div class="h-12 bg-gray-100 rounded"></div>
+                    <div class="h-12 bg-gray-100 rounded"></div>
+                    <div class="h-12 bg-gray-100 rounded"></div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    try {
+        const resp = await fetch(`/api/candidates-by-status?status=${encodeURIComponent(status)}`, {
+            credentials: 'same-origin',
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        renderCandidatesByStatusList(data.candidates || [], status, meta);
+    } catch (err) {
+        console.error('openCandidatesByStatus failed:', err);
+        const body = document.getElementById('candidates-by-status-body');
+        if (body) {
+            body.innerHTML = `
+                <div class="text-center py-12 text-gray-500">
+                    <i class="fas fa-exclamation-triangle text-3xl text-red-400 mb-3"></i>
+                    <p class="text-sm">Failed to load candidates: ${escFn(err.message || err)}</p>
+                </div>
+            `;
+        }
+    }
+}
+
+function renderCandidatesByStatusList(candidates, status, meta) {
+    const body = document.getElementById('candidates-by-status-body');
+    if (!body) return;
+    const escFn = window.escapeHtml || ((v) => {
+        const d = document.createElement('div');
+        d.textContent = v == null ? '' : String(v);
+        return d.innerHTML;
+    });
+    const attrFn = window.escapeAttr || escFn;
+
+    if (!candidates.length) {
+        body.innerHTML = `
+            <div class="text-center py-16 text-gray-500">
+                <i class="fas ${meta.icon} text-4xl text-gray-300 mb-4"></i>
+                <p class="text-base font-medium">No ${escFn(status)} candidates yet</p>
+                <p class="text-sm text-gray-400 mt-1">Action candidates from your search results to see them here.</p>
+                <button onclick="loadPage('searchResumes')" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+                    <i class="fas fa-search mr-2"></i>Search Resumes
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    const rows = candidates.map((c) => {
+        const score = Math.round(Number(c.match_score) || 0);
+        const scoreBadge = score >= 75
+            ? 'bg-green-100 text-green-800'
+            : score >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+        const actioned = c.actioned_at ? new Date(c.actioned_at).toLocaleDateString() : '';
+        const contactBits = [];
+        if (c.candidate_email) contactBits.push(`<i class="fas fa-envelope mr-1"></i>${escFn(c.candidate_email)}`);
+        if (c.candidate_phone) contactBits.push(`<i class="fas fa-phone mr-1"></i>${escFn(c.candidate_phone)}`);
+        if (c.candidate_location) contactBits.push(`<i class="fas fa-map-marker-alt mr-1"></i>${escFn(c.candidate_location)}`);
+        const fileBase = (c.file_path || '').split('/').pop() || '';
+        const srcId = c.search_id ? String(Number(c.search_id)) : '';
+        return `
+            <tr class="hover:bg-gray-50">
+                <td class="py-3 px-3">
+                    <div class="font-semibold text-gray-900">${escFn(c.candidate_name)}</div>
+                    <div class="text-xs text-gray-500 mt-0.5">${contactBits.join(' &nbsp;·&nbsp; ')}</div>
+                </td>
+                <td class="py-3 px-3 text-sm text-gray-700">${escFn(c.position_applied || '—')}</td>
+                <td class="py-3 px-3">
+                    <span class="${scoreBadge} px-2 py-1 rounded-full text-xs font-medium">${score}%</span>
+                </td>
+                <td class="py-3 px-3 text-xs text-gray-500">${escFn(actioned)}</td>
+                <td class="py-3 px-3 text-right">
+                    <div class="inline-flex items-center space-x-2">
+                        ${srcId ? `<button type="button" class="text-blue-600 hover:text-blue-800 text-xs font-medium" data-action="source" data-search-id="${attrFn(srcId)}" data-search-query="${attrFn(c.search_query || '')}" title="Open source search"><i class="fas fa-external-link-alt mr-1"></i>Source</button>` : ''}
+                        ${fileBase ? `<button type="button" class="text-gray-600 hover:text-gray-900 text-xs font-medium" data-action="resume" data-file="${attrFn(fileBase)}" title="Download resume"><i class="fas fa-download mr-1"></i>Resume</button>` : ''}
+                        <button type="button" class="text-emerald-700 hover:text-emerald-900 text-xs font-medium" data-action="schedule" data-name="${attrFn(c.candidate_name || '')}" data-email="${attrFn(c.candidate_email || '')}" title="Schedule with this candidate"><i class="fas fa-calendar-plus mr-1"></i>Schedule</button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    body.innerHTML = `
+        <div class="flex items-center justify-between mb-4">
+            <p class="text-sm text-gray-600">${candidates.length} candidate${candidates.length === 1 ? '' : 's'}</p>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="border-b border-gray-200">
+                        <th class="text-left py-3 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Candidate</th>
+                        <th class="text-left py-3 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
+                        <th class="text-left py-3 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
+                        <th class="text-left py-3 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Actioned</th>
+                        <th class="text-right py-3 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">${rows}</tbody>
+            </table>
+        </div>
+    `;
+
+    // Delegated click handlers — avoids HTML-attribute quoting issues with
+    // candidate names / file paths that contain quotes or apostrophes.
+    body.querySelectorAll('button[data-action]').forEach((btn) => {
+        btn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            const action = btn.getAttribute('data-action');
+            try {
+                if (action === 'source') {
+                    const sid = Number(btn.getAttribute('data-search-id'));
+                    const sq = btn.getAttribute('data-search-query') || '';
+                    if (typeof loadSavedSearch === 'function' && sid) {
+                        loadSavedSearch(sid, sq);
+                    }
+                } else if (action === 'resume') {
+                    const file = btn.getAttribute('data-file') || '';
+                    if (typeof downloadResume === 'function' && file) {
+                        downloadResume(file);
+                    }
+                } else if (action === 'schedule') {
+                    const name = btn.getAttribute('data-name') || '';
+                    const email = btn.getAttribute('data-email') || '';
+                    openGeneralScheduleModal(name, email);
+                }
+            } catch (err) {
+                console.error('candidates-by-status row action failed:', action, err);
+            }
+        });
+    });
+}
+
+// =============================================================================
+// Schedule "+" button: open a generic schedule modal (no candidate context
+// required). Reuses /api/schedule-interview on the backend.
+// =============================================================================
+function openGeneralScheduleModal(prefillName, prefillEmail) {
+    const escFn = window.escapeHtml || ((v) => {
+        const d = document.createElement('div');
+        d.textContent = v == null ? '' : String(v);
+        return d.innerHTML;
+    });
+    const attrFn = window.escapeAttr || escFn;
+    const interviewerName = window.currentUser ? (window.currentUser.full_name || '') : '';
+
+    // Remove any pre-existing schedule modal
+    document.querySelectorAll('[data-modal="general-schedule"]').forEach((m) => m.remove());
+
+    const modal = document.createElement('div');
+    modal.setAttribute('data-modal', 'general-schedule');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+    modal.innerHTML = `
+        <div class="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900">Add to Schedule</h3>
+                    <p class="text-sm text-gray-600 mt-1">Create a new interview or meeting</p>
+                </div>
+                <button type="button" onclick="closeGeneralScheduleModal()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+
+            <form id="general-schedule-form">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Candidate / Title <span class="text-red-500">*</span></label>
+                    <input type="text" id="gs-candidate-name" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           value="${attrFn(prefillName || '')}"
+                           placeholder="e.g., Jane Doe">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Candidate Email</label>
+                    <input type="email" id="gs-candidate-email"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           value="${attrFn(prefillEmail || '')}"
+                           placeholder="optional">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Type</label>
+                    <select id="gs-type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="phone">Phone Screening</option>
+                        <option value="video" selected>Video Interview</option>
+                        <option value="in-person">In-Person Interview</option>
+                        <option value="technical">Technical Interview</option>
+                        <option value="final">Final Interview</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Date <span class="text-red-500">*</span></label>
+                        <input type="date" id="gs-date" required
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               min="${new Date().toISOString().split('T')[0]}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Time <span class="text-red-500">*</span></label>
+                        <input type="time" id="gs-time" required
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Duration</label>
+                    <select id="gs-duration" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="30">30 minutes</option>
+                        <option value="45">45 minutes</option>
+                        <option value="60" selected>1 hour</option>
+                        <option value="90">1.5 hours</option>
+                        <option value="120">2 hours</option>
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Location / Platform</label>
+                    <input type="text" id="gs-location"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           placeholder="e.g., Zoom, Office Room A">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Auto-create online meeting</label>
+                    <select id="gs-provider" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="none" selected>No — use Location field</option>
+                        <option value="meet">Google Meet (requires connected Google)</option>
+                        <option value="teams">Microsoft Teams (requires connected Microsoft)</option>
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Interviewer(s)</label>
+                    <input type="text" id="gs-interviewer"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           placeholder="e.g., John Smith"
+                           value="${attrFn(interviewerName)}">
+                </div>
+
+                <div class="mb-4 flex items-start">
+                    <input type="checkbox" id="gs-send-email" class="mt-1 mr-2">
+                    <label for="gs-send-email" class="text-sm text-gray-700">
+                        Email the candidate an interview invitation (requires email above)
+                    </label>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                    <textarea id="gs-notes" rows="3"
+                              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="Agenda, special instructions..."></textarea>
+                </div>
+
+                <div class="flex space-x-3">
+                    <button type="button" onclick="closeGeneralScheduleModal()"
+                            class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+                    <button type="submit"
+                            class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                        <i class="fas fa-calendar-plus mr-2"></i>Add to Schedule
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Defaults: tomorrow 10:00
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dEl = document.getElementById('gs-date');
+    const tEl = document.getElementById('gs-time');
+    if (dEl) dEl.value = tomorrow.toISOString().split('T')[0];
+    if (tEl) tEl.value = '10:00';
+
+    const form = document.getElementById('general-schedule-form');
+    if (form) form.addEventListener('submit', submitGeneralScheduleForm);
+}
+
+function closeGeneralScheduleModal() {
+    document.querySelectorAll('[data-modal="general-schedule"]').forEach((m) => m.remove());
+}
+
+async function submitGeneralScheduleForm(event) {
+    event.preventDefault();
+    const v = (id) => (document.getElementById(id) || {}).value || '';
+    const candidate_name = v('gs-candidate-name').trim();
+    if (!candidate_name) {
+        if (typeof showNotification === 'function') showNotification('Candidate / title is required', 'error');
+        return;
+    }
+
+    const payload = {
+        candidate_name,
+        candidate_email: v('gs-candidate-email').trim(),
+        interview_type:  v('gs-type') || 'video',
+        interview_date:  v('gs-date'),
+        interview_time:  v('gs-time'),
+        duration:        v('gs-duration') || '60',
+        location:        v('gs-location'),
+        interviewer:     v('gs-interviewer'),
+        notes:           v('gs-notes'),
+        meeting_provider: v('gs-provider') || 'none',
+        send_invite_email: !!(document.getElementById('gs-send-email') || {}).checked,
+        created_by: window.currentUser ? window.currentUser.id : null,
+    };
+
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn ? submitBtn.innerHTML : '';
+    if (submitBtn) {
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Adding...';
+        submitBtn.disabled = true;
+    }
+
+    try {
+        const resp = await fetch('/api/schedule-interview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(payload),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            throw new Error(data.detail || `HTTP ${resp.status}`);
+        }
+        closeGeneralScheduleModal();
+        if (typeof showNotification === 'function') {
+            showNotification(`Added: ${payload.interview_type} with ${candidate_name} on ${payload.interview_date} ${payload.interview_time}`, 'success');
+        }
+        if (data && data.meeting && data.meeting.join_url) {
+            if (typeof showNotification === 'function') showNotification(`Meeting link: ${data.meeting.join_url}`, 'info');
+        }
+        if (data && data.email && data.email.success) {
+            if (typeof showNotification === 'function') showNotification('Invite email sent to candidate.', 'success');
+        }
+        // Refresh upcoming events list if on dashboard
+        if (typeof loadUpcomingEvents === 'function') {
+            try { loadUpcomingEvents(); } catch (_) { /* noop */ }
+        }
+    } catch (err) {
+        console.error('submitGeneralScheduleForm failed:', err);
+        if (typeof showNotification === 'function') {
+            showNotification(`Failed to add to schedule: ${err.message || err}`, 'error');
+        }
+        if (submitBtn) {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        }
+    }
+}
+
 function showInterviewScheduleModal(candidateName, candidateEmail) {
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+    const esc = window.escapeHtml || ((value) => {
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+    });
+    const attr = window.escapeAttr || esc;
+    const interviewerName = window.currentUser ? window.currentUser.full_name : '';
     modal.innerHTML = `
         <div class="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
             <div class="flex items-center justify-between mb-6">
                 <div>
                     <h3 class="text-lg font-semibold text-gray-900">Schedule Interview</h3>
-                    <p class="text-sm text-gray-600 mt-1">with ${candidateName}</p>
+                    <p class="text-sm text-gray-600 mt-1">with ${esc(candidateName)}</p>
                 </div>
                 <button onclick="closeInterviewModal()" class="text-gray-400 hover:text-gray-600">
                     <i class="fas fa-times text-lg"></i>
                 </button>
             </div>
             
-            <form id="interview-form" onsubmit="saveInterviewSchedule(event, '${candidateName}', '${candidateEmail}')">
+            <form id="interview-form">
                 <!-- Interview Type -->
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Interview Type</label>
@@ -7112,6 +8219,27 @@ function showInterviewScheduleModal(candidateName, candidateEmail) {
                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                            placeholder="e.g., Zoom, Office Conference Room A, Google Meet">
                 </div>
+
+                <!-- Online meeting provider (Teams / Meet / none) -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Auto-create online meeting</label>
+                    <select id="interview-provider" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="none">No — use Location field above</option>
+                        <option value="meet">Google Meet (requires connected Google account)</option>
+                        <option value="teams">Microsoft Teams (requires connected Microsoft account)</option>
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">A join link will be generated and saved with the interview.</p>
+                </div>
+
+                <!-- Send candidate an invite email -->
+                <div class="mb-4 flex items-start">
+                    <input type="checkbox" id="interview-send-email" class="mt-1 mr-2"
+                           ${candidateEmail ? 'checked' : 'disabled'}>
+                    <label for="interview-send-email" class="text-sm text-gray-700">
+                        Email the candidate an interview invitation
+                        ${candidateEmail ? '' : '<span class="text-xs text-gray-400">(no email on file)</span>'}
+                    </label>
+                </div>
                 
                 <!-- Interviewer -->
                 <div class="mb-4">
@@ -7119,7 +8247,7 @@ function showInterviewScheduleModal(candidateName, candidateEmail) {
                     <input type="text" id="interview-interviewer" 
                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                            placeholder="e.g., John Smith, Sarah Johnson"
-                           value="${window.currentUser ? window.currentUser.full_name : ''}">
+                           value="${attr(interviewerName)}">
                 </div>
                 
                 <!-- Notes -->
@@ -7156,6 +8284,11 @@ function showInterviewScheduleModal(candidateName, candidateEmail) {
 
     // Set default time to 10:00 AM
     document.getElementById('interview-time').value = '10:00';
+
+    const form = document.getElementById('interview-form');
+    if (form) {
+        form.addEventListener('submit', (event) => saveInterviewSchedule(event, candidateName, candidateEmail));
+    }
 }
 
 function closeInterviewModal() {
@@ -7178,6 +8311,8 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
         location: document.getElementById('interview-location').value,
         interviewer: document.getElementById('interview-interviewer').value,
         notes: document.getElementById('interview-notes').value,
+        meeting_provider: (document.getElementById('interview-provider') || {}).value || 'none',
+        send_invite_email: !!(document.getElementById('interview-send-email') || {}).checked,
         created_by: window.currentUser ? window.currentUser.id : null
     };
 
@@ -7206,8 +8341,21 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
             // Show success notification
             showNotification(`Interview scheduled with ${candidateName} for ${formData.interview_date} at ${formData.interview_time}`, 'success');
 
+            // Surface meeting / email outcomes (non-fatal)
+            if (result && result.meeting && result.meeting.success === false && result.meeting.error) {
+                showNotification(`Meeting link not created: ${result.meeting.error}`, 'warning');
+            } else if (result && result.meeting && result.meeting.join_url) {
+                showNotification(`Meeting link: ${result.meeting.join_url}`, 'info');
+            }
+            if (result && result.email && result.email.success === false && result.email.error) {
+                showNotification(`Invite email not sent: ${result.email.error}`, 'warning');
+            } else if (result && result.email && result.email.success) {
+                showNotification('Invite email sent to candidate.', 'success');
+            }
+
             // Update candidate status to interviewed
-            const candidateCheckbox = document.querySelector(`input[data-status="interviewed"][onchange*="${candidateName}"]`);
+            const candidateCard = getCandidateCardByName(candidateName);
+            const candidateCheckbox = candidateCard ? candidateCard.querySelector('input[data-status="interviewed"]') : null;
             if (candidateCheckbox) {
                 candidateCheckbox.checked = true;
                 await setCandidateStatus(candidateName, 'interviewed', candidateCheckbox);
@@ -7220,9 +8368,6 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
                     actionForm.append('candidate_name', candidateName);
                     actionForm.append('action_type', 'interviewed');
                     actionForm.append('action_status', 'true');
-                    if (window.currentUser && window.currentUser.id) {
-                        actionForm.append('user_id', window.currentUser.id);
-                    }
                     await fetch('/api/candidate-action', { method: 'POST', body: actionForm });
                     loadCandidateStatusCounts();
                 } catch (e) { console.error('Direct interviewed action save failed', e); }
@@ -7247,3 +8392,72 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
         submitBtn.disabled = false;
     }
 }
+
+// =============================================================================
+// GLOBAL HANDLER SAFETY NET
+// Many onclick="foo(...)" attributes in dynamically-rendered HTML need their
+// targets on `window`. Functions defined inside DOMContentLoaded are NOT
+// global by default. Re-export them defensively here. Also surface a
+// diagnostic for any onclick name that resolves to undefined.
+// =============================================================================
+(function () {
+    const handlerNames = [
+        'showLoadingMessage', 'hideLoadingMessage', 'updateSearchProgress',
+        'generateEnhancedResults', 'addUserMessage',
+        'pollHRScorecardTask',
+        'exportCandidateReport', 'exportAllCandidatesReport',
+        'downloadResume', 'setCandidateStatus',
+        'editUser', 'refreshSearchHistory',
+        'scheduleInterview', 'closeInterviewModal',
+        'loadPage', 'removeFile', 'closeAnalysisModal', 'removeSkill',
+        'loadSavedSearch', 'showNotification', 'submitInterviewForm',
+        'loadCandidateStatusCounts', 'loadUpcomingEvents',
+        'openCandidatesByStatus', 'renderCandidatesByStatusList',
+        'openGeneralScheduleModal', 'closeGeneralScheduleModal', 'submitGeneralScheduleForm',
+    ];
+    handlerNames.forEach(function (name) {
+        try {
+            // If a closure-scoped binding exists, eval pulls it; if it's
+            // already on window, this is a no-op. Wrapped so a single missing
+            // symbol does not break the rest.
+            // eslint-disable-next-line no-eval
+            const fn = (typeof window[name] === 'function')
+                ? window[name]
+                : (function () { try { return eval(name); } catch (_) { return undefined; } })();
+            if (typeof fn === 'function' && typeof window[name] !== 'function') {
+                window[name] = fn;
+            }
+        } catch (_) { /* noop */ }
+    });
+
+    // Diagnostic: log any onclick attribute whose primary identifier is not
+    // resolvable on window. Helps catch new buttons that ship broken.
+    function auditOnclickHandlers() {
+        try {
+            const els = document.querySelectorAll('[onclick]');
+            const missing = new Set();
+            els.forEach(function (el) {
+                const code = el.getAttribute('onclick') || '';
+                const m = code.match(/([A-Za-z_$][\w$]*)\s*\(/);
+                if (m) {
+                    const name = m[1];
+                    if (typeof window[name] !== 'function'
+                        && !['this', 'event', 'return', 'window'].includes(name)) {
+                        missing.add(name);
+                    }
+                }
+            });
+            if (missing.size) {
+                console.warn('[onclick-audit] missing global handlers:',
+                    Array.from(missing));
+            }
+        } catch (e) { /* noop */ }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', auditOnclickHandlers);
+    } else {
+        // Defer one tick so dynamically-rendered cards are present.
+        setTimeout(auditOnclickHandlers, 1500);
+    }
+})();

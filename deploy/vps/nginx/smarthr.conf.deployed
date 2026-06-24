@@ -1,0 +1,103 @@
+﻿# SmartHR VPS ΓÇö host nginx vhost (reverse proxy to 127.0.0.1:8081)
+# Coexists with /etc/nginx/sites-enabled/leadflow (different server_name).
+#
+# Hostnames:
+#   smarthr-187-127-162-233.nip.io  (free wildcard DNS ΓÇö no registration)
+# After bootstrap, run certbot to upgrade :80 -> :443 TLS:
+#   certbot --nginx -d smarthr-187-127-162-233.nip.io
+
+# ---------------------------------------------------------------------------
+# Public HTTP vhost (will be auto-upgraded to HTTPS by certbot --nginx)
+# ---------------------------------------------------------------------------
+server {
+    server_name smarthr-187-127-162-233.nip.io;
+
+    client_max_body_size 50M;
+
+    location = /api/process-hr-scorecard-task {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        proxy_pass http://127.0.0.1:8081;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    listen [::]:443 ssl ipv6only=on; # managed by Certbot
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/smarthr-187-127-162-233.nip.io/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/smarthr-187-127-162-233.nip.io/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+
+# ---------------------------------------------------------------------------
+# IP-based fallback on :8443 (no TLS) ΓÇö useful for testing before DNS resolves
+# ---------------------------------------------------------------------------
+server {
+    listen 8443;
+    listen [::]:8443;
+    server_name _;
+
+    client_max_body_size 50M;
+
+    location = /api/process-hr-scorecard-task {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        proxy_pass http://127.0.0.1:8081;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}
+
+server {
+    if ($host = smarthr-187-127-162-233.nip.io) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    listen [::]:80;
+    server_name smarthr-187-127-162-233.nip.io;
+    return 404; # managed by Certbot
+
+
+}

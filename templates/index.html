@@ -6,23 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart HR</title>
     <link rel="icon" type="image/png" href="/static/img/makaiyslogo-2-300x262.png">
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/css/tailwind.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="/static/js/security.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v={{ asset_v.style_css }}">
     <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'primary': '#3B82F6',
-                        'primary-dark': '#1E40AF',
-                        'secondary': '#8B5CF6',
-                        'accent': '#10B981',
-                    }
-                }
-            }
-        }
+        // Tailwind theme tokens are now built into /static/css/tailwind.css.
+        // This stub remains for any legacy code that referenced window.tailwind.
+        window.tailwind = window.tailwind || { config: {} };
     </script>
     <style>
         /* Job Description Preview Formatting */
@@ -110,11 +102,11 @@
             <div class="p-4 border-b border-gray-100">
                 <div class="flex items-center space-x-2">
                     <div class="w-9 h-9 bg-white rounded-lg shadow-md flex items-center justify-center">
-                        <img src="/static/img/makaiyslogo-2-300x262.png" alt="Smart HR Logo"
-                            class="h-7 w-7 object-contain">
+                        <img src="/static/img/ai-logo.png" alt="AI Agent Recruiter"
+                            class="h-8 w-8 object-contain">
                     </div>
                     <div>
-                        <h1 class="text-sm font-bold text-gray-800">Smart HR</h1>
+                        <h1 class="text-sm font-bold text-gray-800">AI Agent Recruiter</h1>
                         <p class="text-xs text-gray-500">Your AI Agent for Seamless Recruitment</p>
                     </div>
                 </div>
@@ -236,7 +228,7 @@
         </div>
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="/static/js/main.js"></script>
+    <script src="/static/js/main.js?v={{ asset_v.main_js }}"></script>
 </body>
 
 </html>

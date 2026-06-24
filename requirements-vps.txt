@@ -1,0 +1,14 @@
+# Additional dependencies needed only when running in VPS local-mode
+# (SMARTHR_LOCAL_MODE=1). Adds ~2GB to image due to torch.
+# Force numpy>=2 to be ABI-compatible with newer scikit-learn pulled by sentence-transformers
+numpy>=2.0,<3
+pandas>=2.2.3
+sentence-transformers>=3.3.0
+openai>=1.59.2
+pgvector>=0.3.6
+
+# Keep the second `pip --prefix` install from overwriting base app pins.
+pydantic==2.11.7
+pydantic_core==2.33.2
+typing_extensions==4.15.0
+click==8.4.1

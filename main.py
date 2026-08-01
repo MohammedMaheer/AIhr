@@ -5635,12 +5635,13 @@ def scrape_outlook_attachments(email_address: str, password: str, limit: int = 1
         print(f"📧 Connecting to Outlook 365 for {email_address}")
 
         # Microsoft Graph API configuration
-        authority = "https://login.microsoftonline.com/common"
-        client_id = os.getenv("OUTLOOK_CLIENT_ID")
-        client_secret = os.getenv("OUTLOOK_CLIENT_SECRET")
+        tenant_id = os.getenv("OUTLOOK_TENANT_ID") or os.getenv("MS_TENANT_ID") or "organizations"
+        authority = f"https://login.microsoftonline.com/{tenant_id}"
+        client_id = os.getenv("OUTLOOK_CLIENT_ID") or os.getenv("MS_CLIENT_ID")
+        client_secret = os.getenv("OUTLOOK_CLIENT_SECRET") or os.getenv("MS_CLIENT_SECRET")
 
         if not client_id or not client_secret:
-            print("⚠️ Outlook 365 API credentials not configured. Set OUTLOOK_CLIENT_ID and OUTLOOK_CLIENT_SECRET environment variables.")
+            print("⚠️ Outlook 365 API credentials not configured. Set OUTLOOK_CLIENT_ID/OUTLOOK_CLIENT_SECRET or MS_CLIENT_ID/MS_CLIENT_SECRET environment variables.")
             try:
                 return scrape_imap_resume_attachments(
                     email_address,

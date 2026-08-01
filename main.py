@@ -4317,7 +4317,7 @@ def _gemini_ping_cached(ttl_sec: float = 60.0) -> tuple[bool, str | None]:
         return False, msg
 
 
-async def health_check_deep():
+async def health_check_deep(llm: bool = False):
     """Readiness probe that pings critical dependencies.
 
     Returns 200 if every dependency that is configured is reachable; 503
@@ -4437,53 +4437,62 @@ async def health_check_deep():
         checks["gcs"] = {"status": "fail", "error": str(e)[:200]}
         overall_ok = False
 
-    # LLM provider ping (cached 60s to avoid hitting the API on every probe).
-    # With the resilient wrapper, "ok" means *some* provider can serve requests
-    # (Gemini preferred, OpenAI fallback). We surface circuit-breaker state so
-    # operators can see when we've degraded onto OpenAI.
-    try:
-        has_gemini_creds = bool(
-            os.environ.get("GEMINI_API_KEY")
-            or os.environ.get("GOOGLE_GEMINI_API_KEY")
-            or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-            or os.environ.get("GOOGLE_CLOUD_PROJECT")
-        )
-        has_openai = bool(os.environ.get("OPENAI_API_KEY"))
-        if not has_gemini_creds and not has_openai:
-            checks["gemini"] = {"status": "skipped", "note": "no LLM credentials in env"}
-        else:
-            gem_start = time.time()
-            ok, err = _gemini_ping_cached()
-            circuit_open = _gemini_circuit_open()
-            provider = "gemini"
-            if circuit_open:
-                provider = "openai" if has_openai else "none"
-            entry = {
-                "ms": int((time.time() - gem_start) * 1000),
-                "cached_ttl_s": 60,
-                "provider": provider,
-                "gemini_circuit_open": circuit_open,
-                "gemini_fail_count": _gemini_circuit_state.get("fail_count", 0),
-            }
-            if ok:
-                # Healthy via *some* provider. If we're on OpenAI fallback,
-                # surface that as a warning but don't fail the overall check
-                # (the system is serving requests).
-                entry["status"] = "ok"
-                if circuit_open:
-                    entry["note"] = "serving via OpenAI fallback (Gemini circuit open)"
-                    entry["last_gemini_error"] = (
-                        _gemini_circuit_state.get("last_error", "") or ""
-                    )[:200]
-                checks["gemini"] = entry
+    # LLM provider ping is opt-in because even cheap provider probes can create
+    # paid API traffic when health endpoints are polled continuously.
+    if not llm:
+        checks["llm"] = {
+            "status": "skipped",
+            "note": "pass ?llm=1 to include paid provider diagnostics",
+        }
+    else:
+        # LLM provider ping (cached 60s to avoid hitting the API on every probe).
+        # With the resilient wrapper, "ok" means *some* provider can serve
+        # requests (Gemini preferred, OpenAI fallback). We surface
+        # circuit-breaker state so operators can see when we've degraded onto
+        # OpenAI.
+        try:
+            has_gemini_creds = bool(
+                os.environ.get("GEMINI_API_KEY")
+                or os.environ.get("GOOGLE_GEMINI_API_KEY")
+                or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+                or os.environ.get("GOOGLE_CLOUD_PROJECT")
+            )
+            has_openai = bool(os.environ.get("OPENAI_API_KEY"))
+            if not has_gemini_creds and not has_openai:
+                checks["gemini"] = {"status": "skipped", "note": "no LLM credentials in env"}
             else:
-                entry["status"] = "fail"
-                entry["error"] = err or "unknown"
-                checks["gemini"] = entry
-                overall_ok = False
-    except Exception as e:
-        checks["gemini"] = {"status": "fail", "error": str(e)[:200]}
-        overall_ok = False
+                gem_start = time.time()
+                ok, err = _gemini_ping_cached()
+                circuit_open = _gemini_circuit_open()
+                provider = "gemini"
+                if circuit_open:
+                    provider = "openai" if has_openai else "none"
+                entry = {
+                    "ms": int((time.time() - gem_start) * 1000),
+                    "cached_ttl_s": 60,
+                    "provider": provider,
+                    "gemini_circuit_open": circuit_open,
+                    "gemini_fail_count": _gemini_circuit_state.get("fail_count", 0),
+                }
+                if ok:
+                    # Healthy via *some* provider. If we're on OpenAI fallback,
+                    # surface that as a warning but don't fail the overall check
+                    # (the system is serving requests).
+                    entry["status"] = "ok"
+                    if circuit_open:
+                        entry["note"] = "serving via OpenAI fallback (Gemini circuit open)"
+                        entry["last_gemini_error"] = (
+                            _gemini_circuit_state.get("last_error", "") or ""
+                        )[:200]
+                    checks["gemini"] = entry
+                else:
+                    entry["status"] = "fail"
+                    entry["error"] = err or "unknown"
+                    checks["gemini"] = entry
+                    overall_ok = False
+        except Exception as e:
+            checks["gemini"] = {"status": "fail", "error": str(e)[:200]}
+            overall_ok = False
 
     body = {"status": "healthy" if overall_ok else "degraded",
             "timestamp": time.time(),

@@ -59,6 +59,7 @@ body {
 #chat-interface .search-category-card { border-radius: 8px; }
 #jd-upload-button, #send-button, #bottom-send-button { min-width: 40px; min-height: 40px; }
 #bottom-chat-input { padding-right: 56px; }
+#jd-builder-page button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
@@ -685,7 +686,12 @@ button, input, .glass {
 
 .professional-match-score {
     text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
+
+.professional-candidate-info { min-width: 0; overflow-wrap: anywhere; }
 
 .professional-score-circle {
     width: 70px;

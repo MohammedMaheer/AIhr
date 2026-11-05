@@ -150,7 +150,7 @@ def test_meet_conference_ids_are_unique_even_in_the_same_second(monkeypatch):
 
 
 def interview_body(**changes):
-    return {'candidate_name': 'Synthetic Candidate', 'candidate_email': 'fictional@example.invalid',
+    return {'candidate_name': 'Synthetic Candidate', 'candidate_email': 'fictional@example.invalid', 'position': 'Backend Engineer',
         'interview_date': '2030-01-02', 'interview_time': '10:00', 'time_zone': 'UTC',
         'duration': 30, 'meeting_provider': 'teams', 'send_invite_email': True, **changes}
 

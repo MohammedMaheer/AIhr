@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - HR Agent Platform</title>
     <link rel="stylesheet" href="/static/css/tailwind.css">
+    <link rel="stylesheet" href="/static/css/components.css?v={{ asset_v.components_css }}">
+    <script src="/static/js/notifications.js?v={{ asset_v.notifications_js }}"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
@@ -13,6 +15,38 @@
         }
         .sidebar-item:hover {
             transform: translateX(5px);
+        }
+        :where(button,a,input,select,textarea,[tabindex]):focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+        #admin-navigation-close { position: absolute; right: 8px; top: 8px; width: 44px; height: 44px; }
+        #sidebar { overflow-y: auto; }
+        #sidebarToggle, #admin-sign-out, #admin-profile { min-width: 44px; min-height: 44px; }
+        #sidebarToggle, #admin-navigation-close { flex-shrink: 0; }
+        #admin-navigation-backdrop { position: fixed; inset: 64px 0 0; background: rgb(17 24 39 / 40%); z-index: 30; }
+        main { min-width: 0; }
+        [role="dialog"] { overscroll-behavior: contain; }
+        @media (max-width: 1023px) {
+            #admin-topbar h1 { font-size: 18px; margin-left: 8px; }
+            #admin-topbar #userFullName { max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            #admin-topbar > div { padding-inline: 8px; }
+            #admin-topbar .space-x-4 { gap: 4px; }
+            #admin-topbar .space-x-4 > * { margin-left: 0; }
+            #sidebar > .p-4 > .mb-8 { padding-right: 44px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+        }
+        @media (max-width: 380px) { #admin-topbar h1 { font-size: 16px; } }
+        #companies table, #users table { min-width: 720px; }
+        @media (max-width: 640px) {
+            .admin-section-heading { flex-direction: column; align-items: stretch; padding: 16px; }
+            .admin-section-heading h2 { font-size: 20px; letter-spacing: 0; }
+            .admin-section-heading > button { align-self: flex-start; min-height: 44px; }
+            .admin-table-toolbar { flex-wrap: wrap; padding: 12px; }
+            .admin-table-toolbar > .relative { flex: 1 1 100%; min-width: 0; }
+            .admin-table-toolbar > .flex { flex-wrap: wrap; max-width: 100%; }
+            .user-role-chip { min-height: 36px; }
+            #users > .grid > div { padding: 14px; }
+            #users > .grid > div > .flex > div:last-child { width: 32px; height: 32px; font-size: 20px; flex-shrink: 0; }
         }
         .card-hover {
             transition: all 0.3s ease;
@@ -79,24 +113,23 @@
 </head>
 <body class="bg-gray-50">
     <!-- Top Navigation -->
-    <nav class="bg-white shadow-lg fixed top-0 left-0 right-0 z-50">
+    <nav id="admin-topbar" aria-label="Account navigation" class="bg-white shadow-lg fixed top-0 left-0 right-0 z-50">
         <div class="px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-16">
                 <div class="flex items-center">
-                    <button id="sidebarToggle" class="p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 lg:hidden">
+                    <button id="sidebarToggle" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false" class="p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 lg:hidden">
                         <i class="fas fa-bars text-xl"></i>
                     </button>
                     <h1 class="ml-4 text-xl font-semibold text-gray-800">HR Agent Dashboard</h1>
                 </div>
                 <div class="flex items-center space-x-4">
                     <div class="relative">
-                        <button class="flex items-center space-x-2 text-sm text-gray-700 hover:text-gray-900">
+                        <button id="admin-profile" aria-label="Open my profile" onclick="showSection('profile')" class="flex items-center space-x-2 text-sm text-gray-700 hover:text-gray-900">
                             <i class="fas fa-user-circle text-2xl"></i>
                             <span id="userFullName">User Name</span>
-                            <i class="fas fa-chevron-down text-xs"></i>
                         </button>
                     </div>
-                    <button onclick="logout()" class="text-gray-600 hover:text-red-600">
+                    <button id="admin-sign-out" onclick="logout()" aria-label="Sign out" title="Sign out" class="text-gray-600 hover:text-red-600">
                         <i class="fas fa-sign-out-alt"></i>
                     </button>
                 </div>
@@ -105,8 +138,11 @@
     </nav>
 
     <!-- Sidebar -->
-    <aside id="sidebar" class="fixed left-0 top-16 bottom-0 w-64 bg-purple-800 text-white transform -translate-x-full lg:translate-x-0 transition-transform duration-300 z-40">
+    <button id="admin-navigation-backdrop" aria-label="Close navigation" hidden></button>
+    <aside id="sidebar" aria-label="Admin navigation" class="fixed left-0 top-16 bottom-0 w-64 bg-purple-800 text-white transform -translate-x-full lg:translate-x-0 transition-transform duration-300 z-40">
+        <button id="admin-navigation-close" aria-label="Close navigation" class="lg:hidden"><i class="fas fa-times" aria-hidden="true"></i></button>
         <div class="p-4">
+            <div class="efforts-admin-brand"><img src="/static/review/efforts-solutions-logo.png" alt="Efforts Solutions"></div>
             <div class="mb-8">
                 <p class="text-purple-200 text-sm">Logged in as</p>
                 <p class="font-semibold" id="sidebarUserName">User Name</p>
@@ -148,7 +184,7 @@
     </aside>
 
     <!-- Main Content -->
-    <main class="lg:ml-64 pt-16 min-h-screen">
+    <main tabindex="-1" class="lg:ml-64 pt-16 min-h-screen">
         <div class="p-4 sm:p-6 lg:p-8">
             <!-- Dashboard Overview -->
             <div id="overview" class="content-section">
@@ -189,7 +225,7 @@
                     <div class="card-hover bg-white rounded-lg shadow p-6">
                         <div class="flex items-center justify-between">
                             <div>
-                                <p class="text-gray-500 text-sm">Resumes Analyzed</p>
+                                <p class="text-gray-500 text-sm">Resumes Uploaded</p>
                                 <p class="text-2xl font-bold text-gray-800" id="totalResumes">0</p>
                             </div>
                             <i class="fas fa-file-alt text-3xl text-orange-500"></i>
@@ -280,14 +316,13 @@
                 <!-- Hero header -->
                 <div class="relative overflow-hidden rounded-xl mb-5 bg-gradient-to-r from-purple-600 via-purple-700 to-indigo-700 text-white shadow-lg">
                     <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(circle at 20% 30%, white 1px, transparent 1px), radial-gradient(circle at 80% 70%, white 1px, transparent 1px); background-size: 40px 40px;"></div>
-                    <div class="relative px-6 py-5 flex items-center justify-between gap-4">
+                    <div class="admin-section-heading relative px-6 py-5 flex items-center justify-between gap-4">
                         <div class="flex items-center gap-3 min-w-0">
                             <div class="w-11 h-11 rounded-xl bg-white bg-opacity-20 flex items-center justify-center flex-shrink-0">
                                 <i class="fas fa-building text-lg"></i>
                             </div>
                             <div class="min-w-0">
                                 <h2 class="text-2xl font-bold tracking-tight leading-tight">Manage Companies</h2>
-                                <p class="text-purple-100 text-sm mt-0.5">Provision, configure, and monitor every tenant on the platform.</p>
                             </div>
                         </div>
                         <button onclick="showCreateCompanyModal()" class="inline-flex items-center gap-2 bg-white text-purple-700 font-semibold px-4 py-2.5 rounded-lg shadow hover:bg-purple-50 transition whitespace-nowrap flex-shrink-0">
@@ -329,17 +364,17 @@
 
                 <!-- Search toolbar + table -->
                 <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div class="px-5 py-3 border-b border-gray-100 flex items-center gap-3 bg-gray-50">
+                    <div class="admin-table-toolbar px-5 py-3 border-b border-gray-100 flex items-center gap-3 bg-gray-50">
                         <div class="relative flex-1">
                             <i class="fas fa-search absolute left-3 top-1/2 text-gray-400 text-sm" style="transform:translateY(-50%)"></i>
-                            <input type="text" id="companiesSearch" oninput="filterCompaniesTable()" placeholder="Search companies by name, code, or plan..." class="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition" />
+                            <input type="text" id="companiesSearch" aria-label="Search companies" oninput="filterCompaniesTable()" placeholder="Search companies by name, code, or plan..." class="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition" />
                         </div>
                         <span class="text-xs font-medium text-gray-500 whitespace-nowrap" id="companiesCount">0 companies</span>
                         <button onclick="loadCompanies()" title="Refresh" class="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-100 transition text-sm">
                             <i class="fas fa-rotate-right"></i>
                         </button>
                     </div>
-                    <div class="overflow-x-auto">
+                    <div class="overflow-x-auto" role="region" aria-label="Companies table" tabindex="0">
                         <table class="min-w-full table-fixed">
                             <colgroup>
                                 <col style="width:34%"><col style="width:16%"><col style="width:16%"><col style="width:10%"><col style="width:14%"><col style="width:10%">
@@ -367,14 +402,13 @@
                 <!-- Hero header -->
                 <div class="relative overflow-hidden rounded-xl mb-5 bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 text-white shadow-lg">
                     <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(circle at 20% 30%, white 1px, transparent 1px), radial-gradient(circle at 80% 70%, white 1px, transparent 1px); background-size: 40px 40px;"></div>
-                    <div class="relative px-6 py-5 flex items-center justify-between gap-4">
+                    <div class="admin-section-heading relative px-6 py-5 flex items-center justify-between gap-4">
                         <div class="flex items-center gap-3 min-w-0">
                             <div class="w-11 h-11 rounded-xl bg-white bg-opacity-20 flex items-center justify-center flex-shrink-0">
                                 <i class="fas fa-users-cog text-lg"></i>
                             </div>
                             <div class="min-w-0">
                                 <h2 class="text-2xl font-bold tracking-tight leading-tight">Manage Users</h2>
-                                <p class="text-blue-100 text-sm mt-0.5">Invite teammates, set roles, and control access across the workspace.</p>
                             </div>
                         </div>
                         <button onclick="showCreateUserModal()" class="inline-flex items-center gap-2 bg-white text-blue-700 font-semibold px-4 py-2.5 rounded-lg shadow hover:bg-blue-50 transition whitespace-nowrap flex-shrink-0">
@@ -425,19 +459,19 @@
 
                 <!-- Search + role filter + table -->
                 <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div class="px-5 py-3 border-b border-gray-100 flex items-center gap-3 bg-gray-50">
+                    <div class="admin-table-toolbar px-5 py-3 border-b border-gray-100 flex items-center gap-3 bg-gray-50">
                         <div class="relative flex-1">
                             <i class="fas fa-search absolute left-3 top-1/2 text-gray-400 text-sm" style="transform:translateY(-50%)"></i>
-                            <input type="text" id="usersSearch" oninput="filterUsersTable()" placeholder="Search by name, email, or company..." class="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" />
+                            <input type="text" id="usersSearch" aria-label="Search users" oninput="filterUsersTable()" placeholder="Search by name, email, or company..." class="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" />
                         </div>
                         <div class="flex items-center gap-1.5">
-                            <button type="button" data-role-filter="all" onclick="setUserRoleFilter('all')" class="user-role-chip px-3 py-1.5 rounded-md text-xs font-semibold bg-blue-600 text-white">All</button>
-                            <button type="button" data-role-filter="super_admin" onclick="setUserRoleFilter('super_admin')" class="user-role-chip px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100">Super</button>
-                            <button type="button" data-role-filter="tenant_admin" onclick="setUserRoleFilter('tenant_admin')" class="user-role-chip px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100">Admin</button>
-                            <button type="button" data-role-filter="tenant_user" onclick="setUserRoleFilter('tenant_user')" class="user-role-chip px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100">User</button>
+                            <button type="button" data-role-filter="all" aria-label="All users" aria-pressed="true" onclick="setUserRoleFilter('all')" class="user-role-chip px-3 py-1.5 rounded-md text-xs font-semibold bg-blue-600 text-white">All</button>
+                            <button type="button" data-role-filter="super_admin" aria-label="Super administrators" aria-pressed="false" onclick="setUserRoleFilter('super_admin')" class="user-role-chip px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100">Super</button>
+                            <button type="button" data-role-filter="tenant_admin" aria-label="Tenant administrators" aria-pressed="false" onclick="setUserRoleFilter('tenant_admin')" class="user-role-chip px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100">Admin</button>
+                            <button type="button" data-role-filter="tenant_user" aria-label="Tenant users" aria-pressed="false" onclick="setUserRoleFilter('tenant_user')" class="user-role-chip px-3 py-1.5 rounded-md text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100">User</button>
                         </div>
                     </div>
-                    <div class="overflow-x-auto">
+                    <div class="overflow-x-auto" role="region" aria-label="Users table" tabindex="0">
                         <table class="min-w-full table-fixed">
                             <colgroup>
                                 <col style="width:28%"><col style="width:14%"><col style="width:20%"><col style="width:15%"><col style="width:13%"><col style="width:10%">
@@ -764,9 +798,9 @@
                                         <select name="subscription_plan" 
                                                 id="subscription_plan"
                                                 class="block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors sm:text-sm">
-                                            <option value="basic">Basic - $29/month</option>
-                                            <option value="professional" selected>Professional - $79/month</option>
-                                            <option value="enterprise">Enterprise - $199/month</option>
+                                            <option value="basic">Basic</option>
+                                            <option value="professional" selected>Professional</option>
+                                            <option value="enterprise">Enterprise</option>
                                         </select>
                                         <div class="absolute inset-y-0 right-0 pr-8 flex items-center pointer-events-none">
                                             <i class="fas fa-crown text-gray-400"></i>
@@ -957,7 +991,7 @@
                                                placeholder="Minimum 8 characters"
                                                class="block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors sm:text-sm">
                                         <div class="absolute inset-y-0 right-0 pr-3 flex items-center">
-                                            <button type="button" id="togglePassword" class="text-gray-400 hover:text-gray-600">
+                                            <button type="button" id="togglePassword" aria-label="Show password" aria-pressed="false" class="text-gray-400 hover:text-gray-600">
                                                 <i class="fas fa-eye" id="passwordIcon"></i>
                                             </button>
                                         </div>
@@ -1027,44 +1061,6 @@
                             </div>
                         </div>
 
-                        <!-- Additional Settings -->
-                        <div class="border-t pt-6">
-                            <h4 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
-                                <i class="fas fa-cog text-gray-500 mr-2"></i>
-                                Additional Settings
-                            </h4>
-                            <div class="space-y-4">
-                                <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                                    <div class="flex items-center">
-                                        <i class="fas fa-envelope text-blue-500 mr-3"></i>
-                                        <div>
-                                            <p class="text-sm font-medium text-gray-900">Send Welcome Email</p>
-                                            <p class="text-xs text-gray-500">Notify user about their new account</p>
-                                        </div>
-                                    </div>
-                                    <input type="checkbox" 
-                                           id="send_welcome_email" 
-                                           name="send_welcome_email" 
-                                           checked
-                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                </div>
-                                
-                                <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                                    <div class="flex items-center">
-                                        <i class="fas fa-key text-amber-500 mr-3"></i>
-                                        <div>
-                                            <p class="text-sm font-medium text-gray-900">Require Password Change</p>
-                                            <p class="text-xs text-gray-500">User must change password on first login</p>
-                                        </div>
-                                    </div>
-                                    <input type="checkbox" 
-                                           id="require_password_change" 
-                                           name="require_password_change"
-                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                </div>
-                            </div>
-                        </div>
-
                         <!-- Error/Success Messages -->
                         <div id="createUserMessages" class="hidden"></div>
                     </div>
@@ -1092,6 +1088,7 @@
 
     <script src="/static/vendor/dompurify/purify-3.4.17.min.js"></script>
     <script src="/static/js/security.js?v={{ asset_v.security_js }}"></script>
+    <script src="/static/js/dashboard-ui.js?v={{ asset_v.dashboard_ui_js }}"></script>
     <script>
         // User data will be populated from server
         let currentUser = null;
@@ -1214,10 +1211,6 @@
             }
         }
         
-        // Toggle sidebar on mobile
-        document.getElementById('sidebarToggle').addEventListener('click', () => {
-            document.getElementById('sidebar').classList.toggle('-translate-x-full');
-        });
 
         // (showSection is defined later as async — see below)
 
@@ -1332,6 +1325,7 @@
             _adminUsersFilterRole = role;
             document.querySelectorAll('.user-role-chip').forEach(btn => {
                 const active = btn.dataset.roleFilter === role;
+                btn.setAttribute('aria-pressed', String(active));
                 btn.classList.toggle('bg-blue-600', active);
                 btn.classList.toggle('text-white', active);
                 btn.classList.toggle('border-blue-600', active);
@@ -1505,12 +1499,7 @@
             // Set default values
             document.getElementById('subscription_plan').value = 'professional';
             
-            modal.classList.remove('hidden');
-            
-            // Focus on first input
-            setTimeout(() => {
-                document.getElementById('company_name').focus();
-            }, 100);
+            window.AdminUI.openDialog(modal);
         }
 
         // Enhanced show create user modal
@@ -1538,12 +1527,11 @@
             const passwordField = document.getElementById('password');
             const passwordIcon = document.getElementById('passwordIcon');
             passwordField.type = 'password';
+            document.getElementById('togglePassword').setAttribute('aria-label', 'Show password');
+            document.getElementById('togglePassword').setAttribute('aria-pressed', 'false');
             passwordIcon.classList.remove('fa-eye-slash');
             passwordIcon.classList.add('fa-eye');
             
-            // Set default checkbox values
-            document.getElementById('send_welcome_email').checked = true;
-            document.getElementById('require_password_change').checked = false;
             
             // Populate user type options based on current user
             userTypeSelect.innerHTML = '';
@@ -1593,17 +1581,12 @@
                 document.getElementById('userRoleInfo').style.display = 'flex';
             }
             
-            modal.classList.remove('hidden');
-            
-            // Focus on first input
-            setTimeout(() => {
-                document.getElementById('full_name').focus();
-            }, 100);
+            window.AdminUI.openDialog(modal);
         }
 
         // Hide modal
         function hideModal(modalId) {
-            document.getElementById(modalId).classList.add('hidden');
+            window.AdminUI.closeDialog(document.getElementById(modalId));
         }
 
         // Enhanced form validation and styling functions
@@ -1623,14 +1606,11 @@
                 info: 'fas fa-info-circle text-blue-500'
             };
             
-            container.innerHTML = `
-                <div class="border rounded-lg p-4 ${alertClasses[type]}">
-                    <div class="flex items-center">
-                        <i class="${iconClasses[type]} mr-3"></i>
-                        <span>${message}</span>
-                    </div>
-                </div>
-            `;
+            const feedback = document.createElement('div');
+            feedback.className = 'form-feedback form-feedback-' + (['error','warning','success'].includes(type) ? type : 'info');
+            feedback.setAttribute('role', type === 'error' ? 'alert' : 'status');
+            feedback.textContent = message;
+            container.replaceChildren(feedback);
             container.classList.remove('hidden');
             
             // Auto-hide success messages after 5 seconds
@@ -1676,6 +1656,8 @@
                 icon.classList.remove('fa-eye-slash');
                 icon.classList.add('fa-eye');
             }
+            this.setAttribute('aria-label', passwordField.type === 'password' ? 'Show password' : 'Hide password');
+            this.setAttribute('aria-pressed', String(passwordField.type === 'text'));
         });
 
         // Show role descriptions when user type changes
@@ -1741,8 +1723,7 @@
                 });
                 
                 if (response.ok) {
-                    const welcomeEmail = formData.get('send_welcome_email') ? ' Welcome email sent!' : '';
-                    showMessage('createUserMessages', `✅ User created successfully!${welcomeEmail}`, 'success');
+                    showMessage('createUserMessages', 'User created successfully.', 'success');
                     setTimeout(() => {
                         hideModal('createUserModal');
                         loadUsers();
@@ -1792,7 +1773,7 @@
             });
             
             // Find and highlight active sidebar item
-            const activeLink = document.querySelector(`[onclick="showSection('${sectionId}')"]`);
+            const activeLink = document.querySelector(`.sidebar-item[onclick="showSection('${sectionId}')"]`);
             if (activeLink) {
                 activeLink.classList.add('bg-purple-700');
             }
@@ -2409,7 +2390,7 @@
             if (msgs) { msgs.classList.add('hidden'); msgs.innerHTML = ''; }
             const form = document.getElementById('changePasswordForm');
             if (form) form.reset();
-            modal.classList.remove('hidden');
+            window.AdminUI.openDialog(modal);
         }
 
         // ----- Super Admin: View Users in a Company -----
@@ -2418,7 +2399,7 @@
                 const r = await fetch(`/api/companies/${companyId}/users`);
                 if (!r.ok) {
                     const err = await r.json().catch(() => ({}));
-                    alert(`Failed to load users: ${err.detail || r.status}`);
+                    window.AppNotifications.show(`Failed to load users: ${err.detail || r.status}`, 'error');
                     return;
                 }
                 const data = await r.json();
@@ -2452,10 +2433,10 @@
                             <tbody>${rows}</tbody>
                         </table>`}
                     </div>`;
-                modal.classList.remove('hidden');
+                window.AdminUI.openDialog(modal);
             } catch (err) {
                 console.error(err);
-                alert('Network error loading company users.');
+                window.AppNotifications.show('Network error loading company users.', 'error');
             }
         }
 
@@ -2465,7 +2446,7 @@
                 const r = await fetch('/api/companies');
                 const data = await r.json();
                 const company = (data.companies || []).find(c => c.id === companyId);
-                if (!company) { alert('Company not found.'); return; }
+                if (!company) { window.AppNotifications.show('Company not found.', 'error'); return; }
                 let modal = document.getElementById('editCompanyModal');
                 if (!modal) {
                     modal = document.createElement('div');
@@ -2511,7 +2492,7 @@
                             </div>
                         </form>
                     </div>`;
-                modal.classList.remove('hidden');
+                window.AdminUI.openDialog(modal);
                 document.getElementById('editCompanyForm').addEventListener('submit', async (e) => {
                     e.preventDefault();
                     const body = new URLSearchParams();
@@ -2536,7 +2517,7 @@
                 });
             } catch (err) {
                 console.error(err);
-                alert('Failed to load company details.');
+                window.AppNotifications.show('Failed to load company details.', 'error');
             }
         }
 
@@ -2553,10 +2534,10 @@
                 } else {
                     let detail = `HTTP ${r.status}`;
                     try { const j = await r.json(); detail = j.detail || detail; } catch (_) {}
-                    alert(`Failed to delete user: ${detail}`);
+                    window.AppNotifications.show(`Failed to delete user: ${detail}`, 'error');
                 }
             } catch (err) {
-                alert(`Network error deleting user: ${err.message || err}`);
+                window.AppNotifications.show(`Network error deleting user: ${err.message || err}`, 'error');
             }
         }
 
@@ -2566,7 +2547,7 @@
                 const resp = await fetch('/api/users');
                 const data = await resp.json();
                 const targetUser = (data.users || []).find(u => u.id === userId);
-                if (!targetUser) { alert('User not found.'); return; }
+                if (!targetUser) { window.AppNotifications.show('User not found.', 'error'); return; }
 
                 let modal = document.getElementById('editUserModal');
                 if (!modal) {
@@ -2619,7 +2600,7 @@
                             </div>
                         </form>
                     </div>`;
-                modal.classList.remove('hidden');
+                window.AdminUI.openDialog(modal);
 
                 document.getElementById('editUserForm').addEventListener('submit', async (e) => {
                     e.preventDefault();
@@ -2646,7 +2627,7 @@
                 });
             } catch (err) {
                 console.error(err);
-                alert('Failed to load user details.');
+                window.AppNotifications.show('Failed to load user details.', 'error');
             }
         }
 

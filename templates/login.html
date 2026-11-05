@@ -7,6 +7,7 @@
     <title>Smart HR</title>
     <link rel="icon" type="image/png" href="/static/img/makaiyslogo-2-300x262.png">
     <link rel="stylesheet" href="/static/css/tailwind.css">
+    <link rel="stylesheet" href="/static/css/components.css?v={{ asset_v.components_css }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         .gradient-bg {
@@ -97,12 +98,11 @@
         <!-- Logo and Title -->
         <div class="text-center mb-6">
             <div class="flex justify-center mb-4">
-                <div class="p-2 bg-white rounded-lg shadow-md inline-block">
-                    <img src="/static/img/makaiyslogo-2-300x262.png" alt="Smart HR Logo" class="h-16">
+                <div class="efforts-login-brand">
+                    <img src="/static/review/efforts-solutions-logo.png" alt="Efforts Solutions">
                 </div>
             </div>
-            <h1 class="text-2xl font-semibold text-gray-800 mb-1">Smart HR</h1>
-            <p class="text-gray-500 text-sm">Your AI Agent for Seamless Recruitment</p>
+            <h1 class="text-2xl font-semibold text-gray-800 mb-1">AI Recruiter</h1>
         </div>
 
         <!-- Login Form -->
@@ -141,7 +141,7 @@
                         </div>
                         <input type="password" id="password" name="password" required class="app-input"
                             placeholder="Enter your password">
-                        <button type="button" id="togglePassword"
+                        <button type="button" id="togglePassword" aria-label="Show password" aria-pressed="false"
                             class="absolute inset-y-0 right-0 pr-3 flex items-center">
                             <i class="fas fa-eye text-gray-400 hover:text-gray-700 transition-colors"></i>
                         </button>
@@ -160,7 +160,7 @@
                 </div>
 
                 <!-- Error Message -->
-                <div id="errorMessage"
+                <div id="errorMessage" role="alert"
                     class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
                     <i class="fas fa-exclamation-circle mr-2"></i>
                     <span id="errorText"></span>
@@ -178,7 +178,7 @@
 
         <!-- Footer -->
         <div class="text-center mt-6 text-gray-500 text-xs">
-            <p>&copy; 2025 Smart HR. All rights reserved.</p>
+            <p>&copy; <span id="copyright-year">2026</span> Smart HR. All rights reserved.</p>
         </div>
     </div>
 
@@ -186,12 +186,15 @@
         // Toggle password visibility
         const togglePassword = document.getElementById('togglePassword');
         const passwordInput = document.getElementById('password');
+        document.getElementById('copyright-year').textContent = String(new Date().getFullYear());
 
         togglePassword.addEventListener('click', () => {
             const type = passwordInput.type === 'password' ? 'text' : 'password';
             passwordInput.type = type;
             togglePassword.querySelector('i').classList.toggle('fa-eye');
             togglePassword.querySelector('i').classList.toggle('fa-eye-slash');
+            togglePassword.setAttribute('aria-label', type === 'password' ? 'Show password' : 'Hide password');
+            togglePassword.setAttribute('aria-pressed', String(type === 'text'));
         });
 
         // Handle form submission

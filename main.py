@@ -580,6 +580,9 @@ def _compute_asset_versions() -> dict[str, str]:
     import hashlib as _hashlib
     out: dict[str, str] = {"main_js": "0", "style_css": "0", "security_js": "0"}
     for key, path in (("main_js", "static/js/main.js"),
+                      ("dashboard_ui_js", "static/js/dashboard-ui.js"),
+                      ("notifications_js", "static/js/notifications.js"),
+                      ("components_css", "static/css/components.css"),
                       ("candidate_state_js", "static/js/candidate-state.js"),
                       ("style_css", "static/css/style.css"),
                       ("security_js", "static/js/security.js")):
@@ -4584,7 +4587,10 @@ async def read_root(request: Request, session_token: Optional[str] = Cookie(None
     user = await get_current_user(request, session_token)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
-    return templates.TemplateResponse(request, "index.html", {"user": user})
+    return templates.TemplateResponse(request, "index.html", {"user": user, "ui_limits": {
+        "search_results": max(1, MAX_HR_SCORECARD_RESULTS),
+        "email_scan": max(1, MAX_EMAIL_SCRAPE_LIMIT),
+    }})
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
@@ -11492,11 +11498,12 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
             raise HTTPException(status_code=422, detail="Request body must be valid JSON")
         if not isinstance(data, dict):
             raise HTTPException(status_code=422, detail="Request body must be a JSON object")
-        from services.outreach_validation import validate_interview
+        from services.outreach_validation import validate_interview, validate_future
         from services.interview_time import utc_start
         try:
             validate_interview(data)
             start_iso, duration_minutes = utc_start(data)
+            validate_future(start_iso)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         data['duration'] = duration_minutes
@@ -11516,6 +11523,7 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
                 company_id = getattr(user['company'], 'id', None)
                 company_name = getattr(user['company'], 'name', None)
         data['company_id'] = company_id
+        company_name = company_name or data.get('company') or 'Efforts Solutions'
 
         email_template = None
         if data.get('send_invite_email'):
@@ -11593,26 +11601,30 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
             email_result = {"success": False, "skipped": True,
                             "error": "Additional invite email not sent because the meeting link was not created. Check the saved interview and calendar before trying again."}
         elif data.get('send_invite_email') and data.get('candidate_email'):
+            email_send_started = False
             try:
                 from services.email_service import (
-                    send_email, render_template, build_default_context,
+                    send_email, render_candidate_email, build_default_context,
                 )
                 tpl = email_template
                 if tpl:
                     ctx = build_default_context(
                         candidate_name=data['candidate_name'],
                         candidate_email=data.get('candidate_email', ''),
-                        position=data.get('position') or 'the role',
-                        company=company_name or 'our company',
+                        position=data.get('position'),
+                        company=company_name,
                         recruiter_name=user.get('full_name') or user.get('email'),
                         recruiter_email=user.get('email'),
                         interview_date=str(data.get('interview_date') or ''),
                         interview_time=str(data.get('interview_time') or ''),
+                        time_zone=data.get('time_zone') or 'UTC',
+                        duration_minutes=duration_minutes,
                         interview_location=data.get('location') or '',
                         meeting_join_url=data.get('meeting_join_url') or '',
                         custom_message=data.get('custom_message') or '',
                     )
-                    subj, body_html = render_template(tpl['subject'], tpl['body'], ctx)
+                    subj, body_html = render_candidate_email(tpl['subject'], tpl['body'], ctx)
+                    email_send_started = True
                     email_result = await asyncio.to_thread(send_email,
                         to=data['candidate_email'],
                         subject=subj, body_html=body_html,
@@ -11637,7 +11649,8 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
             except Exception as _email_err:
                 from services.integration_errors import provider_failure
                 logger.warning("Invitation email outcome unavailable: %s", type(_email_err).__name__)
-                email_result = provider_failure('unknown', 'email')
+                email_result = (provider_failure('unknown', 'email') if email_send_started else
+                    {'success': False, 'skipped': True, 'error': 'Interview saved, but the invitation content could not be prepared. Review the email template before sending.'})
 
         return {
             "success": True,
@@ -11836,22 +11849,25 @@ async def send_candidate_email_endpoint(request: Request,
             raise HTTPException(status_code=404, detail="Template not found")
         subj_tpl, body_tpl, kind = tpl["subject"], tpl["body"], tpl["kind"]
 
-    from services.email_service import send_email, render_template, build_default_context
+    from services.email_service import send_email, render_candidate_email, build_default_context
+    if kind == 'interview_invite' and not data.get('position', '').strip():
+        raise HTTPException(status_code=422, detail='Job title is required for an interview invitation')
     ctx = build_default_context(
         candidate_name=data.get("candidate_name") or "",
         candidate_email=data["candidate_email"],
-        position=data.get("position") or "the role",
-        company=company_name or "our company",
+        position=data.get("position"),
+        company=company_name or data.get('company') or "Efforts Solutions",
         recruiter_name=user.get("full_name") or user.get("email"),
         recruiter_email=user.get("email"),
         custom_message=data.get("custom_message") or "",
         interview_date=str(data.get("interview_date") or ""),
         interview_time=str(data.get("interview_time") or ""),
+        time_zone=data.get('time_zone') or 'UTC',
         interview_location=data.get("interview_location") or "",
         meeting_join_url=data.get("meeting_join_url") or "",
     )
     try:
-        subject, body_html = render_template(subj_tpl, body_tpl, ctx)
+        subject, body_html = render_candidate_email(subj_tpl, body_tpl, ctx)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     try:

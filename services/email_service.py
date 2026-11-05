@@ -143,6 +143,8 @@ def build_default_context(*, candidate_name: str, candidate_email: str,
                           recruiter_email: Optional[str] = None,
                           interview_date: Optional[str] = None,
                           interview_time: Optional[str] = None,
+                          time_zone: Optional[str] = None,
+                          duration_minutes: Optional[int] = None,
                           interview_location: Optional[str] = None,
                           meeting_join_url: Optional[str] = None,
                           custom_message: Optional[str] = None,
@@ -150,20 +152,48 @@ def build_default_context(*, candidate_name: str, candidate_email: str,
     ctx = {
         "candidate_name": candidate_name or "Candidate",
         "candidate_email": candidate_email or "",
-        "position": position or "the role",
-        "company": company or "our company",
-        "recruiter_name": recruiter_name or "The Recruitment Team",
+        "position": position or "Career opportunity",
+        "company": company or "Efforts Solutions",
+        "recruiter_name": recruiter_name if recruiter_name and recruiter_name.casefold() not in {"super admin", "admin", "administrator"} else "Recruitment Team",
         "recruiter_email": recruiter_email or "",
         "interview_date": interview_date or "",
         "interview_time": interview_time or "",
         "interview_location": interview_location or "",
         "meeting_join_url": meeting_join_url or "",
         "custom_message": custom_message or "",
+        "time_zone": time_zone or "UTC",
+        "duration_minutes": duration_minutes or "",
         "now": datetime.utcnow().strftime("%Y-%m-%d"),
     }
+    from services.email_branding import display_time
+    ctx["interview_date_display"], ctx["interview_time_display"] = display_time(
+        interview_date, interview_time, time_zone or "UTC")
     if extras:
         ctx.update(extras)
     return ctx
+
+
+def render_candidate_email(subject_tpl, body_tpl, ctx):
+    """Upgrade only untouched built-in templates; preserve custom template text."""
+    for template in DEFAULT_TEMPLATES:
+        if subject_tpl == template["subject"] and body_tpl == template["body"]:
+            if template["kind"] == "interview_invite":
+                body_tpl = (
+                    "<h2>Interview invitation</h2><p>Dear {{ candidate_name }},</p>"
+                    "<p>We would like to invite you to interview for <strong>{{ position }}</strong> at <strong>{{ company }}</strong>.</p>"
+                    "<table><tr><td><strong>Date</strong></td><td>{{ interview_date_display }}</td></tr>"
+                    "<tr><td><strong>Time</strong></td><td>{{ interview_time_display }}</td></tr>"
+                    "{% if duration_minutes %}<tr><td><strong>Duration</strong></td><td>{{ duration_minutes }} minutes</td></tr>{% endif %}"
+                    "{% if interview_location and not meeting_join_url %}<tr><td><strong>Location</strong></td><td>{{ interview_location }}</td></tr>{% endif %}</table>"
+                    "{% if meeting_join_url %}<p><a href=\"{{ meeting_join_url }}\">Join interview</a></p>{% endif %}"
+                    "{% if custom_message %}<p>{{ custom_message }}</p>{% endif %}"
+                    "<p>Please reply to confirm your availability or request another time.</p>"
+                    "<p>Kind regards,<br>{{ recruiter_name }}<br>{{ company }}</p>"
+                )
+            break
+    subject, content = render_template(subject_tpl, body_tpl, ctx)
+    from services.email_branding import branded_html
+    return subject, branded_html(content, company=ctx.get("company"))
 
 
 # ---------------------------------------------------------------------------

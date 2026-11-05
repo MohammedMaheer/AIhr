@@ -1,6 +1,8 @@
 """Validate outreach inputs before mail/calendar side effects."""
 from email.errors import HeaderParseError
 from email.headerregistry import Address
+from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 TRANSPORTS = {'auto', 'smtp', 'gmail', 'google', 'microsoft', 'graph', 'teams', 'outlook'}
@@ -51,8 +53,10 @@ def validate_interview(data):
                       'location': 2000, 'notes': 10000, 'custom_message': 8192,
                       'interviewer': 500, 'interview_date': 32, 'interview_time': 32,
                       'time_zone': 128, 'interview_type': 100, 'meeting_provider': 40,
-                      'email_prefer': 40})
+                      'email_prefer': 40, 'company': 255})
     data['candidate_name'] = data['candidate_name'].strip()
+    if any('\r' in data[field] or '\n' in data[field] for field in ('candidate_name', 'position', 'company')):
+        raise ValueError('Candidate name, job title and company must be single-line text')
     if not data['candidate_name']:
         raise ValueError("Field 'candidate_name' is required")
     data['interview_type'] = data['interview_type'] or 'video'
@@ -64,6 +68,9 @@ def validate_interview(data):
     if 'send_invite_email' in data and not isinstance(data['send_invite_email'], bool):
         raise ValueError("Field 'send_invite_email' must be true or false")
     data['candidate_email'] = address(data['candidate_email'], required=bool(data.get('send_invite_email')))
+    data['position'] = data['position'].strip()
+    if data.get('send_invite_email') and not data['position']:
+        raise ValueError('Job title is required when sending an interview invitation')
     data['email_prefer'] = data['email_prefer'] or 'auto'
     if data['email_prefer'] not in TRANSPORTS:
         raise ValueError('Unknown email transport')
@@ -76,11 +83,34 @@ def validate_email(data):
     text_fields(data, {'candidate_name': 500, 'candidate_email': 320, 'position': 500,
                       'custom_message': 8192, 'interview_date': 32, 'interview_time': 32,
                       'interview_location': 2000, 'meeting_join_url': 8000,
-                      'raw_subject': 32768, 'raw_body': 32768, 'kind': 40, 'prefer': 40})
+                      'raw_subject': 32768, 'raw_body': 32768, 'kind': 40, 'prefer': 40,
+                      'company': 255, 'time_zone': 128})
     data['candidate_email'] = address(data['candidate_email'], required=True)
+    if any('\r' in data[field] or '\n' in data[field] for field in ('candidate_name', 'position', 'company')):
+        raise ValueError('Candidate name, job title and company must be single-line text')
     data['prefer'] = data['prefer'] or 'auto'
     if data['prefer'] not in TRANSPORTS:
         raise ValueError('Unknown email transport')
     for field in ('template_id', 'search_result_id'):
         data[field] = optional_id(data.get(field), field)
+    if data['meeting_join_url']:
+        from services.email_branding import safe_url
+        if not safe_url(data['meeting_join_url']):
+            raise ValueError('Meeting join link must be a valid HTTPS URL without embedded credentials')
+    try:
+        if data['interview_date']:
+            date.fromisoformat(data['interview_date'])
+        if data['interview_time']:
+            clock = time.fromisoformat(data['interview_time'])
+            if clock.tzinfo:
+                raise ValueError()
+        if data['time_zone']:
+            ZoneInfo(data['time_zone'])
+    except (ValueError, ZoneInfoNotFoundError):
+        raise ValueError('Provide a valid interview date, time and timezone') from None
     return data
+
+
+def validate_future(start_iso):
+    if datetime.fromisoformat(start_iso) <= datetime.now(timezone.utc):
+        raise ValueError('Choose an interview date and time in the future')

@@ -70,6 +70,15 @@ function localDateInputValue(date = new Date()) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+function scheduleZoneOptions() {
+    const current = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const select = document.createElement('select');
+    for (const zone of new Set([current, 'Asia/Dubai', 'Asia/Kolkata', 'UTC', 'Europe/London', 'America/New_York'])) {
+        select.appendChild(new Option(zone, zone, zone === current, zone === current));
+    }
+    return select.innerHTML;
+}
+
 function setupResponsiveNavigation() {
     const sidebar = document.getElementById('app-navigation');
     const toggle = document.getElementById('navigation-toggle');
@@ -142,7 +151,14 @@ document.addEventListener('DOMContentLoaded', function () {
     // const pageTitle = document.getElementById('page-title');
 
     // Search history storage
-    let searchHistory = JSON.parse(localStorage.getItem('searchHistory') || '[]');
+    let searchHistory = [];
+    try {
+        const saved = JSON.parse(localStorage.getItem('searchHistory') || '[]');
+        if (Array.isArray(saved)) searchHistory = saved;
+    } catch (_) { /* A damaged local cache must not prevent loading server-backed reports. */ }
+    const configuredLimits = window.SMART_HR_LIMITS || {};
+    const maxResults = Number.isInteger(configuredLimits.search_results) && configuredLimits.search_results > 0 ? configuredLimits.search_results : 25;
+    const emailScanLimit = Number.isInteger(configuredLimits.email_scan) && configuredLimits.email_scan > 0 ? configuredLimits.email_scan : 50;
 
     const pages = {
         vectorSearch: `
@@ -568,8 +584,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <div id="chat-interface" class="flex flex-col items-center justify-start min-h-full px-6 py-8 overflow-y-auto transition-all duration-700 ease-in-out">
                     <!-- Header -->
                     <div class="text-center mb-8 mt-16">
-                        <h1 class="text-3xl font-bold text-gray-900 mb-3">Find the perfect candidate with AI</h1>
-                        <p class="text-gray-600 text-base max-w-2xl mx-auto">Describe your ideal candidate and let our AI search through thousands of resumes to find the best matches</p>
+                        <h1 class="text-2xl font-bold text-gray-900">Candidate Search</h1>
                     </div>
 
                     <!-- Search Input -->
@@ -591,18 +606,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     <!-- Search Options -->
                     <div class="w-full max-w-3xl mb-12">
-                        <div class="search-options flex items-center justify-center space-x-4 p-4 bg-gray-50 rounded-xl">
+                        <div class="search-options flex items-center space-x-4 py-3 border-b border-gray-200">
                             <div class="flex items-center space-x-2">
                                 <i class="fas fa-search text-blue-600"></i>
-                                <span class="text-sm font-medium text-gray-700">Search Results:</span>
+                                <label for="result-count" class="text-sm font-medium text-gray-700">Candidates</label>
                             </div>
                             <div class="flex items-center space-x-2">
-                                <input type="number" id="result-count" aria-label="Number of candidates" min="1" max="100" value="10" class="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" placeholder="10">
-                                <span class="text-sm text-gray-700">results</span>
-                            </div>
-                            <div class="text-xs text-gray-500">
-                                <i class="fas fa-info-circle mr-1"></i>
-                                Consider increasing the number of searches if the expected resumes are not retrieved.
+                                <input type="number" id="result-count" aria-label="Number of candidates" min="1" max="${maxResults}" value="${Math.min(10, maxResults)}" class="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
                             </div>
                         </div>
                     </div>
@@ -811,8 +821,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                                     <div>
                                         <label for="email-limit" class="block text-sm font-medium text-gray-700 mb-2">Email Limit</label>
-                                        <input type="number" id="email-limit" value="100" min="1" max="1000" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                        <p class="text-xs text-gray-500 mt-1">Maximum number of recent emails to scan (default: 100)</p>
+                                        <input type="number" id="email-limit" value="${Math.min(100, emailScanLimit)}" min="1" max="${emailScanLimit}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                     </div>
 
                                     <button id="start-email-scrape" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed">
@@ -1310,6 +1319,8 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function handleSendMessage() {
+        const countInput = document.getElementById('result-count');
+        if (countInput && !countInput.reportValidity()) return;
         const chatInput = document.getElementById('chat-input');
         const message = chatInput.value.trim();
 
@@ -1426,6 +1437,8 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function handleBottomSendMessage() {
+        const countInput = document.getElementById('result-count');
+        if (countInput && !countInput.reportValidity()) return;
         const bottomChatInput = document.getElementById('bottom-chat-input');
         const message = bottomChatInput.value.trim();
         if (message) {
@@ -2046,7 +2059,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Update candidate count
         const candidateCount = document.getElementById('candidate-count');
         if (candidateCount) {
-            candidateCount.textContent = `${highScoreResults.length} results`;
+            candidateCount.textContent = `${highScoreResults.length} ${highScoreResults.length === 1 ? 'result' : 'results'}`;
         }
 
         // Inject "Export All" button into the split-view header (idempotent).
@@ -2875,7 +2888,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <button type="button"
                                     class="professional-action-btn primary js-contact-candidate">
                                 <i class="fas fa-envelope"></i> 
-                                Contact Candidate
+                                Compose Email
                             </button>
                             <button type="button"
                                     class="professional-action-btn secondary js-schedule-interview">
@@ -2919,7 +2932,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
 
                 card.querySelector('.js-schedule-interview')?.addEventListener('click', () => {
-                    scheduleInterview(finalCandidateName, canEmailCandidate ? safeEmailValue : '');
+                    scheduleInterview(finalCandidateName, canEmailCandidate ? safeEmailValue : '', {
+                        position: candidateRole === 'Position' ? '' : candidateRole,
+                        searchResultId: card.getAttribute('data-search-result-id')
+                    });
                 });
 
                 card.querySelector('.js-download-resume')?.addEventListener('click', () => {
@@ -3573,7 +3589,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <div class="col-span-2">
                                 <div class="flex items-center">
                                     <span class="text-sm font-medium text-gray-900">${candidatesCount}</span>
-                                    <span class="text-xs text-gray-500 ml-1">candidates found</span>
+                                    <span class="text-xs text-gray-500 ml-1">${candidatesCount === 1 ? 'candidate' : 'candidates'} found</span>
                                 </div>
                             </div>
                             
@@ -3819,7 +3835,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (typeof showNotification === 'function') {
                         showNotification('Failed to clear history: ' + err.message, 'error');
                     } else {
-                        alert('Failed to clear history: ' + err.message);
+                        showNotification('Failed to clear history: ' + err.message, 'error');
                     }
                 } finally {
                     clearButton.disabled = false;
@@ -3906,7 +3922,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <div class="col-span-2">
                                 <div class="flex items-center">
                                     <span class="text-sm font-medium text-gray-900">${candidatesCount}</span>
-                                    <span class="text-xs text-gray-500 ml-1">candidates found</span>
+                                    <span class="text-xs text-gray-500 ml-1">${candidatesCount === 1 ? 'candidate' : 'candidates'} found</span>
                                 </div>
                             </div>
                             
@@ -4246,7 +4262,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             for (let file of files) {
                 if (!file.name.match(/\.(pdf|doc|docx)$/i)) {
-                    alert(`File ${file.name} is not supported. Only PDF, DOC, and DOCX files are allowed.`);
+                    showNotification(`File ${file.name} is not supported. Only PDF, DOC, and DOCX files are allowed.`, 'error');
                     continue;
                 }
 
@@ -4254,7 +4270,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (file.size > maxFileSize) {
                     const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
                     const maxSizeMB = (maxFileSize / (1024 * 1024)).toFixed(0);
-                    alert(`File ${file.name} is too large (${fileSizeMB}MB). Maximum file size allowed is ${maxSizeMB}MB.`);
+                    showNotification(`File ${file.name} is too large (${fileSizeMB}MB). Maximum file size allowed is ${maxSizeMB}MB.`, 'error');
                     continue;
                 }
 
@@ -4529,42 +4545,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         function showLimitNotification(message, type = 'error') {
-            // Create notification element
-            const notification = document.createElement('div');
-            notification.className = `fixed top-4 right-4 z-50 max-w-md p-4 rounded-lg shadow-lg border-l-4 ${type === 'error' ? 'bg-red-50 border-red-400 text-red-800' :
-                type === 'warning' ? 'bg-yellow-50 border-yellow-400 text-yellow-800' : 'bg-blue-50 border-blue-400 text-blue-800'
-                }`;
-
-            notification.innerHTML = `
-                <div class="flex items-start">
-                    <div class="flex-shrink-0">
-                        <i class="fas fa-${type === 'error' ? 'exclamation-circle' :
-                    type === 'warning' ? 'exclamation-triangle' : 'info-circle'
-                } text-lg"></i>
-                    </div>
-                    <div class="ml-3">
-                        <h3 class="text-sm font-medium">${type === 'error' ? 'Upload Limit Reached' :
-                    type === 'warning' ? 'Warning' : 'Information'
-                }</h3>
-                        <p class="mt-1 text-sm">${window.escapeHtml(message)}</p>
-                    </div>
-                    <div class="ml-auto pl-3">
-                        <button class="inline-flex rounded-md p-1.5 hover:bg-gray-100 focus:outline-none" onclick="this.parentElement.parentElement.parentElement.remove()">
-                            <i class="fas fa-times text-sm"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-
-            // Add to page
-            document.body.appendChild(notification);
-
-            // Auto remove after 8 seconds
-            setTimeout(() => {
-                if (notification.parentElement) {
-                    notification.remove();
-                }
-            }, 8000);
+            return showNotification(message, type);
         }
 
         function updateUploadQueue() {
@@ -4719,7 +4700,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 const bucketName = document.getElementById('modal-bucket-name').value;
 
                 if (!bucketName) {
-                    alert('Please provide bucket name.');
+                    showNotification('Please provide bucket name.', 'error');
                     return;
                 }
 
@@ -4740,15 +4721,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (data.success) {
                         document.getElementById('bucket-name').value = bucketName;
                         document.body.removeChild(modal);
-                        alert('Google Cloud Storage configured successfully!');
+                        showNotification('Google Cloud Storage configured successfully.', 'success');
                         performUpload(document.getElementById('upload-folder').value);
                     } else {
-                        alert('Configuration failed: ' + (data.detail || 'Unknown error'));
+                        showNotification('Configuration failed: ' + (data.detail || 'Unknown error'), 'error');
                     }
                 })
                 .catch(error => {
                     console.error('Error configuring GCS:', error);
-                    alert('Configuration failed. Please check your bucket name and ensure credentials file exists.');
+                    showNotification('Configuration failed. Please check your bucket name and ensure credentials file exists.', 'error');
                 });
         }
 
@@ -4838,6 +4819,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const emailAddress = document.getElementById('email-address').value;
             const emailPassword = document.getElementById('email-password').value;
             const emailLimit = document.getElementById('email-limit').value;
+            if (!document.getElementById('email-limit').reportValidity()) return;
 
             // Validate inputs
             if (!emailProvider) {
@@ -4914,7 +4896,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     document.getElementById('email-provider').value = '';
                     document.getElementById('email-address').value = '';
                     document.getElementById('email-password').value = '';
-                    document.getElementById('email-limit').value = '100';
+                    document.getElementById('email-limit').value = String(Math.min(100, emailScanLimit));
 
                     // Update stats
                     const totalUploaded = document.getElementById('total-uploaded');
@@ -5550,7 +5532,7 @@ function downloadResume(filePath) {
         link.click();
         document.body.removeChild(link);
     } else {
-        alert('Resume file not available for download');
+        showNotification('Resume file not available for download', 'error');
     }
 }
 
@@ -6503,6 +6485,7 @@ function loadCandidateData(card) {
 // JD Builder Page Initialization
 function initializeJDBuilderPage() {
     let selectedSkills = [];
+    let generating = false;
 
     // Get DOM elements
     const generateBtn = document.getElementById('jd-generate-btn');
@@ -6517,6 +6500,14 @@ function initializeJDBuilderPage() {
     const preview = document.getElementById('jd-preview');
     const progress = document.getElementById('jd-progress');
     const progressText = document.getElementById('jd-progress-text');
+
+    function syncPreviewControls() {
+        const content = preview.textContent.trim();
+        const empty = !content || content.includes('Your job description will appear here');
+        if (copyBtn) copyBtn.disabled = empty;
+        if (downloadBtn) downloadBtn.disabled = empty;
+    }
+    preview.addEventListener('input', syncPreviewControls);
 
     // Skills management
     function addSkill(skill) {
@@ -6638,6 +6629,7 @@ function initializeJDBuilderPage() {
 
     // API functions
     async function generateJobDescription() {
+        if (generating) return;
         const companyName = document.getElementById('jd-company-name').value;
         const companyDetails = document.getElementById('jd-company-details').value;
         const jobTitle = document.getElementById('jd-job-title').value;
@@ -6652,6 +6644,9 @@ function initializeJDBuilderPage() {
             return;
         }
 
+        generating = true;
+        generateBtn.disabled = true;
+        generateBtn.setAttribute('aria-busy', 'true');
         showProgress('Generating job description...');
 
         try {
@@ -6677,13 +6672,15 @@ function initializeJDBuilderPage() {
                 return window.sanitizeGeneratedHtml(html);
             }
 
-            if (data.success) {
+            if (!preview.isConnected) return;
+            if (response.ok && data.success === true && typeof data.job_description === 'string' && data.job_description.trim()) {
                 // Clean up HTML response to remove any markdown code blocks
                 let cleanedContent = data.job_description;
                 if (cleanedContent.includes('```html')) {
                     cleanedContent = cleanedContent.replace(/```html\s*/g, '').replace(/```\s*$/g, '');
                 }
                 preview.innerHTML = sanitizeGeneratedHtml(cleanedContent);
+                syncPreviewControls();
                 showNotification('Job description generated successfully!', 'success');
             } else {
                 showNotification('Failed to generate job description: ' + data.error, 'error');
@@ -6692,6 +6689,9 @@ function initializeJDBuilderPage() {
             console.error('Error generating JD:', error);
             showNotification('Error generating job description', 'error');
         } finally {
+            generating = false;
+            generateBtn.disabled = false;
+            generateBtn.removeAttribute('aria-busy');
             hideProgress();
         }
     }
@@ -6716,12 +6716,13 @@ function initializeJDBuilderPage() {
                 <p class="text-sm">Fill in the job information and use AI to generate content</p>
             </div>
         `;
+        syncPreviewControls();
         showNotification('All fields cleared', 'info');
     }
 
     function copyToClipboard() {
         const content = preview.textContent;
-        if (content) {
+        if (content?.trim() && !content.includes('Your job description will appear here')) {
             navigator.clipboard.writeText(content).then(() => {
                 showNotification('Job description copied to clipboard!', 'success');
             }).catch(() => {
@@ -6808,6 +6809,7 @@ function initializeJDBuilderPage() {
 
     // Initialize
     updateSkillsDisplay();
+    syncPreviewControls();
 }
 
 // Settings Page Initialization
@@ -7309,18 +7311,12 @@ async function editUser(userId) {
 
 // Show notification
 function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
-    notification.className = `fixed top-4 right-4 px-4 py-2 rounded-lg text-white z-50 ${type === 'success' ? 'bg-green-600' :
-        type === 'error' ? 'bg-red-600' :
-            'bg-blue-600'
-        }`;
-    notification.textContent = message;
-
-    document.body.appendChild(notification);
-
-    setTimeout(() => {
-        notification.remove();
-    }, 3000);
+    if (window.AppNotifications) return window.AppNotifications.show(message, type);
+    const fallback = document.createElement('div');
+    fallback.className = 'form-feedback form-feedback-error';
+    fallback.setAttribute('role', 'alert');
+    fallback.textContent = message;
+    document.body.prepend(fallback);
 }
 
 // User Dashboard Functions
@@ -7838,8 +7834,8 @@ function showRecentSearches() {
 }
 
 // Interview Scheduling Functions
-function scheduleInterview(candidateName, candidateEmail) {
-    showInterviewScheduleModal(candidateName, candidateEmail);
+function scheduleInterview(candidateName, candidateEmail, context = {}) {
+    showInterviewScheduleModal(candidateName, candidateEmail, context);
 }
 
 // =============================================================================
@@ -8051,6 +8047,9 @@ function openGeneralScheduleModal(prefillName, prefillEmail) {
             </div>
 
             <form id="general-schedule-form">
+                <div class="mb-4"><label for="gs-position" class="block text-sm font-medium text-gray-700 mb-2">Job title</label><input id="gs-position" maxlength="500" class="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="e.g. Backend Engineer"></div>
+                <div class="mb-4"><label for="gs-company" class="block text-sm font-medium text-gray-700 mb-2">Company</label><input id="gs-company" maxlength="255" class="w-full px-3 py-2 border border-gray-300 rounded-lg" value="${attrFn(window.currentUser?.company?.company_name || 'Efforts Solutions')}"></div>
+                <div class="mb-4"><label for="gs-time-zone" class="block text-sm font-medium text-gray-700 mb-2">Time zone</label><select id="gs-time-zone" class="w-full px-3 py-2 border border-gray-300 rounded-lg">${scheduleZoneOptions()}</select></div>
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Candidate / Title <span class="text-red-500">*</span></label>
                     <input type="text" id="gs-candidate-name" required
@@ -8177,6 +8176,7 @@ async function submitGeneralScheduleForm(event) {
     event.preventDefault();
     const form = event.currentTarget || event.target;
     if (!form || form.dataset.submitting === 'true') return;
+    if (!form.reportValidity()) return;
     const v = (id) => (document.getElementById(id) || {}).value || '';
     const candidate_name = v('gs-candidate-name').trim();
     if (!candidate_name) {
@@ -8186,11 +8186,13 @@ async function submitGeneralScheduleForm(event) {
 
     const payload = {
         candidate_name,
+        position: v('gs-position').trim(),
+        company: v('gs-company').trim(),
         candidate_email: v('gs-candidate-email').trim(),
         interview_type:  v('gs-type') || 'video',
         interview_date:  v('gs-date'),
         interview_time:  v('gs-time'),
-        time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        time_zone: v('gs-time-zone'),
         duration:        v('gs-duration') || '60',
         location:        v('gs-location'),
         interviewer:     v('gs-interviewer'),
@@ -8226,7 +8228,7 @@ async function submitGeneralScheduleForm(event) {
         if (data?.meeting?.success === false) {
             if (typeof showNotification === 'function') showNotification(data.meeting.error || 'Meeting link was not created.', 'warning');
         } else if (data?.meeting?.join_url) {
-            if (typeof showNotification === 'function') showNotification(`Meeting link: ${data.meeting.join_url}`, 'info');
+            if (typeof showNotification === 'function') showNotification('Meeting link saved to the scheduled interview.', 'info');
         }
         if (data?.email?.success === false) {
             if (typeof showNotification === 'function') showNotification(data.email.error || 'Invite email was not sent.', 'warning');
@@ -8254,7 +8256,7 @@ async function submitGeneralScheduleForm(event) {
     }
 }
 
-function showInterviewScheduleModal(candidateName, candidateEmail) {
+function showInterviewScheduleModal(candidateName, candidateEmail, context = {}) {
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
     const esc = window.escapeHtml || ((value) => {
@@ -8277,6 +8279,9 @@ function showInterviewScheduleModal(candidateName, candidateEmail) {
             </div>
             
             <form id="interview-form">
+                <div class="mb-4"><label for="interview-position" class="block text-sm font-medium text-gray-700 mb-2">Job title</label><input id="interview-position" maxlength="500" class="w-full px-3 py-2 border border-gray-300 rounded-lg" value="${attr(context.position || '')}" placeholder="e.g. Backend Engineer"></div>
+                <div class="mb-4"><label for="interview-company" class="block text-sm font-medium text-gray-700 mb-2">Company</label><input id="interview-company" maxlength="255" class="w-full px-3 py-2 border border-gray-300 rounded-lg" value="${attr(window.currentUser?.company?.company_name || 'Efforts Solutions')}"></div>
+                <div class="mb-4"><label for="interview-time-zone" class="block text-sm font-medium text-gray-700 mb-2">Time zone</label><select id="interview-time-zone" class="w-full px-3 py-2 border border-gray-300 rounded-lg">${scheduleZoneOptions()}</select></div>
                 <!-- Interview Type -->
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Interview Type</label>
@@ -8391,6 +8396,7 @@ function showInterviewScheduleModal(candidateName, candidateEmail) {
 
     const form = document.getElementById('interview-form');
     if (form) {
+        if (/^[1-9]\d*$/.test(context.searchResultId || '')) form.dataset.searchResultId = context.searchResultId;
         form.addEventListener('submit', (event) => saveInterviewSchedule(event, candidateName, candidateEmail));
     }
     bindScheduleDialog(modal, 'Schedule interview');
@@ -8398,6 +8404,16 @@ function showInterviewScheduleModal(candidateName, candidateEmail) {
 
 function bindScheduleDialog(modal, label) {
     const previous = document.activeElement;
+    const isGeneral = !!modal.querySelector('#gs-send-email');
+    const invite = modal.querySelector(isGeneral ? '#gs-send-email' : '#interview-send-email');
+    const position = modal.querySelector(isGeneral ? '#gs-position' : '#interview-position');
+    const email = modal.querySelector('#gs-candidate-email');
+    const syncRequired = () => {
+        if (position) position.required = !!invite?.checked;
+        if (email) email.required = !!invite?.checked;
+    };
+    invite?.addEventListener('change', syncRequired);
+    syncRequired();
     const shell = document.getElementById('app-shell');
     const wasInert = shell?.inert || false;
     modal.setAttribute('role', 'dialog');
@@ -8438,14 +8454,18 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
     event.preventDefault();
     const form = event.currentTarget || event.target;
     if (!form || form.dataset.submitting === 'true') return;
+    if (!form.reportValidity()) return;
 
     const formData = {
         candidate_name: candidateName,
         candidate_email: candidateEmail,
+        position: document.getElementById('interview-position').value.trim(),
+        company: document.getElementById('interview-company').value.trim(),
+        search_result_id: form.dataset.searchResultId || null,
         interview_type: document.getElementById('interview-type').value,
         interview_date: document.getElementById('interview-date').value,
         interview_time: document.getElementById('interview-time').value,
-        time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        time_zone: document.getElementById('interview-time-zone').value,
         duration: document.getElementById('interview-duration').value,
         location: document.getElementById('interview-location').value,
         interviewer: document.getElementById('interview-interviewer').value,
@@ -8488,7 +8508,7 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
             if (result && result.meeting && result.meeting.success === false && result.meeting.error) {
                 showNotification(`Meeting status: ${result.meeting.error}`, 'warning');
             } else if (result && result.meeting && result.meeting.join_url) {
-                showNotification(`Meeting link: ${result.meeting.join_url}`, 'info');
+                showNotification('Meeting link saved to the scheduled interview.', 'info');
             }
             if (result && result.email && result.email.success === false && result.email.error) {
                 showNotification(`Invite email status: ${result.email.error}`, 'warning');

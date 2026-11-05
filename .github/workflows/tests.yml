@@ -55,6 +55,8 @@ jobs:
       - run: node --check static/js/main.js
       - run: node --check static/js/security.js
       - run: node --check static/js/candidate-state.js
+      - run: node --check static/js/dashboard-ui.js
+      - run: node --check static/js/notifications.js
       - run: npm install --prefix "$RUNNER_TEMP/smarthr-dom" --ignore-scripts --no-audit --no-fund jsdom@27.4.0
       - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_security.cjs
       - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_candidate_state.cjs
@@ -62,4 +64,7 @@ jobs:
       - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_integrations.cjs
       - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_dashboard.cjs
       - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_polling.cjs
+      - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_admin.cjs
+      - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_product.cjs
+      - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_notifications.cjs
       - run: pip-audit -r requirements.txt --no-deps --disable-pip --progress-spinner off

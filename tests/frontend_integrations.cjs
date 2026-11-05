@@ -79,7 +79,7 @@ async function run() {
 
     const scheduleDom=new JSDOM('<form id="f"><button type="submit">Save</button></form>',{url:'https://qa.invalid',runScripts:'outside-only'});
     const sw=scheduleDom.window, sd=sw.document, events=[],requests=[];
-    for(const id of ['type','date','time','duration','location','interviewer','notes','provider']){
+    for(const id of ['type','date','time','duration','location','interviewer','notes','provider','position','company','time-zone']){
         const input=sd.createElement('input');input.id='interview-'+id;input.value=id==='date'?'2030-01-02':id==='time'?'10:00':id==='duration'?'30':id==='provider'?'teams':'synthetic';sd.getElementById('f').append(input);
     }
     sw.showNotification=(...args)=>events.push(args);sw.closeInterviewModal=()=>{};
@@ -96,7 +96,7 @@ async function run() {
     for (const kind of ['general','candidate']) {
         const dom=new JSDOM('<div id="user-dashboard"></div><form id="f"><button type="submit">Original submit label</button></form>',{url:'https://qa.invalid',runScripts:'outside-only'});
         const w=dom.window,d=w.document,form=d.getElementById('f'),notices=[];
-        const fields=kind==='general'?['candidate-name','candidate-email','type','date','time','duration','location','interviewer','notes','provider']:['type','date','time','duration','location','interviewer','notes','provider'];
+        const fields=kind==='general'?['candidate-name','candidate-email','type','date','time','duration','location','interviewer','notes','provider','position','company','time-zone']:['type','date','time','duration','location','interviewer','notes','provider','position','company','time-zone'];
         for(const field of fields){
             const input=d.createElement('input');input.id=(kind==='general'?'gs-':'interview-')+field;
             input.value=field==='date'?'2030-01-02':field==='time'?'10:00':field==='duration'?'30':field==='provider'?'teams':field==='candidate-email'?'fictional@example.invalid':'Synthetic';form.append(input);

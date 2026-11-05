@@ -2432,6 +2432,10 @@ def upload_to_vector_datastore(file_path: str, company_id: int = None, company_c
 
         # Create the document
         operation = client.create_document(request=request)
+        if os.environ.get("SMARTHR_LOCAL_MODE", "").lower() in ("1", "true", "yes", "on"):
+            if getattr(operation, "indexed", False) is not True:
+                logger.warning("Resume indexing did not complete: %s", getattr(operation, "error_code", "unknown"))
+                return False
         print(f"✅ Document upload initiated")
         print(f"🔄 Operation: {operation.name}")
 
@@ -6525,7 +6529,10 @@ async def search_vector(
     try:
         # Resolve resources once for cache key + response payload.
         bucket_name, datastore_id = get_company_resources(user)
-        cache_key = ("search-vector", datastore_id, _normalize_cache_query(query), result_count)
+        scope = _local_company_search_filter(user)
+        cache_key = ("search-vector", bucket_name, datastore_id, scope,
+                     str(user.get('id')), str(_get_company_id(user)),
+                     _normalize_cache_query(query), result_count)
         cached_response = _search_cache_get(cache_key)
         if cached_response is not None:
             return cached_response

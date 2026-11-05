@@ -31,6 +31,35 @@ async function run(){
  d.body.innerHTML=w.qaPages.uploadFiles;
  assert.equal(d.getElementById('email-limit').max,'23');
  assert.equal(d.getElementById('email-limit').value,'23');
+ assert.match(d.body.textContent,/Files Processed This Session/);
+ assert.match(d.body.textContent,/32MB per batch/);
+ assert(!d.body.textContent.includes('100MB per batch'));
+ const uploadNotices=[];
+ w.showNotification=(...args)=>uploadNotices.push(args);
+ w.eval(fs.readFileSync('static/js/security.js','utf8'));
+ let uploadCalls=0,completeUpload;
+ w.fetch=async url=>{
+  if(url==='/api/gcs-status') return {ok:true,json:async()=>({configured:true})};
+  assert.equal(url,'/api/upload-files');uploadCalls++;
+  return new Promise(resolve=>{completeUpload=resolve;});
+ };
+ w.eval(source.slice(source.indexOf('    function initializeUploadPage()'),source.indexOf('    // Navigation event listeners'))+';initializeUploadPage();');
+ const files=d.getElementById('file-input'),start=d.getElementById('start-upload');
+ Object.defineProperty(files,'files',{value:[new w.File(['fixture'],'<img src=x onerror=alert(1)>.docx'),new w.File(['fixture'],'failed.docx')]});
+ files.dispatchEvent(new w.Event('change'));
+ assert.equal(d.querySelectorAll('#upload-queue img').length,0,'Filenames must be escaped');
+ start.click();start.click();await flush();
+ assert.equal(uploadCalls,1);assert.equal(start.disabled,true);
+ assert.equal(d.getElementById('clear-queue').disabled,true);
+ completeUpload({ok:true,json:async()=>({results:[
+  {success:true,vector_indexed:false},
+  {success:false,error:'<img src=x onerror=alert(1)>'}
+ ]})});
+ await flush();await flush();
+ assert.equal(start.disabled,false);assert.equal(d.getElementById('clear-queue').disabled,false);
+ assert.match(d.getElementById('upload-queue').textContent,/not searchable/);
+ assert.equal(d.querySelectorAll('#upload-queue img').length,0,'Provider errors must be escaped');
+ assert(uploadNotices.some(([text,type])=>type==='warning' && text.includes('not searchable')));
  d.body.innerHTML=w.qaPages.jdBuilder;
  let calls=0,resolveResponse;
  w.fetch=()=>{calls++;return new Promise(resolve=>{resolveResponse=resolve;});};
@@ -60,6 +89,6 @@ async function run(){
  w.fetch=async()=>{throw new Error('Synthetic unavailable service');};
  generate.click();await flush();assert.equal(generate.disabled,false,'Provider failure must release the guard');
  dom.window.close();
- console.log('Product UI passed: corrupt local cache recovery, server-defined numeric limits, JD empty/export states, paid-submit guard and failure recovery.');
+ console.log('Product UI passed: safe upload rendering, index warnings, upload concurrency guard, corrupt local cache recovery, server-defined limits, JD empty/export states, paid-submit guard and failure recovery.');
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

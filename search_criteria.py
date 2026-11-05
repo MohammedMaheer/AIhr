@@ -17,8 +17,10 @@ mode when the product contract is "only return exact criteria matches."
 from __future__ import annotations
 
 import re
+import math
 from dataclasses import dataclass, field, asdict
 from typing import Any, Optional
+from services import requirements_logic
 
 
 # Penalty (in score points) per missed criterion. Tuned so that missing
@@ -169,6 +171,8 @@ class SearchCriteria:
     # "mandatory" phrasings. Compared (substring, case-insensitive)
     # against the candidate's skills section.
     required_skills: list[str] = field(default_factory=list)
+    language_expression: Optional[dict] = None
+    skill_expression: Optional[dict] = None
 
     def is_empty(self) -> bool:
         return (self.min_years is None
@@ -176,7 +180,9 @@ class SearchCriteria:
                 and not self.required_languages
                 and not self.location
                 and not self.location_alternatives
-                and not self.required_skills)
+                and not self.required_skills
+                and self.language_expression is None
+                and self.skill_expression is None)
 
     def all_locations(self) -> list[str]:
         """Primary + alternatives as a deduplicated list."""
@@ -220,12 +226,12 @@ _FRESHER_PATTERNS = [
 
 _LANG_PATTERNS = [
     # "speaks French and Arabic", "fluent in Spanish, English", "must speak French"
-    r"(?:speaks?|speaking|fluent\s+in|fluency\s+in|proficient\s+in|knows?|must\s+speak|should\s+speak|native\s+in|native\s+speakers?\s+of)\s+([A-Za-z][A-Za-z,&/ ]+?)(?=[.;:]|\s+(?:based|located|residing|living|with|having|who|that|in\s+the|preferred|required|only|mandatory)\b|$)",
+    r"(?:speaks?|speaking|fluent\s+in|fluency\s+in|proficient\s+in|knows?|must\s+speak|should\s+speak|native\s+in|native\s+speakers?\s+of)\s+([A-Za-z(][A-Za-z,&/() ]+?)(?=[.;:]|\s+(?:based|located|residing|living|with|having|who|that|in\s+the|preferred|required|only|mandatory)\b|$)",
     # "Arabic-speaking", "French speaking candidate", "Arabic native"
     r"\b([A-Za-z]+)[- ]speaking\b",
     r"\b([A-Za-z]+)\s+native\b",
     # "languages: english, french", "language requirement: french"
-    r"languages?(?:\s+requirements?)?\s*[:=]\s*([A-Za-z,&/ ]+?)(?=[.;]|$)",
+    r"languages?(?:\s+requirements?)?\s*[:=]\s*([A-Za-z,&/() ]+?)(?=[.;]|$)",
 ]
 
 
@@ -253,11 +259,11 @@ _LOCATION_PATTERNS = [
 # Skill / mandatory-tech patterns. The captured chunk is then split on
 # commas/and/or and each piece is treated as a required skill.
 _SKILL_PATTERNS = [
-    r"must\s+have\s+(?:experience\s+in\s+|knowledge\s+of\s+|skills?\s+in\s+)?([A-Za-z0-9+#.\-,/& ]+?)(?=[.;:]|\sand\s+(?:should|must|be|have|located|based|in\s)|\swho\b|\swith\s+\d|$)",
-    r"required\s+skills?\s*[:=]\s*([A-Za-z0-9+#.\-,/& ]+?)(?=[.;]|$)",
-    r"mandatory\s+(?:skills?|tech(?:nologies)?|stack)\s*[:=]?\s*([A-Za-z0-9+#.\-,/& ]+?)(?=[.;]|$)",
-    r"(?:hands[- ]on|strong)\s+(?:experience|background)\s+(?:in|with)\s+([A-Za-z0-9+#.\-,/& ]+?)(?=[.;:]|\sand\s+(?:should|must|be|have|located|based|in\s)|\swho\b|\swith\s+\d|$)",
-    r"proficient\s+in\s+([A-Za-z0-9+#.\-,/& ]+?)(?=[.;:]|\sand\s+(?:should|must|be|have|located|based|in\s)|\swho\b|$)",
+    r"must\s+have\s+(?:experience\s+in\s+|knowledge\s+of\s+|skills?\s+in\s+)?([A-Za-z0-9+#.\-,/&() ]+?)(?=[;:]|\.(?=\s|$)|\sand\s+(?:should|must|be|have|located|based|in\s)|\swho\b|\swith\s+\d|$)",
+    r"required\s+skills?\s*[:=]\s*([A-Za-z0-9+#.\-,/&() ]+?)(?=[;]|\.(?=\s|$)|$)",
+    r"mandatory\s+(?:skills?|tech(?:nologies)?|stack)\s*[:=]?\s*([A-Za-z0-9+#.\-,/&() ]+?)(?=[;]|\.(?=\s|$)|$)",
+    r"(?:hands[- ]on|strong)\s+(?:experience|background)\s+(?:in|with)\s+([A-Za-z0-9+#.\-,/&() ]+?)(?=[;:]|\.(?=\s|$)|\sand\s+(?:should|must|be|have|located|based|in\s)|\swho\b|\swith\s+\d|$)",
+    r"proficient\s+in\s+([A-Za-z0-9+#.\-,/&() ]+?)(?=[;:]|\.(?=\s|$)|\sand\s+(?:should|must|be|have|located|based|in\s)|\swho\b|$)",
 ]
 
 # A small whitelist of common tech tokens used to validate captured skill
@@ -462,16 +468,19 @@ def parse_search_criteria(query: str) -> SearchCriteria:
 
     # Languages: collect, then filter against known list
     found_langs: set[str] = set()
+    language_chunks = []
     for pat in _LANG_PATTERNS:
         for m in re.finditer(pat, query, re.IGNORECASE):
             chunk = m.group(1)
+            language_chunks.append(chunk)
             # Split on separators
-            for tok in re.split(r"[,&/;]|\sand\s|\sor\s", chunk, flags=re.IGNORECASE):
+            for tok in re.split(r"[,&/;()]|\sand\s|\sor\s", chunk, flags=re.IGNORECASE):
                 tok = _norm(tok)
                 if tok in SPOKEN_LANGUAGES:
                     found_langs.add(tok)
     if found_langs:
         crit.required_languages = sorted(found_langs)
+    crit.language_expression = _requirement_expression(language_chunks, _language_term)
 
     # Location -- primary capture first.
     for pat in _LOCATION_PATTERNS:
@@ -513,6 +522,7 @@ def parse_search_criteria(query: str) -> SearchCriteria:
 
     # Required skills.
     crit.required_skills = _extract_required_skills(query)
+    crit.skill_expression = _requirement_expression(_skill_chunks(query), _skill_term)
 
     return crit
 
@@ -550,6 +560,48 @@ def _extract_location_alternatives(query: str, exclude: str) -> list[str]:
     return alternatives
 
 
+def _language_term(raw):
+    value = _norm(re.sub(r'^(?:either|both)\s+', '', raw.strip(), flags=re.IGNORECASE))
+    return value if value in SPOKEN_LANGUAGES else None
+
+
+def _skill_term(raw):
+    value = _norm(re.sub(r'^(?:either|both)\s+', '', raw.strip(), flags=re.IGNORECASE))
+    if (not value or (len(value)<2 and value not in {'c','r'}) or len(value)>30
+            or value in SPOKEN_LANGUAGES or re.fullmatch(r'\d+\+?',value)
+            or re.search(r'\b\d+\s*\+?\s*(?:years?|yrs?)\b',value)):
+        return None
+    if all(part in _SKILL_TOKEN_BLOCKLIST for part in re.findall(r'[a-z0-9.+#]+',value)):
+        return None
+    return value
+
+
+def _skill_chunks(query):
+    chunks=[]
+    for pattern in _SKILL_PATTERNS:
+        for match in re.finditer(pattern,query,re.IGNORECASE):
+            chunks.append(re.split(r'\b(?:located|based|in\s+\w+|with\s+\d|who|that|years?|yrs?)\b',
+                                   match[1],maxsplit=1,flags=re.IGNORECASE)[0])
+    return chunks
+
+
+def _requirement_expression(chunks, normalize):
+    expressions=[];has_alternative=False
+    for chunk in chunks:
+        expression=requirements_logic.compile_clause(chunk,normalize)
+        if expression is not None:
+            has_alternative=True
+        else:
+            terms=[normalize(raw) for raw in re.split(r'[,;/&()]|\band\b|\bor\b|\bplus\b',chunk,flags=re.IGNORECASE)]
+            items=[{'term':term} for term in terms if term]
+            expression={'op':'all','items':items} if items else None
+        if expression and expression not in expressions:
+            expressions.append(expression)
+    if not has_alternative or not expressions:
+        return None
+    return expressions[0] if len(expressions)==1 else {'op':'all','items':expressions}
+
+
 def _extract_required_skills(query: str) -> list[str]:
     """Pull explicit hard-required skill tokens from must-have phrasings.
     Returns a deduplicated, lower-cased list. Conservative: skill chunks
@@ -557,30 +609,11 @@ def _extract_required_skills(query: str) -> list[str]:
     """
     found: list[str] = []
     seen: set[str] = set()
-    for pat in _SKILL_PATTERNS:
-        for m in re.finditer(pat, query, re.IGNORECASE):
-            chunk = m.group(1) or ""
-            # Stop the chunk at the first clause boundary not consumed by
-            # the regex lookahead (extra safety).
-            chunk = re.split(r"\b(?:located|based|in\s+\w+|with\s+\d|who|that|years?|yrs?)\b",
-                             chunk, maxsplit=1, flags=re.IGNORECASE)[0]
-            for raw in re.split(r"[,;/&]|\sand\s|\sor\s|\splus\s", chunk, flags=re.IGNORECASE):
-                tok = _norm(raw)
-                if not tok or (len(tok) < 2 and tok not in {'c', 'r'}) or len(tok) > 30:
-                    continue
-                # Skip year-spec lookalikes: "5+", "10 yrs", pure digits.
-                if re.fullmatch(r"\d+\+?", tok):
-                    continue
-                if re.search(r"\b\d+\s*\+?\s*(?:years?|yrs?)\b", tok):
-                    continue
-                # Skip pure-English filler.
-                if all(part in _SKILL_TOKEN_BLOCKLIST
-                       for part in re.findall(r"[a-z0-9.+#]+", tok)):
-                    continue
-                if tok in seen:
-                    continue
-                seen.add(tok)
-                found.append(tok)
+    for chunk in _skill_chunks(query):
+        for raw in re.split(r'[,;/&()]|\band\b|\bor\b|\bplus\b',chunk,flags=re.IGNORECASE):
+            tok=_skill_term(raw)
+            if tok and tok not in seen:
+                seen.add(tok);found.append(tok)
     return found
 
 
@@ -603,9 +636,30 @@ def _parse_years_string(raw: str) -> Optional[float]:
       "0 Years (Internship is not ...)" -> 0.0
     Returns None when no numeric content is present.
     """
-    if not raw:
+    if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
         return None
     text = str(raw).lower().strip()
+    if not text or len(text)>4000 or uncertain_language(text):
+        return None
+
+    def valid(value):
+        return value if math.isfinite(value) and 0 <= value <= 100 else None
+
+    if re.fullmatch(r'(?:no|zero)\s+(?:professional\s+)?experience',text):
+        return 0.0
+
+    # A plus after a unit joins distinct segments; "5+ years" is a lower bound.
+    parts=re.split(r'(?<=[a-z)])\s*\+\s*',text)
+    if 1 < len(parts) <= 32:
+        values=[_parse_years_string(part) for part in parts]
+        if all(value is not None for value in values):
+            return valid(sum(values))
+
+    # Ranges precede single-value matching, preserving the conservative lower bound.
+    rng=re.search(r'(?<![\d.])(\d{1,3}(?:\.\d+)?)\s*(?:-|to|\u2013|\u2014)\s*(\d{1,3}(?:\.\d+)?)\s*(?:years?|yrs?)\b',text)
+    if rng:
+        low,high=float(rng[1]),float(rng[2])
+        return valid(low) if low<=high and valid(high) is not None else None
 
     # "less than N year(s)" / "under N year(s)" / "<N year(s)" -> N - 0.5
     less_m = re.search(
@@ -615,50 +669,32 @@ def _parse_years_string(raw: str) -> Optional[float]:
     if less_m:
         try:
             n = float(less_m.group(1))
-            return max(0.0, n - 0.5)
+            return valid(max(0.0, n - 0.5))
         except ValueError:
             pass
 
     # "X years Y months" -> X + Y/12
     ym = re.search(
-        r"(\d+(?:\.\d+)?)\s*(?:years?|yrs?)\s*(?:and\s*)?(\d+(?:\.\d+)?)\s*months?",
+        r"(?<![\d.])(\d+(?:\.\d+)?)\s*(?:years?|yrs?)\s*(?:and\s*)?(\d+(?:\.\d+)?)\s*(?:months?|mos?)\b",
         text,
     )
     if ym:
         try:
             yrs = float(ym.group(1))
             mos = float(ym.group(2))
-            return yrs + mos / 12.0
+            return valid(yrs + mos / 12.0)
         except ValueError:
             pass
 
-    # Segmented "0.5 Years + 0.5 Years" -> sum each "<num> year(s)" piece
-    if "+" in text:
-        segs = re.findall(r"(\d+(?:\.\d+)?)\s*(?:years?|yrs?)", text)
-        if len(segs) >= 2:
-            try:
-                return sum(float(x) for x in segs)
-            except ValueError:
-                pass
-
-    # Range "X-Y years" / "X to Y years" -> take lower bound (conservative)
-    rng = re.search(
-        r"(\d+(?:\.\d+)?)\s*(?:-|to|\u2013|\u2014)\s*\d+(?:\.\d+)?\s*(?:years?|yrs?)",
-        text,
-    )
-    if rng:
-        try:
-            return float(rng.group(1))
-        except ValueError:
-            pass
-
-    # Generic "<num> year(s)" / "<num>+ year(s)" / bare "<num>"
-    m = re.search(r"(\d+(?:\.\d+)?)", text)
+    # Explicit units or an entirely numeric field; dates are not experience.
+    m = re.search(r"(?<![\d.\-])(\d{1,3}(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)\b",text)
     if m:
-        try:
-            return float(m.group(1))
-        except ValueError:
-            return None
+        return valid(float(m[1]))
+    months=re.search(r'(?<![\d.\-])(\d{1,3}(?:\.\d+)?)\s*(?:months?|mos?)\b',text)
+    if months:
+        return valid(float(months[1])/12)
+    if re.fullmatch(r'\d{1,3}(?:\.\d+)?',text):
+        return valid(float(text))
     return None
 
 
@@ -922,19 +958,23 @@ def evaluate_criteria(analysis: dict, criteria: SearchCriteria) -> dict:
                 "candidate": f"{cy:g}",
             })
 
-    if criteria.required_languages:
+    if criteria.required_languages or criteria.language_expression is not None:
         have = set(_extract_candidate_languages(analysis))
-        for lang in criteria.required_languages:
-            if any(re.search(r'(?<!\w)' + re.escape(lang) + r'(?!\w)', h) for h in have):
+        def has_language(value):
+            return any(re.search(r'(?<!\w)' + re.escape(value) + r'(?!\w)', h) for h in have)
+        for lang in ([None] if criteria.language_expression is not None else criteria.required_languages):
+            required = requirements_logic.label(criteria.language_expression) if lang is None else lang
+            matched = requirements_logic.evaluate(criteria.language_expression,has_language) if lang is None else has_language(lang)
+            if matched:
                 out["matches"].append({
                     "criterion": "language",
-                    "required": lang,
+                    "required": required,
                     "candidate": "found",
                 })
             else:
                 out["misses"].append({
                     "criterion": "language",
-                    "required": lang,
+                    "required": required,
                     "candidate": "missing",
                     "penalty": PENALTY_PER_MISS,
                 })
@@ -976,21 +1016,23 @@ def evaluate_criteria(analysis: dict, criteria: SearchCriteria) -> dict:
                 out["hard_fail"] = True
             out["misses"].append(miss)
 
-    if criteria.required_skills:
+    if criteria.required_skills or criteria.skill_expression is not None:
         have_skills = _extract_candidate_skills(analysis)
-        for skill in criteria.required_skills:
-            skill_norm = _norm(skill)
-            if (skill_norm and
-                    any(re.search(_skill_pattern(skill_norm), value, re.IGNORECASE) for value in have_skills)):
+        def has_skill(value):
+            return any(re.search(_skill_pattern(value), item, re.IGNORECASE) for item in have_skills)
+        for skill in ([None] if criteria.skill_expression is not None else criteria.required_skills):
+            required = requirements_logic.label(criteria.skill_expression) if skill is None else skill
+            matched = requirements_logic.evaluate(criteria.skill_expression,has_skill) if skill is None else has_skill(skill)
+            if matched:
                 out["matches"].append({
                     "criterion": "skill",
-                    "required": skill,
+                    "required": required,
                     "candidate": "found",
                 })
             else:
                 out["misses"].append({
                     "criterion": "skill",
-                    "required": skill,
+                    "required": required,
                     "candidate": "missing",
                     "penalty": PENALTY_PER_MISS,
                 })

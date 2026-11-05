@@ -1,11 +1,14 @@
 from unittest.mock import MagicMock, patch
+import asyncio
+from types import SimpleNamespace
 
 import pytest
 
 import main
 from vps_local import discovery_shim as discovery
-from search_criteria import SearchCriteria, evaluate_criteria
+from search_criteria import SearchCriteria, evaluate_criteria, parse_search_criteria
 from test_durable_search import queue_db
+from vps_local.profile_extractor import profile_from_analysis
 
 
 @pytest.mark.parametrize("advanced", [False, True])
@@ -67,6 +70,24 @@ def test_local_company_enrichment_never_searches_private_cvs(monkeypatch):
     llm.assert_not_called()
 
 
+def test_vector_response_cache_does_not_cross_shared_resource_tenants(monkeypatch):
+    monkeypatch.setenv('SMARTHR_LOCAL_MODE', '1')
+    main._search_cache_clear()
+    client = MagicMock()
+    client.search.return_value = SimpleNamespace(results=[])
+    users = [{'id': 7, 'user_type': 'tenant_user', 'company': {'company_id': company}}
+             for company in (27, 28)]
+    with patch.object(main, 'get_company_resources', return_value=('shared-bucket', 'shared-store')), \
+         patch.object(main, 'get_search_client', return_value=client):
+        for user in users:
+            asyncio.run(main.search_vector(query='QA', result_count=10, user=user))
+        asyncio.run(main.search_vector(query='QA', result_count=10, user=users[0]))
+    assert client.search.call_count == 2, 'Only the same principal and tenant may reuse a cached response'
+    assert {call.args[0].filter for call in client.search.call_args_list} == {
+        'company_id: ANY("27")', 'company_id: ANY("28")'}
+    main._search_cache_clear()
+
+
 @pytest.mark.parametrize('wanted', ['Java', 'SQL', 'C', 'C++', 'C#', '.NET', 'R'])
 def test_real_postgres_shortlist_and_final_skill_filter_agree(queue_db, wanted):
     skills = ['JavaScript','Java','Java17','NoSQL','SQL Server','C++','C','C#','.NET 8','ASP.NET Core','CRM','R']
@@ -80,4 +101,30 @@ def test_real_postgres_shortlist_and_final_skill_filter_agree(queue_db, wanted):
         shortlisted = {row['id'] for row in cursor.fetchall()}
     expected = {index for index, skill in enumerate(skills) if not evaluate_criteria(
         {'candidate_overview': {'skills': [skill]}}, criteria)['misses']}
+    assert shortlisted == expected
+
+
+@pytest.mark.parametrize('query', [
+    'Required skills: (Python or Java) and SQL',
+    'Required skills: Python or Java and SQL',
+    'Developer who speaks English or Arabic',
+    'Required skills: Python or Java. Languages: English or Arabic',
+])
+def test_real_postgres_and_final_boolean_requirements_agree(queue_db, query):
+    profiles = [(['Python'], ['English']), (['Java', 'MySQL'], ['Arabic']),
+                (['JavaScript', 'NoSQL'], ['French']), (['SQL'], ['Arabic']),
+                (['Java'], ['English']), ([], [])]
+    criteria = parse_search_criteria(query)
+    where, params = discovery._criteria_sql_where(criteria)
+    with queue_db.get_cursor() as (cursor, _):
+        cursor.execute('CREATE TABLE resume_embeddings (id INTEGER, embedding INTEGER, candidate_skills TEXT[], candidate_languages TEXT[])')
+        for index, (skills, languages) in enumerate(profiles):
+            profile = profile_from_analysis({'hr_scorecard': {'candidate_overview': {'skills': skills},
+                                             'detailed_analysis': {'languages': languages}}})
+            cursor.execute('INSERT INTO resume_embeddings VALUES (%s,1,%s,%s)',
+                           (index, profile['candidate_skills'], profile['candidate_languages']))
+        cursor.execute('SELECT id FROM resume_embeddings WHERE '+where, params)
+        shortlisted = {row['id'] for row in cursor.fetchall()}
+    expected = {index for index, (skills, languages) in enumerate(profiles) if not evaluate_criteria(
+        {'candidate_overview': {'skills': skills}, 'detailed_analysis': {'languages': languages}}, criteria)['misses']}
     assert shortlisted == expected

@@ -20,6 +20,7 @@ from search_criteria import (
     _location_match,
     _norm,
     _parse_years_string,
+    _extract_candidate_years,
     evaluate_criteria,
     uncertain_language,
 )
@@ -72,40 +73,8 @@ COMMON_SKILLS = {
 
 
 def parse_years(value: Any) -> Optional[float]:
-    """Parse years from scorecard/text values."""
-    if value is None:
-        return None
-    text = str(value).strip().lower()
-    if not text or text in {"unknown", "not provided", "not specified", "n/a"}:
-        return None
-    if "less than" in text and re.search(r"\b1\s+year", text):
-        return 0.5
-
-    years = None
-    explicit_years = re.search(r"(\d{1,2}(?:\.\d+)?)\s*(?:years?|yrs?)\b", text)
-    if explicit_years:
-        try:
-            years = float(explicit_years.group(1))
-        except ValueError:
-            years = None
-    if years is None:
-        years = _parse_years_string(text)
-    months = None
-    m = re.search(r"(\d{1,2})\s*(?:months?|mos?)\b", text)
-    if m:
-        try:
-            months = int(m.group(1)) / 12.0
-        except ValueError:
-            months = None
-    if months is not None and not re.search(r'\b(?:years?|yrs?)\b', text):
-        return round(months, 2)
-    if years is not None and months is not None and "year" in text:
-        return round(years + months, 2)
-    if years is not None:
-        return years
-    if months is not None:
-        return round(months, 2)
-    return None
+    """Use exactly the same experience interpretation as final filtering."""
+    return _parse_years_string(value)
 
 
 def clean_location(value: Any) -> str:
@@ -311,11 +280,7 @@ def profile_from_analysis(gemini_analysis: Any) -> dict[str, Any]:
 
     co = sc.get("candidate_overview")
     co = co if isinstance(co, dict) else {}
-    years = parse_years(
-        co.get("experience_years")
-        or co.get("total_experience")
-        or co.get("years_of_experience")
-    )
+    years = _extract_candidate_years(sc)
     location = clean_location(co.get("location") or "")
 
     languages = []

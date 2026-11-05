@@ -32,6 +32,7 @@ from search_criteria import (
     LOCATION_SYNONYMS,
     parse_search_criteria,
 )
+from services import requirements_logic
 
 
 ADVANCED_SEARCH_ENABLED = os.environ.get("SMARTHR_ADVANCED_SEARCH", "1").lower() in (
@@ -297,15 +298,24 @@ def _criteria_sql_where(criteria) -> tuple[str, list[Any]]:
             params.append(f"%{term}%")
         clauses.append("(" + " OR ".join(loc_clauses) + ")")
 
-    for language in criteria.required_languages:
-        clauses.append("%s = ANY(candidate_languages)")
-        params.append(language)
+    if criteria.language_expression is not None:
+        clause,values=requirements_logic.sql(criteria.language_expression,
+            lambda term:('%s = ANY(candidate_languages)',[term]))
+        clauses.append(clause);params.extend(values)
+    else:
+        for language in criteria.required_languages:
+            clauses.append("%s = ANY(candidate_languages)")
+            params.append(language)
 
-    for skill in criteria.required_skills:
-        clauses.append(
-            "EXISTS (SELECT 1 FROM unnest(candidate_skills) s WHERE s ~* %s)"
-        )
-        params.append(_skill_pattern(skill))
+    skill_sql="EXISTS (SELECT 1 FROM unnest(candidate_skills) s WHERE s ~* %s)"
+    if criteria.skill_expression is not None:
+        clause,values=requirements_logic.sql(criteria.skill_expression,
+            lambda term:(skill_sql,[_skill_pattern(term)]))
+        clauses.append(clause);params.extend(values)
+    else:
+        for skill in criteria.required_skills:
+            clauses.append(skill_sql)
+            params.append(_skill_pattern(skill))
 
     return " AND ".join(clauses), params
 
@@ -419,13 +429,20 @@ def _paths_for_uri(uri: str) -> tuple[str, list[Path]]:
     return key, [_contained_path(bucket, key)]
 
 
-def _upsert_document_embedding(document: Document, document_id: str = "") -> str:
+@dataclass(frozen=True)
+class IndexOperation:
+    name: str
+    indexed: bool = False
+    error_code: str = ""
+
+
+def _upsert_document_embedding(document: Document, document_id: str = "") -> IndexOperation:
     content = getattr(document, "content", None)
     uri = getattr(content, "uri", "") if content else ""
     key, candidates = _paths_for_uri(uri)
     path = next((p for p in candidates if p.is_file()), None)
     if path is None:
-        return "local/operations/create_document_missing_file"
+        return IndexOperation("local/operations/create_document_missing_file", error_code="source_missing")
 
     text = _extract_text_from_file(path)
     filename = Path(key or path.name).name
@@ -523,7 +540,11 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> str
         raise
     finally:
         pool.putconn(conn)
-    return f"local/operations/create_document_{document_id or filename}"
+    return IndexOperation(
+        f"local/operations/create_document_{document_id or filename}",
+        indexed=vec is not None,
+        error_code="" if vec is not None else "no_searchable_text",
+    )
 
 
 def _tenant_scope(filter_str: str) -> tuple[str, list]:
@@ -701,20 +722,15 @@ class DocumentServiceClient:
         pass
 
     def create_document(self, request: CreateDocumentRequest = None, **kwargs):
-        op_name = "local/operations/create_document"
         try:
             if request and request.document:
-                op_name = _upsert_document_embedding(
+                return _upsert_document_embedding(
                     request.document,
                     document_id=getattr(request, "document_id", "") or getattr(request.document, "id", ""),
                 )
-        except Exception as exc:
-            op_name = f"local/operations/create_document_failed_{type(exc).__name__}"
-
-        class _Op:
-            pass
-        _Op.name = op_name
-        return _Op()
+        except Exception:
+            return IndexOperation("local/operations/create_document_failed", error_code="indexing_failed")
+        return IndexOperation("local/operations/create_document_invalid", error_code="invalid_document")
 
 
 class DataStoreServiceClient:

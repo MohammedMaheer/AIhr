@@ -718,7 +718,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 </div>
                                 <div>
                                     <p class="text-lg font-bold text-gray-900" id="total-uploaded">0</p>
-                                    <p class="text-sm text-gray-600">Files Uploaded Today</p>
+                                    <p class="text-sm text-gray-600">Files Processed This Session</p>
                                 </div>
                             </div>
                         </div>
@@ -768,7 +768,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                         <i class="fas fa-cloud-upload-alt text-blue-600 text-2xl"></i>
                                     </div>
                                     <h3 class="text-lg font-semibold text-gray-900 mb-2">Drop files here or click to browse</h3>
-                                    <p class="text-gray-600 text-sm mb-4">Support for PDF, DOC, DOCX files (max 10MB per file, 100MB per batch)</p>
+                                    <p class="text-gray-600 text-sm mb-4">Support for PDF, DOC, DOCX files (max 10MB per file, 32MB per batch)</p>
                                     <button id="browse-files" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
                                         <i class="fas fa-folder-open mr-2"></i>Browse Files
                                     </button>
@@ -4168,6 +4168,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const clearQueue = document.getElementById('clear-queue');
 
         let selectedFiles = [];
+        let isUploading = false;
 
         // Load configuration and pre-populate fields
         loadConfigAndPopulateFields();
@@ -4209,28 +4210,37 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Clear queue
         clearQueue.addEventListener('click', () => {
+            if (isUploading) return;
             selectedFiles = [];
             updateUploadQueue();
         });
 
         // Start upload
-        startUpload.addEventListener('click', () => {
-            if (selectedFiles.length > 0) {
+        startUpload.addEventListener('click', async () => {
+            if (!isUploading && selectedFiles.length > 0) {
+                isUploading = true;
+                startUpload.disabled = true;
+                clearQueue.disabled = true;
                 const uploadFolder = document.getElementById('upload-folder').value;
 
                 // Check if GCS is configured
-                fetch('/api/gcs-status')
+                await fetch('/api/gcs-status')
                     .then(response => response.json())
                     .then(data => {
                         if (!data.configured) {
                             showCredentialsModal();
                         } else {
-                            performUpload(uploadFolder);
+                            return performUpload(uploadFolder);
                         }
                     })
                     .catch(error => {
                         console.error('Error checking GCS status:', error);
-                        showCredentialsModal();
+                        showNotification('Upload could not complete. Please check the file statuses and try again.', 'error');
+                    })
+                    .finally(() => {
+                        isUploading = false;
+                        clearQueue.disabled = false;
+                        updateUploadQueue();
                     });
             }
         });
@@ -4259,6 +4269,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         function handleFiles(files) {
+            if (isUploading) return;
             // Per-file limit aligned with backend MAX_FILE_SIZE (main.py).
             const maxFileSize = 10 * 1024 * 1024; // 10MB in bytes
 
@@ -4308,6 +4319,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             let totalSuccessful = 0;
             let totalFailed = 0;
+            let totalNotIndexed = 0;
             let batchResults = [];
             let remainingFiles = [...selectedFiles]; // Copy of files to process
             let batchNumber = 0;
@@ -4354,11 +4366,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (batchResult.results) {
                         batchResult.results.forEach((result, index) => {
                             if (index < currentBatch.length) {
-                                currentBatch[index].status = result.success ? 'completed' : 'failed';
+                                const notIndexed = result.success && result.vector_indexed === false;
+                                currentBatch[index].status = result.success ? (notIndexed ? 'attention' : 'completed') : 'failed';
                                 currentBatch[index].progress = 100;
-                                currentBatch[index].error = result.error;
+                                currentBatch[index].error = notIndexed ? 'File saved, but not searchable. Text extraction or indexing needs attention.' : result.error;
                                 currentBatch[index].gcs_path = result.gcs_path;
-                                currentBatch[index].batchInfo = `Batch ${batchNumber} · ${result.success ? 'Success' : 'Failed'}`;
+                                currentBatch[index].batchInfo = `Batch ${batchNumber} · ${notIndexed ? 'Saved, not searchable' : result.success ? 'Success' : 'Failed'}`;
                             }
                         });
 
@@ -4366,6 +4379,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         const failed = batchResult.results.filter(r => !r.success).length;
                         totalSuccessful += successful;
                         totalFailed += failed;
+                        totalNotIndexed += batchResult.results.filter(r => r.success && r.vector_indexed === false).length;
 
                         // Update files progress
                         const totalCompleted = totalSuccessful + totalFailed;
@@ -4478,9 +4492,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 strategyInfo = ` (Maintained optimal batch size of 50)`;
             }
 
-            const message = `Upload completed! ${totalSuccessful} successful, ${totalFailed} failed across ${batchNumber} batches${strategyInfo}`;
+            const indexWarning = totalNotIndexed ? ` ${totalNotIndexed} saved file(s) are not searchable and need attention.` : '';
+            const message = `Upload completed! ${totalSuccessful} successful, ${totalFailed} failed across ${batchNumber} batches${strategyInfo}${indexWarning}`;
             if (totalSuccessful > 0) {
-                showLimitNotification(message, totalFailed > 0 ? 'warning' : 'success');
+                showLimitNotification(message, totalFailed > 0 || totalNotIndexed > 0 ? 'warning' : 'success');
             } else if (totalFailed > 0) {
                 showLimitNotification(`All uploads failed: ${message}`, 'error');
             }
@@ -4591,12 +4606,12 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <i class="fas fa-file-${getFileIcon(fileItem.file.name)} text-gray-600"></i>
                                 </div>
                                 <div>
-                                    <p class="text-sm font-medium text-gray-900">${fileItem.file.name}</p>
+                                    <p class="text-sm font-medium text-gray-900 break-all">${escapeHtml(fileItem.file.name)}</p>
                                     <div class="flex items-center space-x-2 text-xs text-gray-500">
                                         <span>${formatFileSize(fileItem.file.size)}</span>
                                         <span class="text-gray-300">·</span>
                                         <span class="text-blue-600">Adaptive Batching</span>
-                                        ${fileItem.batchInfo ? `<span class="text-gray-300">·</span><span class="${statusColor}">${fileItem.batchInfo}</span>` : ''}
+                                        ${fileItem.batchInfo ? `<span class="text-gray-300">·</span><span class="${statusColor}">${escapeHtml(fileItem.batchInfo)}</span>` : ''}
                                     </div>
                                 </div>
                             </div>
@@ -4611,12 +4626,12 @@ document.addEventListener('DOMContentLoaded', function () {
                                         </div>
                                     ` : ''}
                                     ${fileItem.error ? `
-                                        <div class="text-xs text-red-600 max-w-xs truncate" title="${fileItem.error}">
-                                            ${fileItem.error}
+                                        <div class="text-xs ${fileItem.status === 'attention' ? 'text-amber-700' : 'text-red-600'} max-w-xs truncate" title="${escapeHtml(fileItem.error)}">
+                                            ${escapeHtml(fileItem.error)}
                                         </div>
                                     ` : ''}
                                 </div>
-                                <button class="text-red-600 hover:text-red-800" onclick="removeFile('${fileItem.id}')">
+                                <button class="text-red-600 hover:text-red-800" aria-label="Remove file" ${isUploading ? 'disabled' : ''} onclick="removeFile('${fileItem.id}')">
                                     <i class="fas fa-trash text-xs"></i>
                                 </button>
                             </div>
@@ -4624,12 +4639,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     `;
                 }).join('')}
                 `;
-                startUpload.disabled = false;
+                startUpload.disabled = isUploading;
             }
         }
 
         function getStatusIcon(status) {
             switch (status) {
+                case 'attention': return '<i class="fas fa-exclamation-triangle"></i>';
                 case 'completed': return '<i class="fas fa-check-circle"></i>';
                 case 'failed': return '<i class="fas fa-exclamation-circle"></i>';
                 case 'uploading': return '<i class="fas fa-spinner fa-spin"></i>';
@@ -4640,6 +4656,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         function getStatusColor(status) {
             switch (status) {
+                case 'attention': return 'text-amber-700';
                 case 'completed': return 'text-green-600';
                 case 'failed': return 'text-red-600';
                 case 'uploading': return 'text-blue-600';
@@ -4737,6 +4754,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Make removeFile function global
         window.removeFile = function (fileId) {
+            if (isUploading) return;
             // ``fileId`` arrives as a string from inline onclick attributes while
             // ``file.id`` is stored as a number (Date.now() + Math.random()).
             // Compare as strings so identifiers actually match.
@@ -4880,6 +4898,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         Number(emailStats.failed_uploads) ||
                         Number(batchStats.failed) || 0;
                     const totalEmails = Number(emailStats.total_emails) || 0;
+                    const notIndexedCount = (Array.isArray(result.results) ? result.results : [])
+                        .filter(item => item.success && item.vector_indexed === false).length;
 
                     if (totalAttachments === 0) {
                         showLimitNotification(
@@ -4889,8 +4909,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     } else {
                         showLimitNotification(
                             `Processed ${successfulCount}/${totalAttachments} attachment(s) from ${totalEmails} email(s)` +
-                                (failedCount > 0 ? ` (${failedCount} failed)` : ''),
-                            failedCount > 0 ? 'warning' : 'success'
+                                (failedCount > 0 ? ` (${failedCount} failed)` : '') +
+                                (notIndexedCount ? `. ${notIndexedCount} saved file(s) are not searchable and need attention.` : ''),
+                            failedCount > 0 || notIndexedCount > 0 ? 'warning' : 'success'
                         );
                     }
 

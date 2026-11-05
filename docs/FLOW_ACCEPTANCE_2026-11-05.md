@@ -4,7 +4,7 @@
 
 - Date: 5 November 2026.
 - Application: https://effortsairecruiter.tech/ on the existing VPS.
-- Active image: `smarthr-app:clean-20261105t130836z`.
+- Verified outreach release image: `smarthr-app:clean-20261105t130836z`.
 - Image identity: `sha256:2b4d19c2648ae9a93fae900f29aba78d96033458cf0396ebe1d023725586e472`.
 - Only SmartHR was recreated. All 20 unrelated containers retained identity and start time.
 - The original top-left AI Agent Recruiter logo and mobile header are restored. Efforts Solutions branding remains in recruitment emails and Microsoft approval material.

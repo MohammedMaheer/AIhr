@@ -27,6 +27,7 @@ from urllib.parse import urlparse
 from . import vertexai_shim
 from .profile_extractor import evaluate_profile, profile_from_row, profile_from_text
 from search_criteria import (
+    _skill_pattern,
     LOCATION_COUNTRY_CITIES,
     LOCATION_SYNONYMS,
     parse_search_criteria,
@@ -302,9 +303,9 @@ def _criteria_sql_where(criteria) -> tuple[str, list[Any]]:
 
     for skill in criteria.required_skills:
         clauses.append(
-            "EXISTS (SELECT 1 FROM unnest(candidate_skills) s WHERE s ILIKE %s)"
+            "EXISTS (SELECT 1 FROM unnest(candidate_skills) s WHERE s ~* %s)"
         )
-        params.append(f"%{skill}%")
+        params.append(_skill_pattern(skill))
 
     return " AND ".join(clauses), params
 
@@ -388,7 +389,18 @@ def _extract_text_from_file(path: Path) -> str:
         if ext in (".docx", ".doc"):
             from docx import Document as DocxDocument
             doc = DocxDocument(str(path))
-            return "\n".join(p.text for p in doc.paragraphs)[:80_000]
+            parts = [paragraph.text for paragraph in doc.paragraphs]
+            length = sum(len(part) + 1 for part in parts)
+            for table in doc.tables:
+                for row in table.rows:
+                    if length >= 80_000:
+                        break
+                    text = ' | '.join(cell.text for cell in row.cells if cell.text.strip())
+                    parts.append(text)
+                    length += len(text) + 1
+                if length >= 80_000:
+                    break
+            return "\n".join(parts)[:80_000]
         if ext in (".txt", ".md"):
             return path.read_text(encoding="utf-8", errors="ignore")[:80_000]
     except Exception:

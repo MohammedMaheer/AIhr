@@ -21,6 +21,7 @@ from search_criteria import (
     _norm,
     _parse_years_string,
     evaluate_criteria,
+    uncertain_language,
 )
 
 
@@ -35,11 +36,6 @@ UNKNOWN_LOCATION_VALUES = {
     "not specified",
     "not mentioned",
     "not disclosed",
-}
-
-LANGUAGE_UNCERTAIN_TOKENS = {
-    "implied", "assumed", "inferred", "not provided", "not specified",
-    "not mentioned", "n/a", "na", "unknown",
 }
 
 SKILL_NOISE_VALUES = {
@@ -101,6 +97,8 @@ def parse_years(value: Any) -> Optional[float]:
             months = int(m.group(1)) / 12.0
         except ValueError:
             months = None
+    if months is not None and not re.search(r'\b(?:years?|yrs?)\b', text):
+        return round(months, 2)
     if years is not None and months is not None and "year" in text:
         return round(years + months, 2)
     if years is not None:
@@ -148,7 +146,7 @@ def _dedupe(items: list[str], limit: int = 80) -> list[str]:
         value = _norm(str(item))
         if not value or value in seen or value in SKILL_NOISE_VALUES:
             continue
-        if len(value) <= 1:
+        if len(value) <= 1 and value not in {'c', 'r'}:
             continue
         seen.add(value)
         out.append(value)
@@ -177,7 +175,7 @@ def _dedupe_languages(items: list[str], limit: int = 20) -> list[str]:
 
 
 def _is_uncertain_language_value(value: str) -> bool:
-    return any(token in _norm(value) for token in LANGUAGE_UNCERTAIN_TOKENS)
+    return uncertain_language(value)
 
 
 def _uncertain_language_context(text: str, start: int, end: int) -> bool:
@@ -190,7 +188,8 @@ def _flatten_strings(value: Any) -> list[str]:
     if value is None:
         return out
     if isinstance(value, str):
-        out.extend(x.strip() for x in re.split(r"[,;/]|\s+and\s+", value) if x.strip())
+        # Keep N/A intact so an unknown language is not split into apparent evidence.
+        out.extend(x.strip() for x in re.split(r"[,;]|(?<!\bn)/(?!a\b)|\s+and\s+", value, flags=re.IGNORECASE) if x.strip())
     elif isinstance(value, list):
         for item in value:
             out.extend(_flatten_strings(item))
@@ -310,7 +309,8 @@ def profile_from_analysis(gemini_analysis: Any) -> dict[str, Any]:
             "profile_source": "analysis_empty",
         }
 
-    co = sc.get("candidate_overview") or {}
+    co = sc.get("candidate_overview")
+    co = co if isinstance(co, dict) else {}
     years = parse_years(
         co.get("experience_years")
         or co.get("total_experience")
@@ -319,7 +319,8 @@ def profile_from_analysis(gemini_analysis: Any) -> dict[str, Any]:
     location = clean_location(co.get("location") or "")
 
     languages = []
-    detailed = sc.get("detailed_analysis") or {}
+    detailed = sc.get("detailed_analysis")
+    detailed = detailed if isinstance(detailed, dict) else {}
     languages.extend(_flatten_strings(detailed.get("languages")))
 
     skills = []
@@ -357,7 +358,7 @@ def profile_from_analysis(gemini_analysis: Any) -> dict[str, Any]:
 def merge_profiles(primary: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
     merged = dict(primary or {})
     for key in ("candidate_years", "candidate_location"):
-        if not merged.get(key):
+        if merged.get(key) is None or merged.get(key) == '':
             merged[key] = (fallback or {}).get(key)
     merged["candidate_languages"] = _dedupe_languages(
         list(merged.get("candidate_languages") or [])

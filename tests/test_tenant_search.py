@@ -4,6 +4,8 @@ import pytest
 
 import main
 from vps_local import discovery_shim as discovery
+from search_criteria import SearchCriteria, evaluate_criteria
+from test_durable_search import queue_db
 
 
 @pytest.mark.parametrize("advanced", [False, True])
@@ -63,3 +65,19 @@ def test_local_company_enrichment_never_searches_private_cvs(monkeypatch):
         assert main.search_web_for_company_info("SyntheticCo") == ""
     search.assert_not_called()
     llm.assert_not_called()
+
+
+@pytest.mark.parametrize('wanted', ['Java', 'SQL', 'C', 'C++', 'C#', '.NET', 'R'])
+def test_real_postgres_shortlist_and_final_skill_filter_agree(queue_db, wanted):
+    skills = ['JavaScript','Java','Java17','NoSQL','SQL Server','C++','C','C#','.NET 8','ASP.NET Core','CRM','R']
+    criteria = SearchCriteria(required_skills=[wanted])
+    where, params = discovery._criteria_sql_where(criteria)
+    with queue_db.get_cursor() as (cursor, _):
+        cursor.execute('CREATE TABLE resume_embeddings (id INTEGER,embedding INTEGER,candidate_skills TEXT[])')
+        for index, skill in enumerate(skills):
+            cursor.execute('INSERT INTO resume_embeddings VALUES (%s,1,%s)', (index, [skill]))
+        cursor.execute('SELECT id FROM resume_embeddings WHERE '+where, params)
+        shortlisted = {row['id'] for row in cursor.fetchall()}
+    expected = {index for index, skill in enumerate(skills) if not evaluate_criteria(
+        {'candidate_overview': {'skills': [skill]}}, criteria)['misses']}
+    assert shortlisted == expected

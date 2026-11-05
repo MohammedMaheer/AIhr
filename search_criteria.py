@@ -294,6 +294,51 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s or "").strip().lower()
 
 
+_LOCATION_ALIASES = {}
+for _group in LOCATION_SYNONYMS:
+    _canonical = next((name for name in (
+        "uae", "ksa", "usa", "uk", "india", "mumbai", "bangalore",
+        "kolkata", "chennai", "gurgaon", "remote",
+    ) if name in _group), min(_group))
+    _LOCATION_ALIASES.update({name: _canonical for name in _group})
+_LOCATION_ALIAS_RE = re.compile(
+    r"(?<!\w)(?:" + "|".join(re.escape(name) for name in
+        sorted(_LOCATION_ALIASES, key=lambda name: (-len(name), name))) + r")(?!\w)"
+)
+
+
+def _canonical_location(value: str) -> str:
+    return _LOCATION_ALIAS_RE.sub(lambda match: _LOCATION_ALIASES[match[0]], _norm(value))
+
+
+_COUNTRY_CITIES: dict[str, set[str]] = {}
+for _country, _cities in LOCATION_COUNTRY_CITIES.items():
+    _COUNTRY_CITIES.setdefault(_canonical_location(_country), set()).update(
+        _canonical_location(city) for city in _cities
+    )
+_PLACE_RE = re.compile(r"(?<!\w)(?:" + "|".join(re.escape(name) for name in
+    sorted(KNOWN_PLACES | set(LOCATION_COUNTRY_CITIES) | {
+        city for cities in LOCATION_COUNTRY_CITIES.values() for city in cities
+    }, key=lambda name: (-len(name), name))) + r")(?!\w)", re.IGNORECASE)
+
+
+def _skill_pattern(skill: str) -> str:
+    """The same bounded token pattern is used by Python and PostgreSQL."""
+    token = re.escape(_norm(skill))
+    if _norm(skill) == '.net':
+        token = r'(asp)?\.net'
+    elif _norm(skill) == 'sql':
+        token = r'(sql|mysql|postgresql|sqlite|mssql|sqlserver)'
+    return r'(^|[^a-z0-9_+#])' + token + r'($|[^a-z_+#])'
+
+
+def uncertain_language(value: str) -> bool:
+    return bool(re.search(
+        r'(?<!\w)(implied|assumed|inferred|not provided|not specified|'
+        r'not mentioned|n/a|na|unknown)(?!\w)', _norm(value)
+    ))
+
+
 # Words that should never appear inside a parsed location value. If the
 # regex captures one of these, the candidate string is a false positive
 # (typically grammar like "the candidate must be based") and gets rejected.
@@ -433,6 +478,7 @@ def parse_search_criteria(query: str) -> SearchCriteria:
         m = re.search(pat, query, re.IGNORECASE)
         if m:
             loc = _norm(m.group(1))
+            loc = re.split(r'\s+(?:with|who|having|but|not|excluding|requiring|skills?|experience|speaks?|fluent)\b', loc, maxsplit=1)[0]
             # Strip trailing words that aren't part of the location
             loc = re.sub(r"\s+(?:area|region|city|preferred|only)\s*$", "", loc)
             # Reject if it just turned into a language we already captured,
@@ -472,18 +518,36 @@ def parse_search_criteria(query: str) -> SearchCriteria:
 
 
 def _extract_location_alternatives(query: str, exclude: str) -> list[str]:
-    """Find additional known-place names appearing in the query so a JD
-    listing alternatives (e.g. "Dubai or Abu Dhabi") matches candidates in
-    any of them.
-    """
-    q = query.lower()
-    alts: list[str] = []
-    for place in sorted(KNOWN_PLACES, key=len, reverse=True):
-        if place == exclude:
+    """Only explicit OR/slash lists expand the primary location."""
+    places = list(_PLACE_RE.finditer(query))
+    clusters: list[list[re.Match]] = []
+    for place in places:
+        gap = query[clusters[-1][-1].end():place.start()] if clusters else None
+        if gap is not None and re.fullmatch(r'\s*(?:(?:,|/|or|and/or)\s*)*', gap, re.IGNORECASE):
+            clusters[-1].append(place)
+        else:
+            clusters.append([place])
+    alternatives: list[str] = []
+    primary = _canonical_location(exclude)
+    for cluster in clusters:
+        gaps = [query[left.end():right.start()] for left, right in zip(cluster, cluster[1:])]
+        if not any(re.search(r'\bor\b|/', gap, re.IGNORECASE) for gap in gaps):
             continue
-        if re.search(rf"\b{re.escape(place)}\b", q):
-            alts.append(place)
-    return alts
+        if not any(re.search(r'(?<!\w)' + re.escape(_canonical_location(place[0])) + r'(?!\w)', primary)
+                   for place in cluster):
+            continue
+        for index, place in enumerate(cluster):
+            value = _norm(place[0])
+            canonical = _canonical_location(value)
+            if canonical == primary or canonical in {_canonical_location(item) for item in alternatives}:
+                continue
+            # A city followed by its country is one place, not two choices.
+            if index and canonical in _COUNTRY_CITIES and not re.search(r'\bor\b', gaps[index - 1], re.IGNORECASE):
+                previous = _canonical_location(cluster[index - 1][0])
+                if previous in _COUNTRY_CITIES[canonical]:
+                    continue
+            alternatives.append(value)
+    return alternatives
 
 
 def _extract_required_skills(query: str) -> list[str]:
@@ -502,7 +566,7 @@ def _extract_required_skills(query: str) -> list[str]:
                              chunk, maxsplit=1, flags=re.IGNORECASE)[0]
             for raw in re.split(r"[,;/&]|\sand\s|\sor\s|\splus\s", chunk, flags=re.IGNORECASE):
                 tok = _norm(raw)
-                if not tok or len(tok) < 2 or len(tok) > 30:
+                if not tok or (len(tok) < 2 and tok not in {'c', 'r'}) or len(tok) > 30:
                     continue
                 # Skip year-spec lookalikes: "5+", "10 yrs", pure digits.
                 if re.fullmatch(r"\d+\+?", tok):
@@ -598,6 +662,14 @@ def _parse_years_string(raw: str) -> Optional[float]:
     return None
 
 
+def _scorecard_data(analysis: Any) -> dict:
+    if not isinstance(analysis, dict):
+        return {}
+    block = (analysis.get('hr_scorecard') or analysis.get('scorecard')
+             or analysis.get('analysis_json') or analysis)
+    return block if isinstance(block, dict) else {}
+
+
 def _extract_candidate_years(analysis: dict) -> Optional[float]:
     """Pull experience years out of various scorecard shapes.
 
@@ -610,23 +682,22 @@ def _extract_candidate_years(analysis: dict) -> Optional[float]:
         return None
     raws: list[str] = []
 
-    sc = (analysis.get("hr_scorecard")
-          or analysis.get("scorecard")
-          or analysis.get("analysis_json")
-          or analysis)
+    sc = _scorecard_data(analysis)
 
     if isinstance(sc, dict):
-        co = sc.get("candidate_overview") or {}
+        co = sc.get("candidate_overview")
+        co = co if isinstance(co, dict) else {}
         for key in ("experience_years", "total_experience",
                     "years_of_experience"):
             v = co.get(key)
-            if v is not None:
+            if isinstance(v, (str, int, float)) and not isinstance(v, bool):
                 raws.append(str(v))
-        efa = sc.get("experience_fit_analysis") or {}
+        efa = sc.get("experience_fit_analysis")
+        efa = efa if isinstance(efa, dict) else {}
         for key in ("candidate_total_experience", "relevant_experience",
                     "total_years", "years"):
             v = efa.get(key)
-            if v is not None:
+            if isinstance(v, (str, int, float)) and not isinstance(v, bool):
                 raws.append(str(v))
 
     parsed = [v for v in (_parse_years_string(r) for r in raws) if v is not None]
@@ -636,29 +707,26 @@ def _extract_candidate_years(analysis: dict) -> Optional[float]:
 
 
 def _extract_candidate_languages(analysis: dict) -> list[str]:
-    sc = (analysis.get("hr_scorecard")
-          or analysis.get("scorecard")
-          or analysis.get("analysis_json")
-          or analysis or {})
+    sc = _scorecard_data(analysis)
     langs: list[str] = []
     if isinstance(sc, dict):
-        da = sc.get("detailed_analysis") or {}
+        da = sc.get("detailed_analysis")
+        da = da if isinstance(da, dict) else {}
         raw = da.get("languages")
         if isinstance(raw, list):
-            langs.extend(str(x) for x in raw)
+            langs.extend(x for x in raw if isinstance(x, str))
         elif isinstance(raw, str):
             langs.extend(re.split(r"[,;/]| and ", raw))
-    return [_norm(x) for x in langs if x]
+    return [_norm(x) for x in langs if x and not uncertain_language(x)]
 
 
 def _extract_candidate_location(analysis: dict) -> str:
-    sc = (analysis.get("hr_scorecard")
-          or analysis.get("scorecard")
-          or analysis.get("analysis_json")
-          or analysis or {})
+    sc = _scorecard_data(analysis)
     if isinstance(sc, dict):
-        co = sc.get("candidate_overview") or {}
-        return _norm(co.get("location") or "")
+        co = sc.get("candidate_overview")
+        co = co if isinstance(co, dict) else {}
+        location = co.get('location')
+        return _norm(location) if isinstance(location, str) else ''
     return ""
 
 
@@ -676,10 +744,7 @@ def _extract_candidate_skills(analysis: dict) -> list[str]:
     """
     if not analysis:
         return []
-    sc = (analysis.get("hr_scorecard")
-          or analysis.get("scorecard")
-          or analysis.get("analysis_json")
-          or analysis or {})
+    sc = _scorecard_data(analysis)
     out: list[str] = []
     seen: set[str] = set()
 
@@ -688,7 +753,7 @@ def _extract_candidate_skills(analysis: dict) -> list[str]:
             return
         items: list[str] = []
         if isinstance(val, list):
-            items = [str(x) for x in val]
+            items = [x for x in val if isinstance(x, str)]
         elif isinstance(val, str):
             items = re.split(r"[,;/]|\s+and\s+", val)
         for item in items:
@@ -698,11 +763,13 @@ def _extract_candidate_skills(analysis: dict) -> list[str]:
                 out.append(t)
 
     if isinstance(sc, dict):
-        co = sc.get("candidate_overview") or {}
+        co = sc.get("candidate_overview")
+        co = co if isinstance(co, dict) else {}
         for k in ("skills", "key_skills", "primary_skills",
                   "technical_skills", "core_skills"):
             _push(co.get(k))
-        da = sc.get("detailed_analysis") or {}
+        da = sc.get("detailed_analysis")
+        da = da if isinstance(da, dict) else {}
         for k in ("skills_matched", "skills", "technical_skills",
                   "matched_skills", "tools",
                   # Newer Gemini scorecard shapes
@@ -750,55 +817,30 @@ def _location_primary(have: str) -> str:
 
     cleaned = re.sub(r"\s*[\(\[]([^\)\]]*)[\)\]]\s*", _replace, have)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,;:-")
-    return cleaned or have
+    return cleaned
 
 
 def _location_match(want: str, have: str) -> bool:
-    """Lenient location match: synonyms, token-overlap, or substring.
-
-    Only considers the candidate's *primary* location (text outside any
-    parentheses/brackets) so e.g. 'Sharjah, UAE (with India market
-    experience)' does not match a required 'india'.
-    """
+    """Match complete place aliases, with country-to-city inference only."""
     if not want:
         return True
     if not have:
         return False
-    have = _location_primary(have)
+    want = _canonical_location(want)
+    have = _canonical_location(_location_primary(have))
     if want == have:
         return True
-    # Remote is special-cased
-    if want == "remote":
-        if any(t in have for t in ("remote", "anywhere", "work from home", "wfh")):
-            return True
-    # Token overlap (e.g., "dubai" vs "dubai, uae"). Only consider
-    # multi-character tokens to avoid noise like "us" matching "versus".
     want_toks = {t for t in re.findall(r"[a-z]+", want) if len(t) >= 2}
     have_toks = {t for t in re.findall(r"[a-z]+", have) if len(t) >= 2}
     if want_toks and want_toks.issubset(have_toks):
         return True
-    # Synonym sets: if any token in `want` shares a synonym group with any
-    # token in `have`, it's a match. Single-char tokens are excluded.
-    for group in LOCATION_SYNONYMS:
-        group_toks: set[str] = set()
-        for entry in group:
-            group_toks.update(t for t in re.findall(r"[a-z]+", entry) if len(t) >= 2)
-        if (want_toks & group_toks) and (have_toks & group_toks):
-            return True
-    # Country -> city one-way fallback: if `want` names a country, accept
-    # any candidate located in a known city of that country.
-    for country, cities in LOCATION_COUNTRY_CITIES.items():
-        country_toks = {t for t in re.findall(r"[a-z]+", country) if len(t) >= 2}
-        if not (want_toks & country_toks):
-            continue
-        for city in cities:
-            city_toks = {t for t in re.findall(r"[a-z]+", city) if len(t) >= 2}
-            if city_toks and city_toks.issubset(have_toks):
-                return True
-        # Country name itself appearing in candidate also counts.
-        if country_toks.issubset(have_toks):
-            return True
-    return want in have or have in want
+    if want not in _COUNTRY_CITIES:
+        return False
+    stated_countries = {country for country in _COUNTRY_CITIES
+        if set(country.split()).issubset(have_toks)}
+    if stated_countries and want not in stated_countries:
+        return False
+    return any(set(city.split()).issubset(have_toks) for city in _COUNTRY_CITIES[want])
 
 
 def evaluate_criteria(analysis: dict, criteria: SearchCriteria) -> dict:
@@ -883,7 +925,7 @@ def evaluate_criteria(analysis: dict, criteria: SearchCriteria) -> dict:
     if criteria.required_languages:
         have = set(_extract_candidate_languages(analysis))
         for lang in criteria.required_languages:
-            if any(lang in h or h in lang for h in have):
+            if any(re.search(r'(?<!\w)' + re.escape(lang) + r'(?!\w)', h) for h in have):
                 out["matches"].append({
                     "criterion": "language",
                     "required": lang,
@@ -936,14 +978,10 @@ def evaluate_criteria(analysis: dict, criteria: SearchCriteria) -> dict:
 
     if criteria.required_skills:
         have_skills = _extract_candidate_skills(analysis)
-        have_blob = " ".join(have_skills)
         for skill in criteria.required_skills:
             skill_norm = _norm(skill)
-            # Substring match against the candidate's skill blob -- covers
-            # variants like "AWS Lambda" matching a required "AWS".
             if (skill_norm and
-                    (skill_norm in have_blob
-                     or any(skill_norm in s for s in have_skills))):
+                    any(re.search(_skill_pattern(skill_norm), value, re.IGNORECASE) for value in have_skills)):
                 out["matches"].append({
                     "criterion": "skill",
                     "required": skill,
@@ -1002,6 +1040,9 @@ def apply_criteria_to_result(result: dict, criteria: SearchCriteria) -> dict:
         sc = analysis.get("hr_scorecard")
         if isinstance(sc, dict):
             co = sc.setdefault("candidate_overview", {})
+            if not isinstance(co, dict):
+                co = {}
+                sc['candidate_overview'] = co
             try:
                 co_base = float(co.get("overall_match_score") or base)
             except (TypeError, ValueError):

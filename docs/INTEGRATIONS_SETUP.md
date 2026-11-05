@@ -7,10 +7,12 @@ This document explains how to enable:
 3. **Email sending** to candidates (shortlist notice, interview invitation,
    rejection, custom) — via SMTP, Gmail, or Outlook/Graph.
 
-All three integrations are **fully implemented in the backend** and ready
-to use as soon as you provide credentials. Without credentials the app keeps
-working: interviews are saved without meeting links and emails simply fail
-gracefully with an informative message.
+Backend workflows exist, but credentials alone do not prove that mail delivery
+or meeting creation works. Administrator consent, recruiter connection, provider
+licensing/policy and an owner-approved mailbox/calendar acceptance test are
+required before production activation. Interviews can be saved with an explicit
+meeting/email warning when a provider is unavailable; that is not a successful
+online meeting or delivered invitation.
 
 ---
 
@@ -20,7 +22,7 @@ gracefully with an informative message.
   and new columns on `scheduled_interviews` (`meeting_provider`,
   `meeting_join_url`, `meeting_event_id`, `search_result_id`) are created
   on first startup. Idempotent — safe to redeploy.
-- Three default global email templates are seeded on first run
+- Four default global email templates are seeded on first run
   (Shortlist / Interview Invite / Rejection / Blank). Each tenant can edit
   these or add their own via `GET/POST/PUT/DELETE /api/email-templates`.
 - The existing **Schedule Interview** modal now has:
@@ -39,9 +41,10 @@ You have two options. **Pick one.**
 
 ### Option A — Delegated OAuth (each recruiter signs in once) ✅ recommended
 
-Each recruiter clicks **Connect Microsoft** → signs in → app stores their
-OAuth token. The recruiter is the meeting organiser. Works for personal
-Microsoft accounts and any Microsoft 365 tenant.
+Each recruiter clicks **Connect Microsoft** in the main Settings screen and
+signs in. Tokens are stored encrypted. The recruiter is the meeting organiser.
+Teams interviews require an eligible Microsoft 365 mailbox, Teams licensing and
+organization policy. Do not promise Teams support for personal Microsoft accounts.
 
 1. Go to <https://portal.azure.com> → **Azure Active Directory** →
    **App registrations** → **New registration**.
@@ -53,31 +56,36 @@ Microsoft accounts and any Microsoft 365 tenant.
    copy the **Value** immediately.
 6. Open **API permissions** → **Add a permission** → **Microsoft Graph** →
    **Delegated** → add:
-   - `OnlineMeetings.ReadWrite`
    - `Calendars.ReadWrite`
+   - `Mail.Read`
    - `Mail.Send`
    - `User.Read`
    - `offline_access`
-7. (Optional but smoother) Click **Grant admin consent**.
-8. Copy these three values into `config.json` or set as env vars on the VPS:
+7. Have the organization's authorized administrator review the requested access;
+   approval requirements depend on its Microsoft policies. Share `/microsoft-approval`.
+8. Set credentials through the VPS's secure environment configuration, never Git:
    ```
-   MS_TENANT_ID=common              # or your specific tenant GUID
+   MS_TENANT_ID=<your-specific-tenant-guid>
    MS_CLIENT_ID=<Application (client) ID>
    MS_CLIENT_SECRET=<the secret Value>
    MS_REDIRECT_URI=https://effortsairecruiter.tech/api/oauth/microsoft/callback
    ```
-9. Restart the app. Recruiters now visit
-   `https://effortsairecruiter.tech/api/oauth/microsoft/start` to connect.
+9. After a controlled restart, recruiters connect from Settings. Administrator
+   approval alone does not connect a recruiter or confirm a live mailbox.
+
+The app uses calendar-backed Teams meetings (`/me/events`), not the standalone
+`/onlineMeetings` API. `OnlineMeetings.ReadWrite` is not required. `Mail.Read`
+covers Outlook CV imports; `Mail.Send` covers additional candidate email.
 
 ### Option B — App-only / client credentials (one shared mailbox)
 
-Use this if your tenant administrator prefers a single service identity that
-creates meetings on behalf of one designated user mailbox. Requires admin
-consent.
+This is an operator-only alternative, not part of the public delegated approval
+request. It can give broad application access and requires a separate security
+review and mailbox restrictions. Do not enable it merely to bypass recruiter
+sign-in, and do not alter the existing shared registration's grants blindly.
 
 1. Same app registration as above, but add **Application** permissions
    instead of (or in addition to) Delegated:
-   - `OnlineMeetings.ReadWrite.All`
    - `Calendars.ReadWrite`
    - `Mail.Send`
 2. **Grant admin consent** (required for Application permissions).
@@ -91,11 +99,10 @@ consent.
 4. No per-user OAuth needed. The app will request a client_credentials
    token automatically when a recruiter selects "Teams".
 
-> ⚠️ **OnlineMeetings.ReadWrite.All** with app-only access additionally
-> requires a Teams **application access policy** to be configured by your
-> tenant admin (PowerShell `Grant-CsApplicationAccessPolicy`). Microsoft
-> documents this here:
-> <https://learn.microsoft.com/graph/cloud-communication-online-meeting-application-access-policy>
+The implemented calendar-backed workflow does not need
+`OnlineMeetings.ReadWrite.All`. A future standalone-meeting, recording,
+transcript or shared-mailbox feature requires its own reviewed permission design;
+those permissions must not be added speculatively.
 
 ---
 
@@ -259,11 +266,17 @@ All templates can use: `{{ candidate_name }}`, `{{ candidate_email }}`,
 
 ## Troubleshooting
 
+OAuth callback session fix (November 5): if an earlier Microsoft/Google return showed `Not authenticated`, start a fresh connection from Settings rather than reloading that callback URL. Login and OAuth start now set the authentication cookie to Secure/HttpOnly/SameSite=Lax; the CSRF cookie remains Strict and unsafe-request validation remains enabled. Existing signed-in sessions receive the corrected cookie when linking starts. Truly missing/expired sessions return to sign-in with a recovery notice and require a fresh connection after login. Use the same browser throughout. See [verification and release details](OAUTH_SESSION_FIX_2026-11-05.md).
+
 | Symptom                                                       | Fix                                                                                       |
 |---------------------------------------------------------------|-------------------------------------------------------------------------------------------|
 | `Google account not connected`                                | Recruiter must visit `/api/oauth/google/start`.                                           |
-| `Microsoft Graph 403 Forbidden`                               | Admin consent not granted, or app-only `OnlineMeetings.ReadWrite.All` lacks application access policy. |
-| `SMTP send failed: 535 Username and Password not accepted`    | Use an App Password (Gmail) or check provider credentials.                                |
+| Microsoft Graph HTTP 401/403                                  | Check the connected account, the actual mail/calendar scopes, mailbox licensing and tenant policy. Calendar-backed Teams events use `Calendars.ReadWrite`; do not add standalone meeting or blanket application permissions as a generic fix. |
+| SMTP authentication/configuration error                       | Check provider credentials and supported authentication; use an App Password only where the provider allows it. Do not disable MFA. |
+| Email outcome unknown (`delivery_unknown`)                    | Check Sent Items and the recipient's inbox before retrying. The app deliberately stops cross-provider fallback after an ambiguous send to reduce duplicate delivery. |
+| Calendar outcome unknown (`calendar_event_maybe_created`)     | Check the organizer's calendar before scheduling again; a lost response does not prove that event creation failed. |
 | Interview saved but `meeting.error: ... Invalid start time`   | Frontend sent malformed date/time; both fields must be set.                               |
 | `Token exchange failed: invalid_grant`                        | Redirect URI mismatch — must match exactly between Azure/Google console and env var.      |
 | Templates fail to render                                      | Check the body uses valid Jinja2 syntax; review `interview_emails_sent.error_message`.    |
+
+An accepted send is not proof of Inbox delivery. Provider response bodies and raw credential exception details are no longer exposed in integration errors. A saved unusable personal Microsoft connection requires reconnecting; it must not silently choose the shared app-only mailbox. The scheduling form blocks overlapping submissions but does not provide cross-device/server-side idempotency. See [the failure-hardening verification](INTEGRATION_FAILURE_HARDENING_2026-11-04.md).

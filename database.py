@@ -19,15 +19,18 @@ Configuration:
 """
 import psycopg2
 from psycopg2.extras import RealDictCursor, Json
-from psycopg2.pool import SimpleConnectionPool
+from psycopg2.pool import ThreadedConnectionPool
 import json
 from datetime import datetime, timedelta
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import logging
 import bcrypt
 import secrets
 import os
 import re
+import threading
+from types import SimpleNamespace
+from services.task_lease import TaskLeaseLost, current_lease
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -36,11 +39,13 @@ logger = logging.getLogger(__name__)
 class DateTimeEncoder(json.JSONEncoder):
     """JSON encoder that handles datetime objects"""
     def default(self, obj):
-        if isinstance(obj, (datetime, timedelta)):
+        if isinstance(obj, datetime):
             return obj.isoformat()
+        elif isinstance(obj, timedelta):
+            return obj.total_seconds()
         elif hasattr(obj, 'date'):  # Handle date objects
             return obj.isoformat()
-            return super().default(obj)
+        return super().default(obj)
 
 
 _LOCATION_QUALIFIER_RE = re.compile(
@@ -108,6 +113,8 @@ class DatabaseManager:
 
     def _is_running_on_gcp(self):
         """Detect if running on Google Cloud Platform"""
+        if os.getenv("SMARTHR_LOCAL_MODE", "").lower() in {"1", "true", "yes", "on"}:
+            return False
         # Check for GCP-specific environment variables
         gcp_indicators = [
             'GOOGLE_CLOUD_PROJECT',
@@ -170,9 +177,9 @@ class DatabaseManager:
                     conn_params['port'] = self.db_config['port']
                     logger.info(f"🔌 Using TCP connection: {self.db_config['host']}:{self.db_config['port']}")
 
-                self.pool = SimpleConnectionPool(
+                self.pool = ThreadedConnectionPool(
                     1,  # minimum connections
-                    self.db_config.get('pool_size', 40),  # maximum connections
+                    max(1, int(os.getenv('DB_POOL_MAX', self.db_config.get('pool_size', 40)))),
                     **conn_params
                 )
                 logger.info("✅ Database connection pool created successfully")
@@ -192,6 +199,7 @@ class DatabaseManager:
     def get_cursor(self, dict_cursor=True):
         """Get a database cursor from the pool"""
         conn = None
+        cursor = None
         try:
             conn = self.pool.getconn()
             cursor_factory = RealDictCursor if dict_cursor else None
@@ -205,8 +213,11 @@ class DatabaseManager:
             raise
         finally:
             if conn:
-                cursor.close()
-                self.pool.putconn(conn)
+                try:
+                    if cursor is not None:
+                        cursor.close()
+                finally:
+                    self.pool.putconn(conn)
 
     def check_search_limit(self, company_id):
         """Check if company can perform another search without saving anything"""
@@ -345,38 +356,23 @@ class DatabaseManager:
         try:
             with self.get_cursor() as (cursor, conn):
                 if company_id is not None:
-                    if os.getenv("ALLOW_LEGACY_GLOBAL_ANALYSIS_CACHE", "").lower() in {"1", "true", "yes"}:
-                        cursor.execute("""
-                            SELECT id, file_path, jd_hash, jd_summary, company_id,
-                                   gemini_analysis, match_score, source, created_at
-                            FROM cached_resume_analyses
-                            WHERE file_path = %s
-                              AND (jd_hash = %s OR jd_hash = '__legacy_no_jd__')
-                              AND (company_id = %s OR company_id IS NULL)
-                            ORDER BY (company_id = %s) DESC, (jd_hash = %s) DESC, created_at DESC
-                            LIMIT 1
-                        """, (file_path, jd_hash, company_id, company_id, jd_hash))
-                    else:
-                        cursor.execute("""
-                            SELECT id, file_path, jd_hash, jd_summary, company_id,
-                                   gemini_analysis, match_score, source, created_at
-                            FROM cached_resume_analyses
-                            WHERE file_path = %s
-                              AND (jd_hash = %s OR jd_hash = '__legacy_no_jd__')
-                              AND company_id = %s
-                            ORDER BY (jd_hash = %s) DESC, created_at DESC
-                            LIMIT 1
-                        """, (file_path, jd_hash, company_id, jd_hash))
+                    cursor.execute("""
+                        SELECT id, file_path, jd_hash, jd_summary, company_id,
+                               gemini_analysis, match_score, source, created_at
+                        FROM cached_resume_analyses
+                        WHERE file_path = %s AND jd_hash = %s AND company_id = %s
+                        ORDER BY created_at DESC LIMIT 1
+                    """, (file_path, jd_hash, company_id))
                 else:
                     cursor.execute("""
                         SELECT id, file_path, jd_hash, jd_summary, company_id,
                                gemini_analysis, match_score, source, created_at
                         FROM cached_resume_analyses
                         WHERE file_path = %s
-                          AND (jd_hash = %s OR jd_hash = '__legacy_no_jd__')
-                        ORDER BY (jd_hash = %s) DESC, created_at DESC
+                          AND jd_hash = %s AND company_id IS NULL
+                        ORDER BY created_at DESC
                         LIMIT 1
-                    """, (file_path, jd_hash, jd_hash))
+                    """, (file_path, jd_hash))
                 row = cursor.fetchone()
                 return dict(row) if row else None
         except Exception as e:
@@ -441,13 +437,14 @@ class DatabaseManager:
                     file_path=file_path,
                     gemini_analysis=gemini_analysis,
                     source=source,
+                    company_id=company_id,
                 )
             return True
         except Exception as e:
             logger.warning(f"save_cached_resume_analysis failed for {file_path}: {e}")
             return False
 
-    def update_resume_search_profile_from_analysis(self, file_path, gemini_analysis, source='live_gemini'):
+    def update_resume_search_profile_from_analysis(self, file_path, gemini_analysis, source='live_gemini', company_id=None):
         """Refresh VPS local-mode structured search profile after a scorecard save."""
         if not file_path or not os.getenv("SMARTHR_LOCAL_MODE", "").lower() in {"1", "true", "yes", "on"}:
             return False
@@ -456,9 +453,11 @@ class DatabaseManager:
             from vps_local.profile_extractor import profile_from_analysis
 
             profile = profile_from_analysis(gemini_analysis)
-            filename = Path(file_path).name
             rel_path = str(file_path).strip("/")
-            folder = rel_path.split("/", 1)[0] if "/" in rel_path else None
+            company = self.get_company_by_id(company_id) if company_id is not None else None
+            bucket = (company or {}).get('gcs_bucket_name') or os.getenv('GCS_BUCKET_NAME')
+            if not bucket:
+                return False
             with self.get_cursor() as (cursor, conn):
                 cursor.execute("SELECT to_regclass('public.resume_embeddings') AS table_name")
                 exists = cursor.fetchone()
@@ -488,9 +487,9 @@ class DatabaseManager:
                            END,
                            profile_source = %s,
                            profile_updated_at = NOW()
-                     WHERE filename = %s
-                        OR (folder = %s AND filename = %s)
-                        OR (folder || '/' || filename) = %s
+                     WHERE (folder || '/' || filename) = %s
+                       AND company_id IS NOT DISTINCT FROM %s
+                       AND storage_bucket = %s
                     """,
                     (
                         profile.get("candidate_years"),
@@ -500,10 +499,9 @@ class DatabaseManager:
                         profile.get("candidate_skills") or [],
                         profile.get("candidate_skills") or [],
                         f"cache:{source or 'unknown'}",
-                        filename,
-                        folder,
-                        filename,
                         rel_path,
+                        company_id,
+                        bucket,
                     ),
                 )
                 return cursor.rowcount > 0
@@ -511,9 +509,9 @@ class DatabaseManager:
             logger.warning(f"update_resume_search_profile_from_analysis failed for {file_path}: {e}")
             return False
 
-    def save_search_history(self, query, job_title=None, result_count=0, user_id=None, company_id=None, search_method='hr-scorecard'):
+    def save_search_history(self, query, job_title=None, result_count=0, user_id=None, company_id=None, search_method='hr-scorecard', *, cursor=None):
         """Save a search to history and return the search_id"""
-        with self.get_cursor() as (cursor, conn):
+        with (self.get_cursor() if cursor is None else nullcontext((cursor, None))) as (cursor, conn):
             # Check search limit for company if applicable
             if company_id:
                 cursor.execute("""
@@ -540,9 +538,9 @@ class DatabaseManager:
             search_id = cursor.fetchone()['id']
             return search_id
 
-    def save_search_results(self, search_id, results, company_id=None, user_id=None):
+    def save_search_results(self, search_id, results, company_id=None, user_id=None, *, cursor=None):
         """Save all search results for a given search"""
-        with self.get_cursor() as (cursor, conn):
+        with (self.get_cursor() if cursor is None else nullcontext((cursor, None))) as (cursor, conn):
             for result in results:
                 # Extract data from result
                 gemini_analysis = result.get('gemini_analysis', {})
@@ -737,17 +735,27 @@ class DatabaseManager:
         mismatch so the caller can 404.
         """
         with self.get_cursor() as (cursor, conn):
-            # Tenant check: verify the underlying search_result belongs to
-            # the caller's company before allowing any write.
-            if company_id is not None:
-                cursor.execute("""
-                    SELECT sr.id
-                    FROM search_results sr
-                    JOIN search_history sh ON sh.id = sr.search_id
-                    WHERE sr.id = %s AND sh.company_id = %s
-                """, (search_result_id, company_id))
-                if not cursor.fetchone():
-                    return False
+            if action_type not in {'selected', 'shortlisted', 'interviewed', 'rejected', 'hired'}:
+                raise ValueError('Invalid candidate action')
+            if not self._lock_candidate(cursor, search_result_id, company_id):
+                return False
+            effective_comments = comments
+            seed_legacy_notes = False
+            if effective_comments is None:
+                cursor.execute('SELECT comments FROM candidate_notes WHERE search_result_id=%s', (search_result_id,))
+                note = cursor.fetchone()
+                effective_comments = note['comments'] if note else None
+                if note is None:
+                    cursor.execute("""SELECT comments FROM candidate_actions
+                        WHERE search_result_id=%s AND comments IS NOT NULL
+                        ORDER BY updated_at DESC NULLS LAST,id DESC LIMIT 1""", (search_result_id,))
+                    legacy = cursor.fetchone()
+                    if legacy:
+                        effective_comments = legacy['comments']
+                        seed_legacy_notes = True
+            if action_status:
+                cursor.execute("""UPDATE candidate_actions SET action_status=FALSE, updated_at=NOW()
+                    WHERE search_result_id=%s AND action_status=TRUE""", (search_result_id,))
 
             # Check if action already exists
             cursor.execute("""
@@ -761,17 +769,71 @@ class DatabaseManager:
                 # Update existing action
                 cursor.execute("""
                     UPDATE candidate_actions
-                    SET action_status = %s, comments = %s, updated_at = CURRENT_TIMESTAMP
+                    SET action_status = %s, comments = COALESCE(%s, comments), user_id=%s,
+                        updated_at = CURRENT_TIMESTAMP
                     WHERE id = %s
-                """, (action_status, comments, existing['id']))
+                """, (action_status, effective_comments, user_id, existing['id']))
             else:
                 # Insert new action
                 cursor.execute("""
                     INSERT INTO candidate_actions
                     (search_result_id, candidate_name, action_type, action_status, comments, user_id)
                     VALUES (%s, %s, %s, %s, %s, %s)
-                """, (search_result_id, candidate_name, action_type, action_status, comments, user_id))
+                """, (search_result_id, candidate_name, action_type, action_status, effective_comments, user_id))
+            if comments is not None or seed_legacy_notes:
+                self._write_candidate_notes(cursor, search_result_id, effective_comments, user_id)
             return True
+
+    def ensure_candidate_state_schema(self):
+        with self.get_cursor() as (cursor, _conn):
+            cursor.execute("SELECT pg_advisory_xact_lock(724106405)")
+            cursor.execute("""CREATE TABLE IF NOT EXISTS candidate_notes (
+                search_result_id INTEGER PRIMARY KEY REFERENCES search_results(id) ON DELETE CASCADE,
+                comments TEXT NOT NULL DEFAULT '', updated_by VARCHAR(100),
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+            cursor.execute("""CREATE INDEX IF NOT EXISTS idx_candidate_actions_result_updated
+                ON candidate_actions(search_result_id, updated_at DESC, id DESC)""")
+
+    @staticmethod
+    def _lock_candidate(cursor, search_result_id, company_id):
+        cursor.execute("""SELECT sr.id FROM search_results sr
+            JOIN search_history sh ON sh.id=sr.search_id
+            WHERE sr.id=%s AND (%s IS NULL OR sh.company_id=%s)
+            FOR UPDATE OF sr""", (search_result_id, company_id, company_id))
+        return cursor.fetchone() is not None
+
+    @staticmethod
+    def _write_candidate_notes(cursor, search_result_id, comments, user_id):
+        cursor.execute("""INSERT INTO candidate_notes(search_result_id,comments,updated_by)
+            VALUES (%s,%s,%s) ON CONFLICT (search_result_id) DO UPDATE
+            SET comments=EXCLUDED.comments, updated_by=EXCLUDED.updated_by, updated_at=NOW()""",
+            (search_result_id, comments, str(user_id)))
+        cursor.execute("""UPDATE candidate_actions SET comments=%s
+            WHERE search_result_id=%s AND action_status=TRUE""", (comments, search_result_id))
+
+    def save_candidate_notes(self, search_result_id, comments, user_id, company_id=None):
+        with self.get_cursor() as (cursor, _conn):
+            if not self._lock_candidate(cursor, search_result_id, company_id):
+                return False
+            self._write_candidate_notes(cursor, search_result_id, comments, user_id)
+            return True
+
+    def get_candidate_states(self, result_ids, company_id=None):
+        if not result_ids:
+            return []
+        with self.get_cursor() as (cursor, _conn):
+            cursor.execute("""SELECT sr.id AS search_result_id,
+                (SELECT ca.action_type FROM candidate_actions ca
+                 WHERE ca.search_result_id=sr.id AND ca.action_status=TRUE
+                 ORDER BY ca.updated_at DESC NULLS LAST,ca.id DESC LIMIT 1) AS status,
+                COALESCE(n.comments,(SELECT ca.comments FROM candidate_actions ca
+                 WHERE ca.search_result_id=sr.id AND ca.comments IS NOT NULL
+                 ORDER BY ca.updated_at DESC NULLS LAST,ca.id DESC LIMIT 1),'') AS comments
+                FROM search_results sr JOIN search_history sh ON sh.id=sr.search_id
+                LEFT JOIN candidate_notes n ON n.search_result_id=sr.id
+                WHERE sr.id=ANY(%s) AND (%s IS NULL OR sh.company_id=%s)""",
+                (list(result_ids), company_id, company_id))
+            return [dict(row) for row in cursor.fetchall()]
 
     def get_candidate_actions(self, search_result_id):
         """Get all actions for a specific candidate"""
@@ -865,6 +927,18 @@ class DatabaseManager:
                     (user_id,),
                 )
             return cursor.rowcount
+
+    def log_llm_call(self, *, provider, model, operation, input_tokens, output_tokens,
+                     latency_ms, success, error_message=None):
+        """Persist usage metadata only, never prompts, CVs or credentials."""
+        with self.get_cursor() as (cursor, _conn):
+            cursor.execute("""
+                INSERT INTO llm_call_log
+                    (provider, model, operation, input_tokens, output_tokens,
+                     total_tokens, latency_ms, success, error_message)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (provider, model, operation, input_tokens, output_tokens,
+                  input_tokens + output_tokens, latency_ms, success, error_message))
 
     def close(self):
         """Close all connections in the pool"""
@@ -1286,10 +1360,12 @@ class DatabaseManager:
             return False
         with self.get_cursor() as (cursor, conn):
             cursor.execute("""
-                SELECT 1 FROM resume_uploads
-                WHERE file_path = %s AND company_id = %s
+                SELECT 1 FROM resume_uploads u
+                JOIN tenant_companies c ON c.id = u.company_id
+                WHERE (u.file_path = %s OR u.file_path = 'gs://' || c.gcs_bucket_name || '/' || %s)
+                  AND u.company_id = %s
                 LIMIT 1
-            """, (file_path, company_id))
+            """, (file_path, file_path, company_id))
             if cursor.fetchone():
                 return True
             cursor.execute("""
@@ -1508,7 +1584,8 @@ class DatabaseManager:
                         'comments': interview['notes']
                     })
             except Exception as e:
-                print(f"Error getting scheduled interviews: {e}")
+                logger.warning("Scheduled interview query unavailable: %s", type(e).__name__)
+                raise RuntimeError('Upcoming schedule unavailable') from None
 
             # Get recent candidate actions for follow-ups
             try:
@@ -1549,7 +1626,8 @@ class DatabaseManager:
                         'comments': action['comments']
                     })
             except Exception as e:
-                print(f"Error getting candidate actions: {e}")
+                logger.warning("Upcoming candidate activity query unavailable: %s", type(e).__name__)
+                raise RuntimeError('Upcoming schedule unavailable') from None
 
             return events
 
@@ -1713,6 +1791,8 @@ class DatabaseManager:
         self.ensure_integrations_tables()
         try:
             with self.get_cursor() as (cursor, conn):
+                if search_result_id is not None and not self._lock_candidate(cursor, search_result_id, company_id):
+                    raise ValueError('Candidate record is outside the workspace')
                 cursor.execute("""
                     INSERT INTO interview_emails_sent
                         (company_id, sent_by_user_id, recipient_email, candidate_name,
@@ -1725,14 +1805,18 @@ class DatabaseManager:
                       search_result_id, interview_id))
                 return cursor.fetchone()['id']
         except Exception as e:
-            logger.warning(f"log_email_sent failed: {e}")
+            logger.warning("log_email_sent failed: %s", type(e).__name__)
             return None
 
     # -------- OAuth token storage -------------------------------------
     def save_oauth_token(self, user_id, provider, *, access_token, refresh_token=None,
-                         expires_at=None, scope=None, email=None, extra=None):
-        self.ensure_integrations_tables()
-        with self.get_cursor() as (cursor, conn):
+                         expires_at=None, scope=None, email=None, extra=None, cursor=None):
+        from services.token_crypto import seal
+        access_token = seal(access_token, user_id=user_id, provider=provider, field="access")
+        refresh_token = seal(refresh_token, user_id=user_id, provider=provider, field="refresh")
+        if cursor is None:
+            self.ensure_integrations_tables()
+        with (self.get_cursor() if cursor is None else nullcontext((cursor, None))) as (cursor, conn):
             cursor.execute("""
                 INSERT INTO oauth_tokens
                     (user_id, provider, access_token, refresh_token, expires_at,
@@ -1740,23 +1824,58 @@ class DatabaseManager:
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                 ON CONFLICT (user_id, provider) DO UPDATE SET
                     access_token  = EXCLUDED.access_token,
-                    refresh_token = COALESCE(EXCLUDED.refresh_token, oauth_tokens.refresh_token),
+                    refresh_token = CASE
+                        WHEN (EXCLUDED.extra->>'account_id' IS NOT NULL AND
+                              EXCLUDED.extra->>'account_id' IS DISTINCT FROM oauth_tokens.extra->>'account_id')
+                          OR (EXCLUDED.email IS NOT NULL AND lower(EXCLUDED.email) IS DISTINCT FROM lower(oauth_tokens.email))
+                        THEN EXCLUDED.refresh_token
+                        ELSE COALESCE(EXCLUDED.refresh_token, oauth_tokens.refresh_token) END,
                     expires_at    = EXCLUDED.expires_at,
-                    scope         = COALESCE(EXCLUDED.scope, oauth_tokens.scope),
+                    scope         = CASE
+                        WHEN (EXCLUDED.extra->>'account_id' IS NOT NULL AND
+                              EXCLUDED.extra->>'account_id' IS DISTINCT FROM oauth_tokens.extra->>'account_id')
+                          OR (EXCLUDED.email IS NOT NULL AND lower(EXCLUDED.email) IS DISTINCT FROM lower(oauth_tokens.email))
+                        THEN EXCLUDED.scope
+                        ELSE COALESCE(EXCLUDED.scope, oauth_tokens.scope) END,
                     email         = COALESCE(EXCLUDED.email, oauth_tokens.email),
-                    extra         = COALESCE(EXCLUDED.extra, oauth_tokens.extra),
+                    extra         = CASE
+                        WHEN (EXCLUDED.extra->>'account_id' IS NOT NULL AND
+                              EXCLUDED.extra->>'account_id' IS DISTINCT FROM oauth_tokens.extra->>'account_id')
+                          OR (EXCLUDED.email IS NOT NULL AND lower(EXCLUDED.email) IS DISTINCT FROM lower(oauth_tokens.email))
+                        THEN EXCLUDED.extra
+                        ELSE COALESCE(EXCLUDED.extra, oauth_tokens.extra) END,
                     updated_at    = CURRENT_TIMESTAMP
             """, (user_id, provider, access_token, refresh_token, expires_at,
                   scope, email, Json(extra) if extra else None))
 
-    def get_oauth_token(self, user_id, provider):
-        self.ensure_integrations_tables()
-        with self.get_cursor() as (cursor, conn):
+    def get_oauth_token(self, user_id, provider, *, cursor=None):
+        if cursor is None:
+            self.ensure_integrations_tables()
+        with (self.get_cursor() if cursor is None else nullcontext((cursor, None))) as (cursor, conn):
             cursor.execute("""
                 SELECT * FROM oauth_tokens
                  WHERE user_id=%s AND provider=%s
             """, (user_id, provider))
-            return cursor.fetchone()
+            row = cursor.fetchone()
+        if not row:
+            return None
+        from services.token_crypto import open_token
+        result = dict(row)
+        for column, field in (("access_token", "access"), ("refresh_token", "refresh")):
+            result[column] = open_token(result.get(column), user_id=user_id, provider=provider, field=field)
+        return result
+
+    @contextmanager
+    def oauth_refresh_lock(self, user_id, provider):
+        """Keep token rotation in one transaction, including provider refresh and storage."""
+        with self.get_cursor() as (cursor, _conn):
+            cursor.execute("SET LOCAL lock_timeout='20s'")
+            cursor.execute("SET LOCAL statement_timeout='25s'")
+            cursor.execute("SELECT id FROM oauth_tokens WHERE user_id=%s AND provider=%s FOR UPDATE",
+                           (user_id, provider))
+            yield SimpleNamespace(
+                get_oauth_token=lambda uid, prov: self.get_oauth_token(uid, prov, cursor=cursor),
+                save_oauth_token=lambda uid, prov, **data: self.save_oauth_token(uid, prov, cursor=cursor, **data))
 
     def delete_oauth_token(self, user_id, provider):
         self.ensure_integrations_tables()
@@ -1770,6 +1889,9 @@ class DatabaseManager:
         """Schedule an interview with a candidate"""
         self.ensure_integrations_tables()
         with self.get_cursor() as (cursor, conn):
+            result_id = interview_data.get('search_result_id')
+            if result_id is not None and not self._lock_candidate(cursor, result_id, interview_data['company_id']):
+                raise ValueError('Candidate record is outside the workspace')
             cursor.execute("""
                 INSERT INTO scheduled_interviews
                 (candidate_name, candidate_email, interview_type, interview_date,
@@ -1801,14 +1923,11 @@ class DatabaseManager:
 
             interview_id = cursor.fetchone()['id']
 
-            # Log the action - ensure user_id is converted to integer if it's a string
-            user_id = interview_data['created_by']
-            if isinstance(user_id, str) and user_id.isdigit():
-                user_id = int(user_id)
-            elif isinstance(user_id, str):
-                # If it's a non-numeric string, try to handle gracefully
-                user_id = None
-
+        # Commit the booking before acquiring another connection for its audit record.
+        user_id = interview_data['created_by']
+        if isinstance(user_id, str):
+            user_id = int(user_id) if user_id.isdigit() else None
+        try:
             self.log_audit(
                 user_id,
                 interview_data['company_id'],
@@ -1819,7 +1938,9 @@ class DatabaseManager:
                 interview_data
             )
 
-            return interview_id
+        except Exception as exc:
+            logger.warning("Interview audit write unavailable: %s", type(exc).__name__)
+        return interview_id
 
     def get_scheduled_interviews(self, user_id=None, company_id=None, include_past=False):
         """Get scheduled interviews"""
@@ -1848,14 +1969,132 @@ class DatabaseManager:
 
             return cursor.fetchall()
 
+    def ensure_task_queue_schema(self):
+        with self.get_cursor() as (cursor, _conn):
+            cursor.execute("SELECT pg_advisory_xact_lock(724106403)")
+            cursor.execute("""
+                ALTER TABLE hr_scorecard_tasks
+                    ADD COLUMN IF NOT EXISTS task_payload JSONB,
+                    ADD COLUMN IF NOT EXISTS lease_token TEXT,
+                    ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ,
+                    ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 0,
+                    ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            """)
+            cursor.execute("""CREATE INDEX IF NOT EXISTS idx_hr_tasks_queue_ready
+                ON hr_scorecard_tasks(next_attempt_at, created_at)
+                WHERE task_payload IS NOT NULL AND status IN ('pending', 'processing')""")
+
+    def claim_next_hr_task(self, lease_seconds=120, max_attempts=3, max_active=2):
+        with self.get_cursor() as (cursor, _conn):
+            # Serialize only the short claim transaction, not AI processing.
+            cursor.execute("SELECT pg_advisory_xact_lock(724106404)")
+            cursor.execute("""
+                UPDATE hr_scorecard_tasks SET status='failed', lease_token=NULL,
+                    lease_expires_at=NULL, completed_at=NOW(), updated_at=NOW(),
+                    error_message='Search interrupted too many times. Please submit it again.'
+                WHERE task_payload IS NOT NULL AND status='processing'
+                  AND lease_expires_at <= NOW() AND attempt_count >= %s
+            """, (max_attempts,))
+            cursor.execute("""SELECT count(*) AS count FROM hr_scorecard_tasks
+                WHERE status='processing' AND lease_expires_at > NOW()""")
+            if cursor.fetchone()['count'] >= max_active:
+                return None
+            cursor.execute("""
+                WITH ready AS (
+                    SELECT task_id FROM hr_scorecard_tasks
+                    WHERE task_payload IS NOT NULL AND attempt_count < %s
+                      AND ((status='pending' AND next_attempt_at <= NOW())
+                        OR (status='processing' AND lease_expires_at <= NOW()))
+                    ORDER BY next_attempt_at, created_at, task_id
+                    FOR UPDATE SKIP LOCKED LIMIT 1
+                )
+                UPDATE hr_scorecard_tasks AS task SET status='processing',
+                    lease_token=%s, lease_expires_at=NOW() + %s * interval '1 second',
+                    attempt_count=attempt_count+1, error_message=NULL, updated_at=NOW()
+                FROM ready WHERE task.task_id=ready.task_id
+                RETURNING task.task_id, task.task_payload, task.lease_token, task.attempt_count
+            """, (max_attempts, secrets.token_urlsafe(32), lease_seconds))
+            return cursor.fetchone()
+
+    def renew_hr_task_lease(self, task_id, token, lease_seconds=120):
+        with self.get_cursor() as (cursor, _conn):
+            cursor.execute("""UPDATE hr_scorecard_tasks
+                SET lease_expires_at=NOW() + %s * interval '1 second'
+                WHERE task_id=%s AND lease_token=%s AND status='processing'
+                  AND lease_expires_at > NOW()""", (lease_seconds, task_id, token))
+            return cursor.rowcount == 1
+
+    def release_hr_task(self, task_id, token, error, max_attempts=3, permanent=False):
+        with self.get_cursor() as (cursor, _conn):
+            cursor.execute("""UPDATE hr_scorecard_tasks SET
+                status=CASE WHEN %s OR attempt_count >= %s THEN 'failed' ELSE 'pending' END,
+                completed_at=CASE WHEN %s OR attempt_count >= %s THEN NOW() ELSE NULL END,
+                error_message=%s, updated_at=NOW(), lease_token=NULL, lease_expires_at=NULL,
+                next_attempt_at=NOW() + LEAST(60, 5 * power(2, attempt_count)) * interval '1 second'
+                WHERE task_id=%s AND lease_token=%s AND status='processing'
+                  AND lease_expires_at > NOW()""",
+                (permanent, max_attempts, permanent, max_attempts, error, task_id, token))
+            return cursor.rowcount == 1
+
+    def get_owned_hr_task(self, task_id, token):
+        with self.get_cursor() as (cursor, _conn):
+            cursor.execute("""SELECT task_id, query, job_title, result_count, user_id, company_id
+                FROM hr_scorecard_tasks WHERE task_id=%s AND lease_token=%s
+                  AND status='processing' AND lease_expires_at > NOW()""", (task_id, token))
+            return cursor.fetchone()
+
+    def get_hr_task_user(self, user_id, company_id):
+        with self.get_cursor() as (cursor, _conn):
+            cursor.execute("""SELECT u.id, u.email, u.user_type,
+                    tc.id AS company_id, tc.company_code, tc.company_name
+                FROM users u LEFT JOIN tenant_companies tc ON tc.id=%s
+                WHERE u.id=%s AND u.is_active=TRUE
+                  AND ((%s IS NULL AND u.user_type='super_admin')
+                    OR (tc.id IS NOT NULL AND (u.user_type='super_admin' OR EXISTS (
+                        SELECT 1 FROM user_companies uc WHERE uc.user_id=u.id AND uc.company_id=tc.id))))
+                """, (company_id, user_id, company_id))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return {'id': row['id'], 'email': row['email'], 'user_type': row['user_type'],
+                    'company': {'company_id': row['company_id'], 'company_code': row['company_code'],
+                                'company_name': row['company_name']} if row['company_id'] else None}
+
+    def complete_hr_task(self, task_id, results, progress, lease_token=None):
+        """Persist history, results and completion together, fenced against stale attempts."""
+        with self.get_cursor() as (cursor, _conn):
+            cursor.execute("""SELECT * FROM hr_scorecard_tasks WHERE task_id=%s
+                FOR UPDATE""", (task_id,))
+            task = cursor.fetchone()
+            if not task:
+                raise TaskLeaseLost("Search no longer exists")
+            if task['status'] == 'completed':
+                if lease_token is not None and task.get('lease_token') != lease_token:
+                    raise TaskLeaseLost("Search completed by another attempt")
+                return task['search_id']
+            if task['status'] != 'processing' or (lease_token is not None and task.get('lease_token') != lease_token):
+                raise TaskLeaseLost("Search ownership changed")
+            if lease_token is not None:
+                cursor.execute("SELECT lease_expires_at > NOW() AS owned FROM hr_scorecard_tasks WHERE task_id=%s", (task_id,))
+                if not cursor.fetchone()['owned']:
+                    raise TaskLeaseLost("Search lease expired")
+            search_id = self.save_search_history(task['query'], task['job_title'], len(results),
+                task['user_id'], task['company_id'], 'hr-scorecard-task', cursor=cursor)
+            self.save_search_results(search_id, results, task['company_id'], task['user_id'], cursor=cursor)
+            progress = dict(progress, search_id=search_id)
+            cursor.execute("""UPDATE hr_scorecard_tasks SET status='completed', progress=%s,
+                search_id=%s, completed_at=NOW(), updated_at=NOW(), error_message=NULL,
+                lease_expires_at=NULL WHERE task_id=%s""", (json.dumps(progress), search_id, task_id))
+            return search_id
+
     def save_hr_scorecard_task(self, task_id, query, job_title, result_count, user_id,
-                              company_id=None, status='pending', created_at=None):
+                              company_id=None, status='pending', created_at=None, task_payload=None):
         """Save a new HR scorecard task to the database"""
         with self.get_cursor() as (cursor, conn):
             cursor.execute("""
                 INSERT INTO hr_scorecard_tasks
-                (task_id, query, job_title, result_count, user_id, company_id, status, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (task_id, query, job_title, result_count, user_id, company_id, status, created_at, updated_at, task_payload)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING task_id
             """, (
                 task_id,
@@ -1866,11 +2105,23 @@ class DatabaseManager:
                 company_id,
                 status,
                 created_at or datetime.utcnow(),
-                datetime.utcnow()
+                datetime.utcnow(),
+                Json(task_payload) if task_payload is not None else None
             ))
 
             result = cursor.fetchone()
             return result is not None
+
+    def claim_hr_scorecard_task(self, task_id):
+        """One worker may own a pending/failed task at a time."""
+        with self.get_cursor() as (cursor, _conn):
+            cursor.execute("""
+                UPDATE hr_scorecard_tasks SET status = 'processing', updated_at = NOW(),
+                       error_message = NULL
+                 WHERE task_id = %s AND status IN ('pending', 'failed') AND task_payload IS NULL
+                RETURNING task_id, query, job_title, result_count, user_id, company_id
+            """, (task_id,))
+            return cursor.fetchone()
 
     def update_task_status(self, task_id, update_data):
         """Update task status and other fields"""
@@ -1913,13 +2164,22 @@ class DatabaseManager:
 
             # Add task_id as the last parameter for WHERE clause
             params.append(task_id)
+            ownership = ""
+            lease = current_lease.get()
+            if lease:
+                if lease[0] != task_id:
+                    raise TaskLeaseLost("Task context mismatch")
+                ownership = " AND lease_token = %s AND status = 'processing' AND lease_expires_at > NOW()"
+                params.append(lease[1])
 
             cursor.execute(f"""
                 UPDATE hr_scorecard_tasks
                 SET {', '.join(set_clauses)}
-                WHERE task_id = %s
+                WHERE task_id = %s {ownership}
             """, params)
 
+            if lease and cursor.rowcount != 1:
+                raise TaskLeaseLost("Search ownership changed")
             return cursor.rowcount > 0
 
     def get_task_status(self, task_id):
@@ -1968,17 +2228,19 @@ class DatabaseManager:
 
 # Create a singleton instance
 db_manager = None
+_db_manager_lock = threading.Lock()
 
 def get_db_manager():
     """Get or create the database manager instance with error handling"""
     global db_manager
-    if db_manager is None:
-        try:
-            db_manager = DatabaseManager()
-            logger.info("✅ Database manager initialized successfully")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize database manager: {e}")
-            # For development/testing, return None to allow app to continue
-            db_manager = None
-            return None
+    if db_manager is not None:
+        return db_manager
+    with _db_manager_lock:
+        if db_manager is None:
+            try:
+                db_manager = DatabaseManager()
+                logger.info("Database manager initialized successfully")
+            except Exception as e:
+                logger.error("Failed to initialize database manager: %s", type(e).__name__)
+                return None
     return db_manager

@@ -78,13 +78,18 @@ def install():
     #     AI Studio mode (ignore vertexai/project/location passed by main.py).
     #   - Otherwise install our stub/OpenAI-backed shim.
     have_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
-    if REAL_GENAI is not None and have_key:
-        _patch_real_genai_for_ai_studio()
+    deepseek = os.environ.get("LLM_PROVIDER", "auto").strip().lower() == "deepseek"
+    if REAL_GENAI is not None and (have_key or deepseek):
+        if have_key and not deepseek:
+            _patch_real_genai_for_ai_studio()
         sys.modules["google.genai"] = REAL_GENAI
         if REAL_GENAI_TYPES is not None:
             sys.modules["google.genai.types"] = REAL_GENAI_TYPES
         _set_parent_attr("google", "genai", REAL_GENAI)
-        print("🤖 google.genai → real Gemini AI Studio (api_key mode).")
+        if deepseek:
+            print("DeepSeek selected; retaining SDK content/config types without activating Gemini.")
+        else:
+            print("🤖 google.genai → real Gemini AI Studio (api_key mode).")
     else:
         sys.modules["google.genai"] = genai_shim
         sys.modules["google.genai.types"] = genai_shim.types

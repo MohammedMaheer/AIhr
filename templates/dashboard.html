@@ -1090,7 +1090,8 @@
         </div>
     </div>
 
-    <script src="/static/js/security.js"></script>
+    <script src="/static/vendor/dompurify/purify-3.4.17.min.js"></script>
+    <script src="/static/js/security.js?v={{ asset_v.security_js }}"></script>
     <script>
         // User data will be populated from server
         let currentUser = null;
@@ -1843,22 +1844,22 @@
                 // Microsoft
                 const ms = data.microsoft || {};
                 _setPill(document.getElementById('msStatusPill'),
-                    !!ms.connected,
-                    !ms.client_configured ? 'Not configured' : (ms.connected ? 'Connected' : 'Not connected'));
+                    !!ms.connected && !ms.reconnect_required,
+                    !ms.client_configured ? 'Not configured' : (ms.reconnect_required ? 'Reconnect required' : (ms.connected ? 'Account saved' : 'Not connected')));
                 document.getElementById('msStatusText').textContent =
                     !ms.client_configured ? 'Server is missing Microsoft client credentials.' :
-                    ms.connected ? ('Connected as ' + (ms.account_email || 'Microsoft user')) :
+                    ms.connected ? ('Account: ' + (ms.account_email || 'Microsoft user') + (ms.reconnect_required ? ' - reconnect required.' : '')) :
                     'Click Connect to authorise your Microsoft account.';
                 _setBtn(document.getElementById('msActionBtn'), !!ms.client_configured, !!ms.connected, 'Microsoft');
 
                 // Google
                 const gg = data.google || {};
                 _setPill(document.getElementById('googleStatusPill'),
-                    !!gg.connected,
-                    !gg.client_configured ? 'Not configured' : (gg.connected ? 'Connected' : 'Not connected'));
+                    !!gg.connected && !gg.reconnect_required,
+                    !gg.client_configured ? 'Not configured' : (gg.reconnect_required ? 'Reconnect required' : (gg.connected ? 'Account saved' : 'Not connected')));
                 document.getElementById('googleStatusText').textContent =
                     !gg.client_configured ? 'Server is missing Google client credentials.' :
-                    gg.connected ? ('Connected as ' + (gg.account_email || 'Google user')) :
+                    gg.connected ? ('Account: ' + (gg.account_email || 'Google user') + (gg.reconnect_required ? ' - reconnect required.' : '')) :
                     'Click Connect to authorise your Google account.';
                 _setBtn(document.getElementById('googleActionBtn'), !!gg.client_configured, !!gg.connected, 'Google');
 

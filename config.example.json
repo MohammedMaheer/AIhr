@@ -1,0 +1,67 @@
+{
+  "gcs": {
+    "bucket_name": "local-resumes",
+    "default_folder": "resumes",
+    "credentials_path": "service-account.json"
+  },
+  "upload": {
+    "allowed_extensions": ["pdf", "doc", "docx"],
+    "auto_create_folders": true
+  },
+  "vector_search": {
+    "project_id": "",
+    "location": "global",
+    "datastore_id": ""
+  },
+  "postgresql": {
+    "host": "postgres",
+    "port": 5432,
+    "database": "recruitment",
+    "user": "smarthr",
+    "password": "",
+    "ssl_mode": "disable",
+    "pool_size": 2,
+    "max_overflow": 10,
+    "pool_timeout": 30,
+    "pool_recycle": 3600
+  },
+  "web_search": {
+    "project_id": "",
+    "location": "global",
+    "datastore_id": "",
+    "engine_id": "",
+    "serving_config": "default_config"
+  },
+  "cloud_tasks": {
+    "project_id": "",
+    "location": "",
+    "queue_name": "",
+    "service_account_email": "",
+    "target_uri": "",
+    "task_timeout": 900
+  },
+  "calendar": {
+    "google": {
+      "client_id": "",
+      "client_secret": "",
+      "redirect_uri": "https://recruiter.example.invalid/api/oauth/google/callback"
+    },
+    "microsoft": {
+      "tenant_id": "",
+      "client_id": "",
+      "client_secret": "",
+      "redirect_uri": "https://recruiter.example.invalid/api/oauth/microsoft/callback",
+      "sender_user_id": ""
+    }
+  },
+  "email": {
+    "smtp": {
+      "host": "",
+      "port": 587,
+      "user": "",
+      "password": "",
+      "from": "",
+      "use_tls": true
+    }
+  }
+}

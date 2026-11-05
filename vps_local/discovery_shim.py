@@ -169,6 +169,7 @@ class _SearchResponse:
 # ---------- DB access ----------
 
 _db_pool_singleton = None
+_db_pool_lock = threading.Lock()
 _advanced_schema_ensured = False
 _query_embedding_cache: OrderedDict[str, List[float]] = OrderedDict()
 _query_embedding_cache_lock = threading.Lock()
@@ -188,7 +189,10 @@ def _get_pool():
         user=os.environ.get("DB_USER", "smarthr"),
         password=os.environ.get("DB_PASSWORD", ""),
     )
-    _db_pool_singleton = pg_pool.SimpleConnectionPool(1, 5, **cfg)
+    with _db_pool_lock:
+        if _db_pool_singleton is None:
+            _db_pool_singleton = pg_pool.ThreadedConnectionPool(
+                1, max(1, int(os.getenv("VECTOR_DB_POOL_MAX", "5"))), connect_timeout=10, **cfg)
     return _db_pool_singleton
 
 
@@ -321,6 +325,7 @@ def _row_tuple_to_dict(r) -> Dict[str, Any]:
         "candidate_languages": list(r[11] or []),
         "candidate_skills": list(r[12] or []),
         "profile_source": r[13] or "",
+        "storage_bucket": r[14],
     }
 
 
@@ -377,7 +382,7 @@ def _extract_text_from_file(path: Path) -> str:
                 with pdfplumber.open(path) as pdf:
                     return "\n".join((p.extract_text() or "") for p in pdf.pages)[:80_000]
             except Exception:
-                from PyPDF2 import PdfReader
+                from pypdf import PdfReader
                 reader = PdfReader(str(path))
                 return "\n".join((p.extract_text() or "") for p in reader.pages)[:80_000]
         if ext in (".docx", ".doc"):
@@ -394,20 +399,12 @@ def _extract_text_from_file(path: Path) -> str:
 def _paths_for_uri(uri: str) -> tuple[str, list[Path]]:
     parsed = urlparse(uri or "")
     storage_root = Path(os.environ.get("SMARTHR_STORAGE_ROOT", "/app/storage")).resolve()
-    candidates: list[Path] = []
-    key = ""
-    if parsed.scheme == "gs":
-        bucket = parsed.netloc
-        key = parsed.path.lstrip("/")
-        candidates.append(storage_root / bucket / key)
-        candidates.append(storage_root / "resumes" / key)
-        candidates.append(storage_root / key)
-    else:
-        raw = Path(uri or "")
-        key = raw.name
-        candidates.append(raw)
-        candidates.append(storage_root / "resumes" / raw)
-    return key, candidates
+    from .storage_shim import _contained_path
+    if parsed.scheme != "gs" or not parsed.netloc:
+        raise ValueError("Indexed documents require a bucket-qualified gs:// URI.")
+    bucket = _contained_path(storage_root, parsed.netloc)
+    key = parsed.path.lstrip("/")
+    return key, [_contained_path(bucket, key)]
 
 
 def _upsert_document_embedding(document: Document, document_id: str = "") -> str:
@@ -420,7 +417,8 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> str
 
     text = _extract_text_from_file(path)
     filename = Path(key or path.name).name
-    folder = Path(key).parts[0] if key and len(Path(key).parts) > 1 else "legacy"
+    folder = Path(key).parent.as_posix() if key and len(Path(key).parts) > 1 else ""
+    storage_bucket = urlparse(uri).netloc
     ctype = (getattr(content, "mime_type", "") if content else "") or mimetypes.guess_type(str(path))[0] or path.suffix.lstrip(".")
 
     struct = document.struct_data or {}
@@ -444,14 +442,14 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> str
                 cur.execute(
                     """
                     INSERT INTO resume_embeddings
-                        (filename, folder, company_id, file_size, content_type,
+                        (filename, folder, company_id, storage_bucket, file_size, content_type,
                          extracted_text, text_length, embedding,
                          candidate_years, candidate_location,
                          candidate_languages, candidate_skills, profile_source,
                          profile_updated_at, embedded_at, embed_model)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s::vector,
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::vector,
                             %s, NULLIF(%s, ''), %s, %s, %s, NOW(), NOW(), %s)
-                    ON CONFLICT (filename) DO UPDATE SET
+                    ON CONFLICT (storage_bucket, folder, filename, (COALESCE(company_id, 0))) DO UPDATE SET
                         folder = EXCLUDED.folder,
                         company_id = EXCLUDED.company_id,
                         file_size = EXCLUDED.file_size,
@@ -470,7 +468,7 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> str
                         extraction_error = NULL
                     """,
                     (
-                        filename, folder, company_id, path.stat().st_size, ctype,
+                        filename, folder, company_id, storage_bucket, path.stat().st_size, ctype,
                         text.replace("\x00", ""), len(text),
                         _vec_lit(vec),
                         profile.get("candidate_years"),
@@ -485,30 +483,50 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> str
                 cur.execute(
                     """
                     INSERT INTO resume_embeddings
-                        (filename, folder, company_id, file_size, content_type,
+                        (filename, folder, company_id, storage_bucket, file_size, content_type,
                          extracted_text, text_length, extraction_error,
                          profile_source, profile_updated_at)
-                    VALUES (%s, %s, %s, %s, %s, '', 0, 'no_text_extracted',
+                    VALUES (%s, %s, %s, %s, %s, %s, '', 0, 'no_text_extracted',
                             'text_incremental', NOW())
-                    ON CONFLICT (filename) DO UPDATE SET
+                    ON CONFLICT (storage_bucket, folder, filename, (COALESCE(company_id, 0))) DO UPDATE SET
                         folder = EXCLUDED.folder,
                         company_id = EXCLUDED.company_id,
                         file_size = EXCLUDED.file_size,
                         content_type = EXCLUDED.content_type,
+                        extracted_text = '',
+                        text_length = 0,
+                        embedding = NULL,
+                        candidate_years = NULL,
+                        candidate_location = NULL,
+                        candidate_languages = NULL,
+                        candidate_skills = NULL,
                         extraction_error = EXCLUDED.extraction_error,
                         profile_updated_at = NOW()
                     """,
-                    (filename, folder, company_id, path.stat().st_size, ctype),
+                    (filename, folder, company_id, storage_bucket, path.stat().st_size, ctype),
                 )
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         pool.putconn(conn)
     return f"local/operations/create_document_{document_id or filename}"
 
 
+def _tenant_scope(filter_str: str) -> tuple[str, list]:
+    if not filter_str:
+        return "TRUE", []  # Internal/default datastore and super-admin access.
+    match = re.fullmatch(r'company_id: ANY\("([1-9][0-9]*)"\)', filter_str)
+    if not match:
+        raise ValueError("Unsupported search filter; refusing an unscoped query.")
+    return "company_id = %s", [int(match.group(1))]
+
+
 def _vector_search(query: str, page_size: int = 10,
                    filter_str: str = "") -> List[Dict[str, Any]]:
     """Run pgvector ANN search; return list of dicts shaped like Discovery results."""
+    scope_sql, scope_params = _tenant_scope(filter_str)
     if not query.strip():
         return []
     qvec = _embed_query(query)
@@ -520,16 +538,16 @@ def _vector_search(query: str, page_size: int = 10,
         with conn.cursor() as cur:
             if not ADVANCED_SEARCH_ENABLED:
                 cur.execute(
-                    """
+                    f"""
                     SELECT id, filename, folder, file_size, content_type,
                            extracted_text, text_length,
-                           1 - (embedding <=> %s::vector) AS score
+                           1 - (embedding <=> %s::vector) AS score, storage_bucket
                       FROM resume_embeddings
-                     WHERE embedding IS NOT NULL
+                     WHERE embedding IS NOT NULL AND {scope_sql}
                      ORDER BY embedding <=> %s::vector
                      LIMIT %s
                     """,
-                    (_vec_lit(qvec), _vec_lit(qvec), int(page_size or 10)),
+                    (_vec_lit(qvec), *scope_params, _vec_lit(qvec), int(page_size or 10)),
                 )
                 rows = cur.fetchall()
                 return [
@@ -542,6 +560,7 @@ def _vector_search(query: str, page_size: int = 10,
                         "text": r[5] or "",
                         "text_length": r[6] or 0,
                         "score": float(r[7] or 0.0),
+                        "storage_bucket": r[8],
                     }
                     for r in rows
                 ]
@@ -553,15 +572,15 @@ def _vector_search(query: str, page_size: int = 10,
             # advanced mode we pull a deeper semantic pool, add full-text rank
             # and structured-profile signals, then trim in Python.
             cur.execute(
-                """
+                f"""
                 WITH semantic AS (
                     SELECT id, filename, folder, file_size, content_type,
                            extracted_text, text_length,
                            1 - (embedding <=> %s::vector) AS vector_score,
                            candidate_years, candidate_location,
-                           candidate_languages, candidate_skills, profile_source
+                           candidate_languages, candidate_skills, profile_source, storage_bucket
                       FROM resume_embeddings
-                     WHERE embedding IS NOT NULL
+                     WHERE embedding IS NOT NULL AND {scope_sql}
                      ORDER BY embedding <=> %s::vector
                      LIMIT %s
                 )
@@ -573,10 +592,10 @@ def _vector_search(query: str, page_size: int = 10,
                            websearch_to_tsquery('simple', %s)
                        ) AS lexical_score,
                        candidate_years, candidate_location,
-                       candidate_languages, candidate_skills, profile_source
+                       candidate_languages, candidate_skills, profile_source, storage_bucket
                   FROM semantic
                 """,
-                (_vec_lit(qvec), _vec_lit(qvec), int(pool_size), query[:1000]),
+                (_vec_lit(qvec), *scope_params, _vec_lit(qvec), int(pool_size), query[:1000]),
             )
             rows = cur.fetchall()
             if not criteria.is_empty():
@@ -592,9 +611,9 @@ def _vector_search(query: str, page_size: int = 10,
                                websearch_to_tsquery('simple', %s)
                            ) AS lexical_score,
                            candidate_years, candidate_location,
-                           candidate_languages, candidate_skills, profile_source
+                           candidate_languages, candidate_skills, profile_source, storage_bucket
                       FROM resume_embeddings
-                     WHERE {where_sql}
+                     WHERE {where_sql} AND {scope_sql}
                      ORDER BY embedding <=> %s::vector
                      LIMIT %s
                     """,
@@ -602,6 +621,7 @@ def _vector_search(query: str, page_size: int = 10,
                         _vec_lit(qvec),
                         query[:1000],
                         *where_params,
+                        *scope_params,
                         _vec_lit(qvec),
                         int(supplemental_limit),
                     ),
@@ -615,12 +635,13 @@ def _vector_search(query: str, page_size: int = 10,
         row_dicts = [_row_tuple_to_dict(r) for r in rows]
         return _rank_rows(row_dicts, query, int(page_size or 10))
     finally:
+        conn.rollback()
         pool.putconn(conn)
 
 
 def _row_to_result(row: Dict[str, Any]) -> _Result:
-    file_key = (row.get("folder") or "legacy").rstrip("/") + "/" + (row.get("filename") or "")
-    bucket = os.environ.get("GCS_BUCKET_NAME", "smarthr-prod-2026-resume-storage")
+    file_key = "/".join(part for part in (row.get("folder", "legacy"), row.get("filename", "")) if part)
+    bucket = row.get("storage_bucket") or os.environ.get("GCS_BUCKET_NAME", "smarthr-prod-2026-resume-storage")
     gs_uri = f"gs://{bucket}/{file_key}"
     text = row.get("text") or ""
     snippet = (text[:300] + "…") if len(text) > 300 else text

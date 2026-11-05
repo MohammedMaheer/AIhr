@@ -13,6 +13,7 @@ WORKDIR /app
 
 # Install Python dependencies
 COPY requirements.txt .
+COPY requirements-security.txt ./
 COPY requirements-vps.txt ./
 ARG INSTALL_VPS_DEPS=0
 RUN pip install --upgrade pip && \

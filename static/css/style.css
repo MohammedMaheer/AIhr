@@ -51,6 +51,22 @@ body {
     border: 1px solid #d1d5db;
     transition: all 0.2s ease-out;
     min-height: 56px;
+    padding-right: 104px;
+}
+
+#chat-interface > .text-center { margin-top: 16px; margin-bottom: 24px; }
+#chat-interface h1 { font-size: 26px; line-height: 1.3; }
+#chat-interface .search-category-card { border-radius: 8px; }
+#jd-upload-button, #send-button, #bottom-send-button { min-width: 40px; min-height: 40px; }
+#bottom-chat-input { padding-right: 56px; }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }
 
 #chat-input:focus {
@@ -344,7 +360,30 @@ body {
 /* Compact sizing adjustments */
 .sidebar-compact {
     width: 200px !important;
+    flex-shrink: 0;
+    position: relative;
 }
+
+#app-content, #main-content { min-width: 0; min-height: 0; }
+#mobile-header, .mobile-navigation-control, #navigation-backdrop { display: none; }
+#results-area.opacity-0, #bottom-chat-container.opacity-0 { visibility: hidden; }
+.user-management-row { flex-wrap: wrap; gap: 8px; }
+.user-management-identity { flex: 1 1 180px; min-width: 0; }
+.user-management-identity > div:last-child { min-width: 0; overflow-wrap: anywhere; }
+.user-management-avatar, .user-management-actions { flex-shrink: 0; }
+.user-management-actions { margin-left: auto; }
+.recruiter-integrations { margin-bottom: 24px; padding: 16px 0; border-block: 1px solid #d1d5db; }
+.connections-heading, .connection-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.connection-row { padding: 12px 0; flex-wrap: wrap; border-bottom: 1px solid #e5e7eb; }
+.connection-row > div:first-child { flex: 1 1 150px; min-width: 0; }
+.connection-row h4 { font-size: 14px; font-weight: 600; color: #1f2937; }
+.connection-row p, [data-connection-notice] { font-size: 13px; color: #4b5563; overflow-wrap: anywhere; }
+.connection-actions { display: flex; align-items: center; gap: 8px; }
+.connection-row button, .connections-heading button { min-width: 44px; min-height: 44px; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 12px; color: #1f2937; background: white; font-size: 13px; }
+.connection-row button:disabled { opacity: 0.55; cursor: not-allowed; }
+.recruiter-integrations > a { display: inline-block; margin-top: 12px; color: #1d4ed8; font-size: 13px; text-decoration: underline; }
+#outlook-connection-row.hidden { display: none; }
+.fixed.inset-0.bg-black > div { max-height: calc(100dvh - 32px); overflow-y: auto; min-width: 0; }
 
 .content-compact {
     font-size: 12px;
@@ -2494,4 +2533,93 @@ button, input, .glass {
     border: 0;
     border-top: 1px solid #e5e7eb;
     margin: 1.25rem 0;
+}
+
+/* The navigation becomes an accessible drawer without reducing form width. */
+@media (max-width: 768px) {
+    #app-shell { height: 100dvh; }
+    #mobile-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+        min-height: 52px;
+        padding: 0 12px;
+        border-bottom: 1px solid #e5e7eb;
+        background: white;
+        color: #1f2937;
+        font-size: 14px;
+        font-weight: 600;
+    }
+    #navigation-toggle, #navigation-close {
+        width: 44px;
+        height: 44px;
+        flex-shrink: 0;
+        color: #374151;
+        border-radius: 6px;
+    }
+    #navigation-close {
+        display: block;
+        position: absolute;
+        top: 4px;
+        right: 4px;
+    }
+    #app-navigation {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: 264px !important;
+        max-width: calc(100vw - 44px);
+        height: 100dvh;
+        z-index: 50;
+        display: flex;
+        flex-direction: column;
+        visibility: hidden;
+        transform: translateX(-100%);
+        background: white;
+    }
+    #app-navigation > .p-4 { padding-right: 52px; }
+    #app-navigation nav { flex: 1; overflow-y: auto; min-height: 0; margin-bottom: 8px; }
+    #app-navigation > .absolute { position: relative; flex-shrink: 0; }
+    #app-navigation .nav-link { min-height: 48px; }
+    .is-navigation-open #app-navigation { visibility: visible; transform: none; }
+    #navigation-backdrop:not([hidden]) {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        background: rgb(17 24 39 / 40%);
+    }
+    #main-content { padding: 12px; }
+    #main-content > .p-4 { padding: 4px; }
+    #main-content input:not([type="checkbox"]):not([type="radio"]),
+    #main-content select, #main-content textarea { font-size: 16px; max-width: 100%; }
+    #chat-interface { min-height: 100%; max-height: 100%; padding: 16px 8px; }
+    #chat-interface > .text-center { margin-top: 16px; }
+    #chat-interface h1 { font-size: 26px; }
+    #chat-input { padding-right: 104px; padding-left: 12px; }
+    #jd-upload-button, #send-button, #bottom-send-button { min-width: 40px; min-height: 40px; }
+    #chat-interface .search-category-card { grid-column: 1 / -1; }
+    .search-options { flex-wrap: wrap; gap: 12px; justify-content: flex-start; }
+    .search-options > * { margin-left: 0 !important; }
+    .search-options > .text-xs { flex-basis: 100%; }
+    #results-area { height: 100%; }
+    .split-view-container { height: 100%; max-height: 100%; padding-bottom: 76px; }
+    .split-view-left { flex-shrink: 0; min-height: 160px; }
+    .split-view-right { min-width: 0; min-height: 0; height: auto; }
+    .professional-contact-info { overflow-wrap: anywhere; }
+    #history-page > div > .mb-6 > .flex { flex-wrap: wrap; gap: 12px; }
+    #history-page > div > .mb-6 > .flex > .flex { flex-wrap: wrap; gap: 8px; }
+    #history-search { width: 100%; }
+    .history-table-scroll { overflow-x: auto; }
+    .history-table-scroll > * { min-width: 760px; }
+    #jd-builder-page .flex.justify-between { flex-wrap: wrap; gap: 12px; }
+    #file-upload-tab, #email-scrape-tab { padding: 10px; min-height: 44px; }
+    #drop-zone { padding: 16px; }
+    #user-dashboard table { min-width: 560px; }
+    #app-navigation button[aria-controls="userDropdown"] { min-width: 44px; min-height: 44px; }
+}
+
+:where(button, a, input, select, textarea, [tabindex="0"]):focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
 }

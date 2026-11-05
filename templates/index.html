@@ -8,7 +8,8 @@
     <link rel="icon" type="image/png" href="/static/img/makaiyslogo-2-300x262.png">
     <link rel="stylesheet" href="/static/css/tailwind.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <script src="/static/js/security.js"></script>
+    <script src="/static/vendor/dompurify/purify-3.4.17.min.js"></script>
+    <script src="/static/js/security.js?v={{ asset_v.security_js }}"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="/static/css/style.css?v={{ asset_v.style_css }}">
     <script>
@@ -95,9 +96,10 @@
 </head>
 
 <body class="bg-gradient-to-br from-slate-50 to-blue-50 font-inter antialiased">
-    <div class="flex h-screen">
+    <div class="flex h-screen" id="app-shell">
         <!-- Sidebar -->
-        <div class="w-52 bg-white/95 backdrop-blur-sm shadow-xl border-r border-gray-200/50 sidebar-compact">
+        <aside id="app-navigation" aria-label="Primary navigation" class="w-52 bg-white/95 backdrop-blur-sm shadow-xl border-r border-gray-200/50 sidebar-compact">
+            <button type="button" id="navigation-close" class="mobile-navigation-control" aria-label="Close navigation" title="Close navigation"><i class="fas fa-times" aria-hidden="true"></i></button>
             <!-- Logo Section -->
             <div class="p-4 border-b border-gray-100">
                 <div class="flex items-center space-x-2">
@@ -113,7 +115,7 @@
             </div>
 
             <!-- Navigation -->
-            <nav class="mt-4 px-2">
+            <nav class="mt-4 px-2" aria-label="Main">
                 <div class="space-y-1">
                     <a href="#" id="dashboard-link"
                         class="nav-link group flex items-center px-2 py-2 text-gray-600 rounded-lg hover:bg-gray-50 transition-all duration-200">
@@ -201,7 +203,8 @@
                         <div class="text-xs text-gray-500 truncate" id="userEmail">Loading...</div>
                     </div>
                     <div class="relative" id="userMenu">
-                        <button class="text-gray-400 hover:text-gray-600" onclick="toggleUserMenu()">
+                        <button class="text-gray-400 hover:text-gray-600" onclick="toggleUserMenu()"
+                                aria-label="Account menu" title="Account menu" aria-controls="userDropdown" aria-expanded="false">
                             <i class="fas fa-ellipsis-v text-xs"></i>
                         </button>
                         <div id="userDropdown"
@@ -217,17 +220,23 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </aside>
+        <button type="button" id="navigation-backdrop" tabindex="-1" aria-label="Close navigation" hidden></button>
 
         <!-- Main Content -->
-        <div class="flex-1 flex flex-col overflow-hidden">
+        <div class="flex-1 flex flex-col overflow-hidden" id="app-content">
+            <header id="mobile-header">
+                <button type="button" id="navigation-toggle" aria-label="Open navigation" title="Open navigation" aria-controls="app-navigation" aria-expanded="false"><i class="fas fa-bars" aria-hidden="true"></i></button>
+                <span>AI Agent Recruiter</span>
+            </header>
             <!-- Content Area -->
-            <main id="main-content" class="flex-1 overflow-y-auto bg-gradient-to-br from-gray-50/50 to-blue-50/30 p-6">
+            <main id="main-content" tabindex="-1" class="flex-1 overflow-y-auto bg-gradient-to-br from-gray-50/50 to-blue-50/30 p-6">
                 <!-- Dynamic content will be loaded here -->
             </main>
         </div>
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="/static/js/candidate-state.js?v={{ asset_v.candidate_state_js }}"></script>
     <script src="/static/js/main.js?v={{ asset_v.main_js }}"></script>
 </body>
 

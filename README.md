@@ -1,14 +1,30 @@
-# 🌟 Smart HR: AI-Powered Candidate Search & Analysis Platform
+# Smart HR: AI Recruitment Workspace
 
-![Python](https://img.shields.io/badge/Python-3.11-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-teal) ![Docker](https://img.shields.io/badge/Docker-Ready-blue) ![GCP](https://img.shields.io/badge/GCP-Cloud_Run-orange) ![License](https://img.shields.io/badge/License-Commercial-green)
+![Python](https://img.shields.io/badge/Python-3.11-blue) ![FastAPI](https://img.shields.io/badge/API-FastAPI-teal) ![Docker](https://img.shields.io/badge/Hosting-VPS-blue) ![License](https://img.shields.io/badge/License-Commercial-green)
 
-**Smart HR** is a production-ready, enterprise-grade AI recruitment platform and Applicant Tracking System (ATS). It allows HR professionals to instantly generate professional Job Descriptions from scratch using AI, upload candidate resumes (PDF/DOCX), let Google's advanced **Gemini Model / GPT Model** analyze them, and instantly find the best matches.
+**Smart HR** supports resume uploads, criteria-based candidate search, AI scorecards, job descriptions and recruiter-controlled Microsoft/Google email and calendar workflows. The live deployment is VPS-hosted; it is not Cloud Run.
 
-The application architecture includes a powerful FastAPI backend, a responsive Vanilla JS and TailwindCSS frontend dashboard, and robust integrations with **Google Cloud Platform** (Cloud Run, Cloud Storage, Vertex AI, Discovery Engine, and Cloud Tasks).
+## Current Runtime
 
-It supports full **multi-tenant data isolation**, allowing you to run this software for multiple companies simultaneously, with subscription limits and separate storage buckets for each.
+- Python 3.11/FastAPI, vanilla JavaScript/Tailwind, PostgreSQL/pgvector and local CPU embeddings.
+- Explicit DeepSeek support selected through `LLM_PROVIDER=deepseek`; cloud-provider compatibility paths remain available but are not the current hosting architecture.
+- Durable database-backed search tasks, session-bound OAuth with PKCE, encrypted provider tokens and scoped candidate workflows.
+- Pinned VPS runtime: `deploy/vps/Dockerfile.runtime` and `requirements-runtime.lock.txt`. Build the Tailwind CSS asset before assembling a release; runtime configuration is mounted externally.
+- Verification reports under `docs/` distinguish implemented, mocked, browser-tested and live-provider-tested behavior. Remaining security, extraction, accuracy, delivery and recovery gates are not represented as certified complete.
 
-The codebase is highly optimized, fully documented, and includes a **one-click GCP deployment script** that entirely provisions your cloud infrastructure automatically.
+## Private Configuration
+
+Create the local runtime file from the secret-free example:
+
+```powershell
+if (-not (Test-Path -LiteralPath config.json)) {
+    Copy-Item -LiteralPath config.example.json -Destination config.json
+}
+```
+
+Supply credentials through secure environment variables or an external runtime configuration. Never commit `config.json`, `config.docker.json`, `.env`, service-account keys, real CVs or backup/audit exports. The example PostgreSQL SSL setting is for a private local network; configure verified TLS for external database connections. Keep the production `SECRET_KEY` stable while encrypted OAuth credentials depend on it; rotation requires a migration plan.
+
+See `docs/INTEGRATIONS_SETUP.md` for account linking. GitHub update conventions are in `AGENTS.md`. The cloud-oriented feature and deployment notes below are legacy/optional paths, not a description of the current VPS release.
 
 ---
 

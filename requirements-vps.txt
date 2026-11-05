@@ -1,11 +1,17 @@
 # Additional dependencies needed only when running in VPS local-mode
-# (SMARTHR_LOCAL_MODE=1). Adds ~2GB to image due to torch.
-# Force numpy>=2 to be ABI-compatible with newer scikit-learn pulled by sentence-transformers
-numpy>=2.0,<3
-pandas>=2.2.3
-sentence-transformers>=3.3.0
-openai>=1.59.2
-pgvector>=0.3.6
+# (SMARTHR_LOCAL_MODE=1). The VPS Dockerfile installs the official CPU Torch wheel.
+numpy==2.4.6
+pandas==2.2.3
+sentence-transformers==5.6.0
+transformers==5.11.0
+torch==2.13.0
+scikit-learn==1.9.0
+scipy==1.17.1
+huggingface-hub==1.17.0
+tokenizers==0.22.2
+safetensors==0.7.0
+openai==2.40.0
+pgvector==0.4.2
 
 # Keep the second `pip --prefix` install from overwriting base app pins.
 pydantic==2.11.7

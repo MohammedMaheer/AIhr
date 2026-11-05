@@ -58,6 +58,11 @@ static/css/tailwind.css
 *.sqlite3
 
 # Credentials and sensitive files
+config.json
+config.docker.json
+.env.*
+!.env.example
+!**/.env.example
 *.pem
 *.key
 *.crt
@@ -89,6 +94,8 @@ qa_audit_*.md
 cookies.txt
 CREDENTIALS_AND_AUDIT.md
 migrated_resumes/
+output/
+static/review/*.pdf
 
 
 

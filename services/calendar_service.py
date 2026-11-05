@@ -37,12 +37,19 @@ import json
 import logging
 import os
 import time
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+from urllib.parse import urlsplit
+from uuid import uuid4
 
 import requests
 
+from services.integration_errors import provider_failure
+
 log = logging.getLogger(__name__)
+_refresh_locks = [threading.RLock() for _ in range(64)]
+_ROW_NOT_LOADED = object()
 
 # ---------------------------------------------------------------------------
 # Config loading
@@ -90,8 +97,8 @@ GOOGLE_SCOPES = [
 ]
 MICROSOFT_SCOPES = [
     "offline_access",
-    "OnlineMeetings.ReadWrite",
     "Calendars.ReadWrite",
+    "Mail.Read",
     "Mail.Send",
     "User.Read",
 ]
@@ -106,7 +113,11 @@ def _is_expired(expires_at) -> bool:
         except ValueError:
             return True
     # 60s clock skew buffer.
-    now = datetime.now(expires_at.tzinfo) if expires_at.tzinfo else datetime.now()
+    if not isinstance(expires_at, datetime):
+        return True
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
     return expires_at <= now + timedelta(seconds=60)
 
 
@@ -128,7 +139,7 @@ def _refresh_google_token(refresh_token: str, cfg: dict) -> Optional[dict]:
         r.raise_for_status()
         return r.json()
     except Exception as e:
-        log.warning(f"google token refresh failed: {e}")
+        log.warning("Google token refresh failed: %s", type(e).__name__)
         return None
 
 
@@ -152,7 +163,7 @@ def _refresh_microsoft_token(refresh_token: str, cfg: dict) -> Optional[dict]:
         r.raise_for_status()
         return r.json()
     except Exception as e:
-        log.warning(f"microsoft token refresh failed: {e}")
+        log.warning("Microsoft token refresh failed: %s", type(e).__name__)
         return None
 
 
@@ -178,24 +189,43 @@ def _microsoft_app_only_token(cfg: dict) -> Optional[str]:
         r.raise_for_status()
         return r.json().get("access_token")
     except Exception as e:
-        log.warning(f"microsoft client_credentials failed: {e}")
+        log.warning("Microsoft client credentials failed: %s", type(e).__name__)
         return None
 
 
-def _get_valid_token(provider: str, user_id: int, db) -> tuple[Optional[str], Optional[str]]:
+def _get_valid_token(provider: str, user_id: int, db, *, delegated_actor=False) -> tuple[Optional[str], Optional[str]]:
+    if provider not in ('google', 'microsoft'):
+        return None, None
+    with _refresh_locks[hash((provider, user_id)) % len(_refresh_locks)]:
+        try:
+            row = db.get_oauth_token(user_id, provider)
+            if row and row.get('access_token') and _is_expired(row.get('expires_at')):
+                with db.oauth_refresh_lock(user_id, provider) as locked_store:
+                    return _get_valid_token_locked(provider, user_id, locked_store, allow_app_fallback=False,
+                                                   delegated_actor=delegated_actor)
+            return _get_valid_token_locked(provider, user_id, db, initial_row=row, delegated_actor=delegated_actor)
+        except Exception:
+            log.warning('OAuth credential read/rotation unavailable for %s; reconnect or retry required.', provider)
+            return None, None
+
+
+def _get_valid_token_locked(provider: str, user_id: int, db, *, initial_row=_ROW_NOT_LOADED,
+                            allow_app_fallback=True, delegated_actor=False) -> tuple[Optional[str], Optional[str]]:
     """Return (access_token, acting_user_or_email) or (None, None).
     For Microsoft, falls back to app-only token + configured sender_user_id
     when no per-user token exists.
     """
     cfg = calendar_config()
-    row = None
-    try:
-        row = db.get_oauth_token(user_id, provider)
-    except Exception as e:
-        log.warning(f"get_oauth_token failed for {provider}: {e}")
+    row = db.get_oauth_token(user_id, provider) if initial_row is _ROW_NOT_LOADED else initial_row
+
+    # A saved but unusable personal connection must never select a shared mailbox.
+    if row is not None and not row.get("access_token"):
+        return None, None
 
     if row and row.get("access_token"):
-        if _is_expired(row.get("expires_at")) and row.get("refresh_token"):
+        if _is_expired(row.get("expires_at")):
+            if not row.get("refresh_token"):
+                return None, None
             refresh_fn = _refresh_google_token if provider == "google" else _refresh_microsoft_token
             new = refresh_fn(row["refresh_token"], cfg)
             if new and new.get("access_token"):
@@ -212,12 +242,14 @@ def _get_valid_token(provider: str, user_id: int, db) -> tuple[Optional[str], Op
                         email=row.get("email"),
                     )
                 except Exception:
-                    pass
-                return new["access_token"], row.get("email")
-        return row["access_token"], row.get("email")
+                    log.warning("Could not persist refreshed %s credentials; reconnect required.", provider)
+                    return None, None
+                return new["access_token"], ('me' if provider == 'microsoft' and delegated_actor else row.get("email"))
+            return None, None
+        return row["access_token"], ('me' if provider == 'microsoft' and delegated_actor else row.get("email"))
 
     # Microsoft fallback: app-only token + configured sender mailbox.
-    if provider == "microsoft":
+    if provider == "microsoft" and allow_app_fallback:
         tok = _microsoft_app_only_token(cfg)
         if tok:
             return tok, (cfg.get("microsoft") or {}).get("sender_user_id")
@@ -247,7 +279,7 @@ def _create_google_meet(token: str, *, subject: str, start_iso: str,
         "attendees": [{"email": attendee_email}] if attendee_email else [],
         "conferenceData": {
             "createRequest": {
-                "requestId": f"smarthr-{int(time.time())}",
+                "requestId": "smarthr-" + uuid4().hex,
                 "conferenceSolutionKey": {"type": "hangoutsMeet"},
             }
         },
@@ -262,17 +294,32 @@ def _create_google_meet(token: str, *, subject: str, start_iso: str,
             timeout=20,
         )
         if r.status_code >= 400:
-            return {"success": False,
-                    "error": f"Google Calendar API {r.status_code}: {r.text[:300]}"}
+            log.warning("Google Calendar create rejected: status=%s", r.status_code)
+            return provider_failure("meet", "calendar", status_code=r.status_code)
         ev = r.json()
         meet_url = ev.get("hangoutLink")
         if not meet_url:
             entry = ((ev.get("conferenceData") or {}).get("entryPoints") or [])
             meet_url = next((e.get("uri") for e in entry if e.get("entryPointType") == "video"), None)
+        if not _usable_join_url(meet_url):
+            return {"success": False, "provider": "meet", "join_url": None,
+                    "event_id": ev.get("id"), "calendar_event_created": True,
+                    "error": "Calendar event created, but the Meet link is not available. Check the calendar before scheduling again."}
         return {"success": True, "provider": "meet",
                 "join_url": meet_url, "event_id": ev.get("id")}
     except Exception as e:
-        return {"success": False, "error": f"Google Meet creation failed: {e}"}
+        log.warning("Google Calendar create outcome unavailable: %s", type(e).__name__)
+        return provider_failure("meet", "calendar")
+
+
+def _usable_join_url(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = urlsplit(value)
+        return parsed.scheme == "https" and bool(parsed.hostname) and not (parsed.username or parsed.password)
+    except ValueError:
+        return False
 
 
 def _create_teams_meeting(token: str, *, subject: str, start_iso: str,
@@ -309,15 +356,20 @@ def _create_teams_meeting(token: str, *, subject: str, start_iso: str,
             timeout=20,
         )
         if r.status_code >= 400:
-            return {"success": False,
-                    "error": f"Microsoft Graph {r.status_code}: {r.text[:300]}"}
+            log.warning("Microsoft calendar create rejected: status=%s", r.status_code)
+            return provider_failure("teams", "calendar", status_code=r.status_code)
         ev = r.json()
         join_url = ((ev.get("onlineMeeting") or {}).get("joinUrl")
                     or ev.get("onlineMeetingUrl"))
+        if not _usable_join_url(join_url):
+            return {"success": False, "provider": "teams", "join_url": None,
+                    "event_id": ev.get("id"), "calendar_event_created": True,
+                    "error": "Calendar event created, but the Teams link is not available. Check Teams licensing and the calendar before scheduling again."}
         return {"success": True, "provider": "teams",
                 "join_url": join_url, "event_id": ev.get("id")}
     except Exception as e:
-        return {"success": False, "error": f"Teams meeting creation failed: {e}"}
+        log.warning("Microsoft calendar create outcome unavailable: %s", type(e).__name__)
+        return provider_failure("teams", "calendar")
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +401,7 @@ def create_meeting(provider: str, *, subject: str, start_iso: str,
             attendee_email=attendee_email, organizer_email=email,
         )
     if p in ("teams", "microsoft", "ms_teams", "ms-teams"):
-        token, who = _get_valid_token("microsoft", organizer_user_id, db)
+        token, who = _get_valid_token("microsoft", organizer_user_id, db, delegated_actor=True)
         if not token:
             return {"success": False, "provider": "teams", "join_url": None,
                     "event_id": None,

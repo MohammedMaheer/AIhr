@@ -7,8 +7,9 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Filename is the storage key (relative to /app/storage/resumes/<filename>).
 CREATE TABLE IF NOT EXISTS resume_embeddings (
     id              SERIAL PRIMARY KEY,
-    filename        TEXT NOT NULL UNIQUE,
+    filename        TEXT NOT NULL,
     folder          TEXT NOT NULL DEFAULT 'legacy',  -- 'legacy' or 'resume'
+    storage_bucket  TEXT NOT NULL DEFAULT '',
     company_id      INT REFERENCES tenant_companies(id) ON DELETE CASCADE,
     file_size       INT,
     content_type    TEXT,
@@ -27,6 +28,8 @@ CREATE TABLE IF NOT EXISTS resume_embeddings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_resume_emb_filename ON resume_embeddings(filename);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_resume_emb_storage_identity
+    ON resume_embeddings(storage_bucket, folder, filename, (COALESCE(company_id, 0)));
 CREATE INDEX IF NOT EXISTS idx_resume_emb_company  ON resume_embeddings(company_id);
 CREATE INDEX IF NOT EXISTS idx_resume_emb_candidate_years ON resume_embeddings(candidate_years);
 CREATE INDEX IF NOT EXISTS idx_resume_emb_candidate_location ON resume_embeddings(candidate_location);

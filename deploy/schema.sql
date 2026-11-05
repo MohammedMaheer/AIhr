@@ -133,6 +133,15 @@ CREATE TABLE IF NOT EXISTS candidate_actions (
 -- INTERVIEW SCHEDULING TABLE
 -- =============================================================================
 
+CREATE TABLE IF NOT EXISTS candidate_notes (
+    search_result_id INTEGER PRIMARY KEY REFERENCES search_results(id) ON DELETE CASCADE,
+    comments TEXT NOT NULL DEFAULT '',
+    updated_by VARCHAR(100),
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_candidate_actions_result_updated
+    ON candidate_actions(search_result_id, updated_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS scheduled_interviews (
     id                SERIAL PRIMARY KEY,
     candidate_name    VARCHAR(500) NOT NULL,
@@ -141,7 +150,7 @@ CREATE TABLE IF NOT EXISTS scheduled_interviews (
     interview_date    DATE NOT NULL,
     interview_time    TIME,
     duration_minutes  INTEGER DEFAULT 60,
-    location          VARCHAR(500),
+    location          TEXT,
     interviewer       VARCHAR(500),
     notes             TEXT,
     status            VARCHAR(50) DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'completed', 'cancelled')),
@@ -223,7 +232,12 @@ CREATE TABLE IF NOT EXISTS hr_scorecard_tasks (
     search_id     INTEGER REFERENCES search_history(id) ON DELETE SET NULL,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    completed_at  TIMESTAMP
+    completed_at  TIMESTAMP,
+    task_payload JSONB,
+    lease_token TEXT,
+    lease_expires_at TIMESTAMPTZ,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- =============================================================================

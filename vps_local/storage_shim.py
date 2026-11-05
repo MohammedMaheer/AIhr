@@ -35,13 +35,34 @@ class _NotFound(Exception):
     pass
 
 
+def _contained_path(base: Path, name: str, *, allow_root: bool = False) -> Path:
+    if not isinstance(name, str) or "\\" in name or "\x00" in name:
+        raise ValueError("Invalid local storage path.")
+    relative = Path(name)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("Local storage path must stay inside its bucket.")
+    path = (base / relative).resolve()
+    if not path.is_relative_to(base) or (path == base and not allow_root):
+        raise ValueError("Local storage path escapes its storage boundary.")
+    return path
+
+
 class Blob:
     def __init__(self, bucket: "Bucket", name: str):
         self.bucket = bucket
         self.name = name
-        self._path = (bucket._root / name).resolve()
+        self._path  # Validate at creation and again for every operation.
+
+    @property
+    def _path(self) -> Path:
+        return _contained_path(self.bucket._root, self.name)
 
     # Properties / metadata
+    @property
+    def generation(self) -> str:
+        stat = self._path.stat()
+        return f"{stat.st_ino}:{stat.st_ctime_ns}:{stat.st_mtime_ns}:{stat.st_size}"
+
     @property
     def size(self) -> Optional[int]:
         try:
@@ -57,8 +78,9 @@ class Blob:
     @property
     def public_url(self) -> str:
         # Local mode: serve via app endpoint. main.py /api/download-resume
-        # accepts ?path=<filename>, so generate a relative URL to it.
-        return f"/api/download-resume?path={quote(self.name)}"
+        # Keep the bucket identity; the download route still requires auth.
+        uri = f"gs://{self.bucket.name}/{self.name}"
+        return f"/api/download-resume?file_path={quote(uri, safe='')}"
 
     @property
     def media_link(self) -> str:
@@ -126,7 +148,13 @@ class Bucket:
     def __init__(self, client: "Client", name: str):
         self.client = client
         self.name = name
-        self._root = (STORAGE_ROOT / name).resolve()
+        if not isinstance(name, str) or "/" in name or "\\" in name:
+            raise ValueError("Invalid local bucket name.")
+        self._root
+
+    @property
+    def _root(self) -> Path:
+        return _contained_path(STORAGE_ROOT, self.name)
 
     def exists(self, client=None) -> bool:
         return self._root.is_dir()
@@ -173,14 +201,14 @@ class Client:
         bucket = bucket_or_name if isinstance(bucket_or_name, Bucket) else self.bucket(bucket_or_name)
         if not bucket._root.is_dir():
             return iter([])
-        prefix_path = bucket._root / prefix if prefix else bucket._root
+        prefix_path = _contained_path(bucket._root, prefix, allow_root=True) if prefix else bucket._root
         # Walk the bucket; yield blobs whose relative path matches the prefix.
         results = []
         if prefix and not prefix_path.exists():
             # Prefix could be a path-prefix (not full directory) — fall back to filtering.
             for p in bucket._root.rglob("*"):
                 if p.is_file():
-                    rel = str(p.relative_to(bucket._root))
+                    rel = p.relative_to(bucket._root).as_posix()
                     if rel.startswith(prefix):
                         results.append(Blob(bucket, rel))
                         if max_results and len(results) >= max_results:
@@ -189,7 +217,7 @@ class Client:
             base = prefix_path if prefix else bucket._root
             for p in base.rglob("*"):
                 if p.is_file():
-                    rel = str(p.relative_to(bucket._root))
+                    rel = p.relative_to(bucket._root).as_posix()
                     results.append(Blob(bucket, rel))
                     if max_results and len(results) >= max_results:
                         break

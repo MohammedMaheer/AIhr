@@ -42,7 +42,7 @@ import vps_local  # noqa: F401  (auto-installs sys.modules shims if SMARTHR_LOCA
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Depends, Cookie
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, RedirectResponse, FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
@@ -61,7 +61,7 @@ import io
 import asyncio
 import copy
 from typing import List, Dict, Any, AsyncGenerator
-import PyPDF2
+import pypdf as PyPDF2
 import pdfplumber
 from docx import Document
 import warnings
@@ -99,6 +99,9 @@ except ImportError:
     tasks_v2 = None
 from google.protobuf import timestamp_pb2
 from search_criteria import parse_search_criteria, apply_criteria_to_results
+from services.llm_cache import PreparationCache
+from services.search_reuse import SearchReuse
+from services.deepseek_provider import enabled as using_deepseek, display_name as llm_display_name
 
 
 
@@ -374,6 +377,9 @@ def get_vertex_ai_model(model_name="gemini-2.5-flash"):
     """Get Vertex AI model with proper Cloud Run configuration"""
     import os
 
+    if using_deepseek():
+        return None, "genai"
+
     # Check if running on Cloud Run
     if os.environ.get('K_SERVICE'):
         print(f"🏃 Running on Cloud Run - using vertexai SDK")
@@ -572,9 +578,11 @@ def _compute_asset_versions() -> dict[str, str]:
     so browsers invalidate cached copies whenever we deploy a change.
     """
     import hashlib as _hashlib
-    out: dict[str, str] = {"main_js": "0", "style_css": "0"}
+    out: dict[str, str] = {"main_js": "0", "style_css": "0", "security_js": "0"}
     for key, path in (("main_js", "static/js/main.js"),
-                      ("style_css", "static/css/style.css")):
+                      ("candidate_state_js", "static/js/candidate-state.js"),
+                      ("style_css", "static/css/style.css"),
+                      ("security_js", "static/js/security.js")):
         try:
             with open(path, "rb") as fh:
                 out[key] = _hashlib.md5(fh.read()).hexdigest()[:8]
@@ -597,6 +605,9 @@ class TokenTracker:
 
     def add_call(self, operation: str, model: str, input_tokens: int = 0, output_tokens: int = 0, success: bool = True):
         """Record an LLM API call"""
+        if using_deepseek():
+            from services.deepseek_provider import model_name
+            model = model_name()
         call_data = {
             "operation": operation,
             "model": model,
@@ -642,6 +653,36 @@ class TokenTracker:
             "operations_breakdown": operations_summary,
             "calls_detail": self.calls
         }
+
+_jd_preparation_cache = PreparationCache(
+    max_entries=int(os.getenv("JD_PREPARATION_CACHE_MAX_ENTRIES", "128")),
+    ttl_seconds=float(os.getenv("JD_PREPARATION_CACHE_TTL_SECONDS", "900")),
+)
+_search_reuse = SearchReuse()
+
+
+def _match_candidate_keywords(resume_content, keywords, token_tracker=None, user_context=None):
+    return _search_reuse.match_keywords(
+        resume_content, keywords, KEYWORD_MATCHING_PROMPT, user_context,
+        lambda: analyze_candidate_keywords(resume_content, keywords, token_tracker),
+    )
+
+
+def _prepare_search_input(operation: str, query: str, user: dict,
+                          token_tracker: TokenTracker = None) -> Dict[str, Any]:
+    functions = {
+        "keywords": extract_standardized_keywords_from_jd,
+        "query": extract_keywords_for_single_query,
+    }
+    compute = functions[operation]
+    expected_field = "all_keywords" if operation == "keywords" else "optimized_query"
+    return _jd_preparation_cache.get_or_compute(
+        PreparationCache.key(operation, query, user),
+        lambda: compute(query, token_tracker),
+        lambda value: (isinstance(value, dict) and value.get("success") is True
+                       and not value.get("fallback_used") and bool(value.get(expected_field))),
+    )
+
 
 class ProgressTracker:
     def __init__(self):
@@ -815,6 +856,8 @@ def gemini_client():
     This protects production from a single-provider outage (e.g. a suspended
     API key) without requiring ``SMARTHR_LOCAL_MODE=1``.
     """
+    if using_deepseek():
+        return _DeepSeekLLMClient()
     has_adc = bool(
         os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
         or os.environ.get("GOOGLE_CLOUD_PROJECT")
@@ -1055,11 +1098,26 @@ class _ResilientLLMClient:
         self._real = real_client
         self.models = _ResilientModels(real_client.models if real_client is not None else None)
 
-    # Some call sites may inspect attributes; pass through to real client when present.
     def __getattr__(self, name):
         if self._real is not None and hasattr(self._real, name):
             return getattr(self._real, name)
         raise AttributeError(name)
+
+
+class _DeepSeekModels:
+    def generate_content(self, model=None, contents=None, config=None, **kwargs):
+        from services.deepseek_provider import generate_completion
+        return _OpenAIResponseAdapter(generate_completion(contents, config), fallback_provider="deepseek")
+
+    def list(self, *args, **kwargs):
+        from services.deepseek_provider import get_client
+        return get_client().models.list()
+
+
+class _DeepSeekLLMClient:
+    def __init__(self):
+        self.models = _DeepSeekModels()
+
 # === End resilient LLM wrapper ===========================================
 
 
@@ -1396,52 +1454,15 @@ def create_hr_scorecard_task(
     Returns:
         Dict with task information
     """
-    # VPS / self-hosted mode: dispatch to local process instead of Cloud Tasks.
-    # Enabled by setting USE_CLOUD_TASKS=false in the environment.
+    # The durable payload is committed with the task before this acknowledgement.
     if os.environ.get("USE_CLOUD_TASKS", "true").strip().lower() in ("false", "0", "no"):
         try:
-            local_url = os.environ.get(
-                "LOCAL_TASK_DISPATCH_URL",
-                "http://127.0.0.1:8081/api/process-hr-scorecard-task",
-            )
-            task_payload = {
-                'task_id': task_id,
-                'query': query,
-                'job_title': job_title,
-                'result_count': result_count,
-                'user_data': {
-                    'id': user_data.get('id'),
-                    'email': user_data.get('email'),
-                    'company': user_data.get('company'),
-                    'user_type': user_data.get('user_type')
-                },
-                'created_at': datetime.utcnow().isoformat(),
-            }
-
-            def _fire_local_task():
-                try:
-                    import requests as _rq
-                    _rq.post(
-                        local_url,
-                        json=task_payload,
-                        headers={'X-Internal-Task': '1'},
-                        timeout=(5, 600),
-                    )
-                except Exception as _e:
-                    print(f"⚠️  Local task dispatch failed: {_e}")
-                    try:
-                        update_task_status(task_id, 'failed', error=str(_e))
-                    except Exception:
-                        pass
-
-            import threading as _th
-            _th.Thread(target=_fire_local_task, daemon=True).start()
-            print(f"✅ Local task dispatched (no Cloud Tasks): {task_id}")
+            print(f"Local search queued durably: {task_id}")
             return {
                 'success': True,
                 'task_name': f"local/{task_id}",
                 'task_id': task_id,
-                'queue_name': 'local-inproc',
+                'queue_name': 'postgresql',
                 'scheduled_time': None,
             }
         except Exception as e:
@@ -1570,6 +1591,9 @@ def update_task_status(task_id: str, status: str, progress: dict = None, error: 
 
     except Exception as e:
         print(f"❌ Error updating task status: {str(e)}")
+        from services.task_lease import current_lease
+        if current_lease.get():
+            raise
         return False
 
 def save_task_to_database(
@@ -1597,7 +1621,10 @@ def save_task_to_database(
     try:
         db = get_db_manager()
 
-        # Save task to database
+        # Store dispatch information in the same transaction as the pending task.
+        from services.task_queue import local_queue_enabled
+        task_payload = {'task_id': task_id, 'user_data': {'id': user_id},
+                        'company_id': company_id} if local_queue_enabled() else None
         success = db.save_hr_scorecard_task(
             task_id=task_id,
             query=query,
@@ -1606,7 +1633,8 @@ def save_task_to_database(
             user_id=user_id,
             company_id=company_id,
             status='pending',
-            created_at=datetime.utcnow().isoformat()
+            created_at=datetime.utcnow().isoformat(),
+            task_payload=task_payload
         )
 
         if success:
@@ -1719,8 +1747,8 @@ def extract_text_from_pdf(file_content: bytes) -> str:
 
     # Method 2: Try PyPDF2 with improved error handling
     try:
-        import PyPDF2
-        from PyPDF2.errors import PdfReadError, PdfReadWarning
+        import pypdf as PyPDF2
+        from pypdf.errors import PdfReadError, PdfReadWarning
 
         # Suppress PyPDF2 warnings
         warnings.filterwarnings("ignore", category=PdfReadWarning)
@@ -1751,7 +1779,7 @@ def extract_text_from_pdf(file_content: bytes) -> str:
 
     # Method 3: Try alternative PyPDF2 approach (different constructor)
     try:
-        import PyPDF2
+        import pypdf as PyPDF2
 
         file_stream = io.BytesIO(file_content)
         pdf_reader = PyPDF2.PdfReader(file_stream, strict=False)  # Non-strict mode
@@ -1899,7 +1927,7 @@ def send_file_to_gemini_directly(file_content: bytes, file_path: str, query: str
             return {
                 "analysis": f"File too large for direct analysis ({len(file_content):,} bytes > {max_size:,} bytes)",
                 "match_score": 0,
-                "analyzed_by": "Gemini 2.5 Flash (Direct File)",
+                "analyzed_by": llm_display_name("(Direct File)"),
                 "success": False,
                 "error": "File size exceeds limit"
             }
@@ -1913,7 +1941,7 @@ def send_file_to_gemini_directly(file_content: bytes, file_path: str, query: str
             return {
                 "analysis": f"File encoding failed: {str(encode_error)}",
                 "match_score": 0,
-                "analyzed_by": "Gemini 2.5 Flash (Direct File)",
+                "analyzed_by": llm_display_name("(Direct File)"),
                 "success": False,
                 "error": "Base64 encoding failed"
             }
@@ -2000,7 +2028,7 @@ def send_file_to_gemini_directly(file_content: bytes, file_path: str, query: str
                 "analysis": analysis_text,
                 "analysis_json": analysis_json,
                 "match_score": score,
-                "analyzed_by": "Gemini 2.5 Flash (Direct File)",
+                "analyzed_by": llm_display_name("(Direct File)"),
                 "success": True,
                 "file_processed": True
             }
@@ -2016,7 +2044,7 @@ def send_file_to_gemini_directly(file_content: bytes, file_path: str, query: str
                 "analysis": analysis_text,
                 "analysis_json": None,
                 "match_score": score,
-                "analyzed_by": "Gemini 2.5 Flash (Direct File)",
+                "analyzed_by": llm_display_name("(Direct File)"),
                 "success": True,
                 "json_parse_error": str(e),
                 "file_processed": True
@@ -2029,7 +2057,7 @@ def send_file_to_gemini_directly(file_content: bytes, file_path: str, query: str
         return {
             "analysis": f"Direct file analysis failed: {str(e)}",
             "match_score": 0,
-            "analyzed_by": "Gemini 2.5 Flash (Direct File)",
+            "analyzed_by": llm_display_name("(Direct File)"),
             "success": False,
             "error": str(e),
             "file_processed": False
@@ -2275,7 +2303,10 @@ def get_file_content_and_bytes_from_gcs(file_path: str, user_context: dict = Non
         print(f"✅ File downloaded successfully (size: {len(file_content)} bytes)")
 
         # Extract text based on file type
-        extracted_text = extract_text_from_file(file_content, file_path)
+        extracted_text = _search_reuse.extract(
+            file_content, bucket_name, file_path, user_context,
+            lambda: extract_text_from_file(file_content, file_path),
+        )
 
         return extracted_text, file_content
 
@@ -2410,6 +2441,7 @@ def create_company_search_request(
     company_code: str = None,
     result_count: int = 10,
     max_value: int = MAX_SEARCH_RESULTS,
+    user_context: dict = None,
 ) -> 'discoveryengine_v1.SearchRequest':
     """
     Create a search request using company-specific datastore for automatic tenant isolation.
@@ -2421,7 +2453,11 @@ def create_company_search_request(
     print(f"📝 Query: {query}")
 
     # Get company-specific datastore (automatic isolation)
-    user_context = {'company': {'company_code': company_code}} if company_code else None
+    if user_context is None and company_code:
+        company = get_db_manager().get_company_by_code(company_code)
+        if not company:
+            raise HTTPException(status_code=403, detail="Company resources unavailable")
+        user_context = {'company': company}
     bucket_name, datastore_id = get_company_resources(user_context)
 
     print(f"📚 Using datastore: {datastore_id}")
@@ -2435,6 +2471,7 @@ def create_company_search_request(
         serving_config=serving_config,
         query=query,
         page_size=result_count,
+        filter=_local_company_search_filter(user_context),
         content_search_spec=build_discovery_content_search_spec(discoveryengine_v1),
     )
 
@@ -2457,6 +2494,25 @@ def get_search_client(location: str = None):
     )
 
     return discoveryengine_v1.SearchServiceClient(client_options=client_options)
+
+def _local_company_search_filter(user_context: dict = None) -> str:
+    if os.getenv("SMARTHR_LOCAL_MODE", "").lower() not in {"1", "true", "yes", "on"}:
+        return ""  # Cloud Discovery uses the isolated company datastore.
+    if user_context is None:
+        return ""
+    company_id = _get_company_id(user_context)
+    if company_id is None:
+        if user_context.get("user_type") == "super_admin":
+            return ""
+        raise HTTPException(status_code=403, detail="Company context required")
+    try:
+        company_id = int(company_id)
+        if company_id <= 0:
+            raise ValueError()
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=403, detail="Invalid company context")
+    return f'company_id: ANY("{company_id}")'
+
 
 def create_universal_search_request(
     query: str,
@@ -2497,6 +2553,7 @@ def create_universal_search_request(
         serving_config=serving_config,
         query=query,
         page_size=result_count,
+        filter=_local_company_search_filter(user_context),
         content_search_spec=build_discovery_content_search_spec(discoveryengine_v1),
     )
 
@@ -3331,7 +3388,7 @@ async def analyze_resume_with_split_approach(resume_content: str, query: str, jo
         "hr_scorecard": scorecard,
         "analysis": f"Split approach HR scorecard analysis completed successfully",
         "match_score": overall_score,
-        "analyzed_by": "Gemini 2.5 Flash Split Approach",
+        "analyzed_by": llm_display_name("Split Approach"),
         "success": True,
         "scorecard_type": "split_approach",
         "entity_extraction": entity_result,
@@ -3672,7 +3729,7 @@ def _enrich_scorecard_evidence(
     return scorecard
 
 
-async def analyze_resume_with_hr_scorecard(resume_content: str, query: str, job_title: str = "Position", standardized_keywords: List[str] = None, token_tracker: TokenTracker = None, file_path: Optional[str] = None) -> Dict[str, Any]:
+async def analyze_resume_with_hr_scorecard(resume_content: str, query: str, job_title: str = "Position", standardized_keywords: List[str] = None, token_tracker: TokenTracker = None, file_path: Optional[str] = None, user_context: Optional[dict] = None) -> Dict[str, Any]:
     """Generate comprehensive HR scorecard analysis for resume screening"""
     print(f"\n🏢 HR SCORECARD ANALYSIS STARTING")
     print(f"📝 Job requirements: '{query[:100]}...'")
@@ -3708,6 +3765,7 @@ async def analyze_resume_with_hr_scorecard(resume_content: str, query: str, job_
 
             generate_content_config = types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0),
                 temperature=0.2,  # Lower temperature for consistent HR analysis
+                response_mime_type="application/json" if using_deepseek() else None,
                 top_p=0.8,
                 # 10000 = comfortable headroom for Gemini 2.5 Flash (which
                 # spends ~2.4-3.4k tokens on internal "thinking" before the
@@ -3802,7 +3860,7 @@ async def analyze_resume_with_hr_scorecard(resume_content: str, query: str, job_
                     # Apply standardized keywords to basic scorecard if available
                     if standardized_keywords and len(standardized_keywords) > 0:
                         print(f"🔍 Applying standardized keywords to basic scorecard")
-                        keyword_analysis = await asyncio.to_thread(analyze_candidate_keywords, resume_content, standardized_keywords, token_tracker)
+                        keyword_analysis = await asyncio.to_thread(_match_candidate_keywords, resume_content, standardized_keywords, token_tracker, user_context)
                         basic_scorecard['keyword_coverage'] = keyword_analysis
                         basic_scorecard = adjust_scorecard_with_keyword_analysis(basic_scorecard, keyword_analysis)
                         print(f"✅ Applied standardized keywords to basic scorecard")
@@ -3835,8 +3893,7 @@ async def analyze_resume_with_hr_scorecard(resume_content: str, query: str, job_
                 return split_result
 
             print(f"📄 HR scorecard response length: {len(analysis_text)} characters")
-            print(f"📄 FULL LLM RESPONSE:")
-            print(analysis_text)
+            logging.debug('HR scorecard response received (%s characters)', len(analysis_text))
 
             # Parse JSON response with enhanced error handling
             try:
@@ -3892,7 +3949,7 @@ async def analyze_resume_with_hr_scorecard(resume_content: str, query: str, job_
                             # Remove the last line if it looks incomplete
                             last_line = lines[-1].strip()
                             if last_line and not last_line.endswith(('"', '}', ']', ',')):
-                                print(f"🔧 Removing incomplete last line: {last_line}")
+                                logging.debug('Removing incomplete response line')
                                 clean_text = '\n'.join(lines[:-1])
 
                         # Close any open structures
@@ -3942,7 +3999,7 @@ async def analyze_resume_with_hr_scorecard(resume_content: str, query: str, job_
                         print(f"🎯 Keywords: {standardized_keywords[:10]}{'...' if len(standardized_keywords) > 10 else ''}")
                         print(f"🔄 Calling analyze_candidate_keywords() function...")
 
-                        keyword_analysis = await asyncio.to_thread(analyze_candidate_keywords, resume_content, standardized_keywords, token_tracker)
+                        keyword_analysis = await asyncio.to_thread(_match_candidate_keywords, resume_content, standardized_keywords, token_tracker, user_context)
 
                         print(f"📊 analyze_candidate_keywords() returned: {keyword_analysis}")
 
@@ -3989,34 +4046,29 @@ async def analyze_resume_with_hr_scorecard(resume_content: str, query: str, job_
                         "hr_scorecard": adjusted_scorecard,
                         "analysis": analysis_text,
                         "match_score": adjusted_scorecard.get('candidate_overview', {}).get('overall_match_score', 0),
-                        "analyzed_by": "Gemini 2.5 Flash HR Scorecard",
+                        "analyzed_by": llm_display_name("HR Scorecard"),
                         "success": True,
                         "scorecard_type": "comprehensive_hr"
                     }
 
                 except json.JSONDecodeError as e:
                     print(f"⚠️ Failed to parse HR scorecard JSON: {str(e)}")
-                    print(f"🔧 Problematic JSON snippet: {clean_text[-200:]}")
                     print(f"🔍 DETAILED HR SCORECARD JSON ERROR:")
                     print(f"   - Error message: {str(e)}")
                     print(f"   - Error position: {e.pos if hasattr(e, 'pos') else 'Unknown'}")
                     print(f"   - Error line: {e.lineno if hasattr(e, 'lineno') else 'Unknown'}")
                     print(f"   - Error column: {e.colno if hasattr(e, 'colno') else 'Unknown'}")
                     print(f"   - Attempt number: {attempt + 1}")
-                    print(f"   - Full clean text:\n{clean_text}")
-                    print(f"   - Original analysis text:\n{analysis_text}")
-                    raise Exception(f"DETAILED ERROR: HR scorecard JSON parsing failed on attempt {attempt + 1} - {str(e)}. Full response: {analysis_text}")
+                    raise ValueError(f"HR scorecard JSON parsing failed on attempt {attempt + 1}") from e
 
             except Exception as json_error:
                 print(f"❌ JSON parsing failed: {str(json_error)}")
                 print(f"🔍 DETAILED HR SCORECARD PROCESSING ERROR:")
-                print(f"   - Error message: {str(json_error)}")
+                print(f"   - Error category: {type(json_error).__name__}")
                 print(f"   - Error type: {type(json_error).__name__}")
-                print(f"   - Error args: {json_error.args}")
                 print(f"   - Attempt number: {attempt + 1}")
                 print(f"   - Analysis text length: {len(analysis_text) if analysis_text else 0}")
-                print(f"   - Analysis text preview: {analysis_text[:300] if analysis_text else 'None'}")
-                raise Exception(f"DETAILED ERROR: HR scorecard processing failed on attempt {attempt + 1} - {str(json_error)}. Analysis text: {analysis_text}")
+                raise ValueError(f"HR scorecard processing failed on attempt {attempt + 1}") from json_error
 
         except Exception as attempt_error:
             print(f"❌ Attempt {attempt + 1} failed: {str(attempt_error)}")
@@ -4135,7 +4187,7 @@ def analyze_resume_with_gemini(resume_content: str, query: str) -> Dict[str, Any
             return {
                 "analysis": "Empty response from Gemini",
                 "match_score": 0,
-                "analyzed_by": "Gemini 2.5 Flash",
+                "analyzed_by": llm_display_name(),
                 "success": False,
                 "error": "Empty response"
             }
@@ -4169,7 +4221,7 @@ def analyze_resume_with_gemini(resume_content: str, query: str) -> Dict[str, Any
                 "analysis": analysis_text,
                 "analysis_json": analysis_json,
                 "match_score": score,
-                "analyzed_by": "Gemini 2.5 Flash",
+                "analyzed_by": llm_display_name(),
                 "success": True
             }
             print(f"✅ Gemini analysis completed successfully")
@@ -4184,7 +4236,7 @@ def analyze_resume_with_gemini(resume_content: str, query: str) -> Dict[str, Any
                 "analysis": analysis_text,
                 "analysis_json": None,
                 "match_score": score,
-                "analyzed_by": "Gemini 2.5 Flash",
+                "analyzed_by": llm_display_name(),
                 "success": True,
                 "json_parse_error": str(e)
             }
@@ -4196,7 +4248,7 @@ def analyze_resume_with_gemini(resume_content: str, query: str) -> Dict[str, Any
         error_result = {
             "analysis": f"Analysis failed: {str(e)}",
             "match_score": 0,
-            "analyzed_by": "Gemini 2.5 Flash",
+            "analyzed_by": llm_display_name(),
             "success": False,
             "error": str(e)
         }
@@ -4237,6 +4289,8 @@ async def startup_event():
         db = get_db_manager()
         if db:
             print("✅ Database connection initialized successfully")
+            await asyncio.to_thread(db.ensure_task_queue_schema)
+            await asyncio.to_thread(db.ensure_candidate_state_schema)
             try:
                 db.ensure_perf_indexes()
                 print("✅ Performance indexes ensured")
@@ -4287,6 +4341,21 @@ async def startup_event():
             print("Local search runtime warmed")
         except Exception as _warm_err:
             print(f"Local search warmup skipped: {_warm_err}")
+
+    from services.task_queue import SearchWorker, local_queue_enabled
+    if local_queue_enabled():
+        worker = SearchWorker(get_db_manager, run_hr_scorecard_task,
+            max_active=int(os.getenv('TASK_MAX_ACTIVE', '2')),
+            max_attempts=int(os.getenv('TASK_MAX_ATTEMPTS', '3')))
+        worker.start()
+        app.state.search_worker = worker
+
+
+@app.on_event("shutdown")
+async def stop_search_worker():
+    worker = getattr(app.state, 'search_worker', None)
+    if worker:
+        await worker.stop()
 
 # Health check endpoint for Cloud Run
 async def health_check():
@@ -4398,15 +4467,13 @@ async def health_check_deep(llm: bool = False):
         st_start = time.time()
         probe_dir = os.path.join(os.environ.get("SMARTHR_STORAGE_ROOT", "/app/storage"), "_healthcheck")
         os.makedirs(probe_dir, exist_ok=True)
-        probe_path = os.path.join(probe_dir, f"probe_{int(time.time()*1000)}.tmp")
-        with open(probe_path, "w", encoding="utf-8") as f:
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w+", dir=probe_dir, prefix="probe_",
+                                         suffix=".tmp", encoding="utf-8") as f:
             f.write("ok")
-        with open(probe_path, "r", encoding="utf-8") as f:
+            f.flush()
+            f.seek(0)
             ok = f.read() == "ok"
-        try:
-            os.remove(probe_path)
-        except OSError:
-            pass
         if ok:
             checks["storage"] = {"status": "ok", "ms": int((time.time() - st_start) * 1000), "path": probe_dir}
         else:
@@ -4437,62 +4504,11 @@ async def health_check_deep(llm: bool = False):
         checks["gcs"] = {"status": "fail", "error": str(e)[:200]}
         overall_ok = False
 
-    # LLM provider ping is opt-in because even cheap provider probes can create
-    # paid API traffic when health endpoints are polled continuously.
-    if not llm:
-        checks["llm"] = {
-            "status": "skipped",
-            "note": "pass ?llm=1 to include paid provider diagnostics",
-        }
-    else:
-        # LLM provider ping (cached 60s to avoid hitting the API on every probe).
-        # With the resilient wrapper, "ok" means *some* provider can serve
-        # requests (Gemini preferred, OpenAI fallback). We surface
-        # circuit-breaker state so operators can see when we've degraded onto
-        # OpenAI.
-        try:
-            has_gemini_creds = bool(
-                os.environ.get("GEMINI_API_KEY")
-                or os.environ.get("GOOGLE_GEMINI_API_KEY")
-                or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-                or os.environ.get("GOOGLE_CLOUD_PROJECT")
-            )
-            has_openai = bool(os.environ.get("OPENAI_API_KEY"))
-            if not has_gemini_creds and not has_openai:
-                checks["gemini"] = {"status": "skipped", "note": "no LLM credentials in env"}
-            else:
-                gem_start = time.time()
-                ok, err = _gemini_ping_cached()
-                circuit_open = _gemini_circuit_open()
-                provider = "gemini"
-                if circuit_open:
-                    provider = "openai" if has_openai else "none"
-                entry = {
-                    "ms": int((time.time() - gem_start) * 1000),
-                    "cached_ttl_s": 60,
-                    "provider": provider,
-                    "gemini_circuit_open": circuit_open,
-                    "gemini_fail_count": _gemini_circuit_state.get("fail_count", 0),
-                }
-                if ok:
-                    # Healthy via *some* provider. If we're on OpenAI fallback,
-                    # surface that as a warning but don't fail the overall check
-                    # (the system is serving requests).
-                    entry["status"] = "ok"
-                    if circuit_open:
-                        entry["note"] = "serving via OpenAI fallback (Gemini circuit open)"
-                        entry["last_gemini_error"] = (
-                            _gemini_circuit_state.get("last_error", "") or ""
-                        )[:200]
-                    checks["gemini"] = entry
-                else:
-                    entry["status"] = "fail"
-                    entry["error"] = err or "unknown"
-                    checks["gemini"] = entry
-                    overall_ok = False
-        except Exception as e:
-            checks["gemini"] = {"status": "fail", "error": str(e)[:200]}
-            overall_ok = False
+    # Preserve the query argument for old monitors, never its paid side effect.
+    checks["llm"] = {
+        "status": "skipped",
+        "note": "AI provider calls are excluded from public health checks",
+    }
 
     body = {"status": "healthy" if overall_ok else "degraded",
             "timestamp": time.time(),
@@ -4523,7 +4539,9 @@ async def get_current_user(
         return None
 
     db = get_db_manager()
-    user = db.verify_session(session_token)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Authentication service unavailable")
+    user = await asyncio.to_thread(db.verify_session, session_token)
     return user
 
 async def require_auth(
@@ -4534,6 +4552,10 @@ async def require_auth(
     user = await get_current_user(request, session_token)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    if user.get('user_type') not in {'super_admin', 'tenant_admin', 'tenant_user'}:
+        raise HTTPException(status_code=403, detail="Account role is not permitted")
+    if user.get('user_type') != 'super_admin':
+        _get_company_id(user)
     return user
 
 async def require_super_admin(
@@ -4595,19 +4617,7 @@ async def login(
         "redirect": "/dashboard" if user['user_type'] == 'super_admin' else "/"
     })
 
-    response.set_cookie(
-        key="session_token",
-        value=session_token,
-        httponly=True,
-        secure=True,
-        # `strict` blocks the cookie on any cross-site request, including
-        # top-level GET navigations from external sites (e.g. an email
-        # link). That's the safe default for an internal HR tool. If we
-        # later need bookmarklets or external SSO redirects we can soften
-        # this back to "lax".
-        samesite="strict",
-        max_age=7 * 24 * 60 * 60  # 7 days
-    )
+    _set_session_cookie(response, session_token)
 
     response.set_cookie(
         key=CSRF_COOKIE_NAME,
@@ -4619,6 +4629,12 @@ async def login(
     )
 
     return response
+
+def _set_session_cookie(response, session_token: str):
+    # OAuth returns via a cross-site top-level GET. Unsafe requests still require CSRF.
+    response.set_cookie("session_token", session_token, httponly=True, secure=True,
+                        samesite="lax", max_age=7 * 24 * 60 * 60, path="/")
+
 
 @app.post("/api/logout")
 async def logout(
@@ -5636,10 +5652,28 @@ def scrape_gmail_attachments(email_address: str, password: str, limit: int = 100
         print(f"❌ Gmail scraping failed: {e}")
         raise
 
-def scrape_outlook_attachments(email_address: str, password: str, limit: int = 100) -> List[Dict[str, Any]]:
+def scrape_outlook_attachments(email_address: str, password: str, limit: int = 100, user_id: int = None) -> List[Dict[str, Any]]:
     """Scrape Outlook 365 for resume attachments using Microsoft Graph API."""
     results = []
 
+    if user_id:
+        db = get_db_manager()
+        connected = db.get_oauth_token(user_id, "microsoft")
+        if connected:
+            from services.calendar_service import _get_valid_token
+            from services.graph_mail import collect_resume_mail
+            token, mailbox = _get_valid_token("microsoft", user_id, db)
+            if not token:
+                raise RuntimeError("Reconnect the Microsoft mailbox in Integrations before importing CVs.")
+            if not mailbox or mailbox.casefold() != (email_address or "").strip().casefold():
+                raise RuntimeError("The requested email does not match the connected Microsoft mailbox.")
+            require_context = os.getenv("OUTLOOK_REQUIRE_RESUME_CONTEXT", "false").lower() in {"1", "true", "yes", "on"}
+            return collect_resume_mail(token, limit,
+                include_attachment=lambda name, related: is_supported_resume_attachment(name)
+                and (not require_context or should_collect_email_attachment(name, related)),
+                classify_context=is_resume_related_email)
+    if not password:
+        raise RuntimeError("Connect your Microsoft mailbox in Integrations before importing CVs without a password. Do not disable MFA.")
     try:
         print(f"📧 Connecting to Outlook 365 for {email_address}")
 
@@ -6019,7 +6053,7 @@ async def scrape_email_attachments(
     request: Request,
     email_provider: str = Form(...),  # "gmail" or "outlook"
     email_address: str = Form(...),
-    password: str = Form(...),
+    password: str = Form(None),
     limit: int = Form(100),
     folder_path: str = Form(None),
     user: dict = Depends(require_auth)
@@ -6045,7 +6079,7 @@ async def scrape_email_attachments(
             )
         else:  # outlook
             scraped_emails = await asyncio.to_thread(
-                scrape_outlook_attachments, email_address, password, limit
+                scrape_outlook_attachments, email_address, password, limit, user['id']
             )
 
         if not scraped_emails:
@@ -6129,7 +6163,7 @@ async def upload_files(
             max_value=MAX_EMAIL_SCRAPE_LIMIT,
             field_name="email_limit",
         )
-        if not email_provider or not email_address or not email_password:
+        if not email_provider or not email_address or (not email_password and email_provider.lower() != 'outlook'):
             raise HTTPException(status_code=400, detail="Email provider, address, and password are required for email scraping")
 
         print(f"📧 EMAIL SCRAPING MODE ACTIVATED")
@@ -6146,7 +6180,7 @@ async def upload_files(
                 )
             elif email_provider.lower() == "outlook":
                 scraped_emails = await asyncio.to_thread(
-                    scrape_outlook_attachments, email_address, email_password, email_limit
+                    scrape_outlook_attachments, email_address, email_password, email_limit, user['id']
                 )
             else:
                 raise HTTPException(status_code=400, detail="Email provider must be 'gmail' or 'outlook'")
@@ -6798,7 +6832,11 @@ def extract_keywords_for_single_query(query: str, token_tracker: TokenTracker = 
         ]
 
         # Try different model versions with fallbacks
-        models_to_try = ["gemini-2.5-flash", "gemini-1.5-pro", "gemini-pro"]
+        if using_deepseek():
+            from services.deepseek_provider import model_name
+            models_to_try = [model_name()]
+        else:
+            models_to_try = ["gemini-2.5-flash", "gemini-1.5-pro", "gemini-pro"]
         generate_response = None
 
         for model_name in models_to_try:
@@ -7418,7 +7456,7 @@ async def enhanced_search_with_single_query(
     try:
         # Step 1: LLM Single Query Optimization (blocking SDK call — run in
         # a thread so the event loop stays responsive for other requests).
-        keyword_result = await asyncio.to_thread(extract_keywords_for_single_query, query)
+        keyword_result = await asyncio.to_thread(_prepare_search_input, "query", query, user)
         enhanced_query = keyword_result.get('optimized_query', query)
         keywords_data = keyword_result.get('keywords_data', {})
 
@@ -7647,7 +7685,7 @@ async def smart_search_with_streaming(
             progress_msg = tracker.emit('🧠 Extracting keywords from job description...', 'info')
             yield f"data: {json.dumps(progress_msg)}\n\n"
 
-            keyword_result = extract_keywords_for_single_query(query)
+            keyword_result = await asyncio.to_thread(_prepare_search_input, "query", query, user)
             optimized_query = keyword_result.get('optimized_query', query)
 
             if keyword_result.get('success'):
@@ -7714,7 +7752,7 @@ async def execute_smart_search_with_progress(query: str, result_count: int, trac
     """Execute smart search with real-time progress updates"""
     try:
         # Extract keywords
-        keyword_result = extract_keywords_for_single_query(query)
+        keyword_result = await asyncio.to_thread(_prepare_search_input, "query", query, user)
         optimized_query = keyword_result.get('optimized_query', query)
 
         # Perform vector search using universal search helper
@@ -7878,7 +7916,7 @@ async def execute_smart_search_internal(query: str, result_count: int, tracker: 
     """Internal function to execute smart search with optional progress tracking"""
     try:
         # Extract keywords
-        keyword_result = extract_keywords_for_single_query(query)
+        keyword_result = await asyncio.to_thread(_prepare_search_input, "query", query, user)
         optimized_query = keyword_result.get('optimized_query', query)
 
         # Perform vector search using universal search helper
@@ -8092,7 +8130,7 @@ async def multi_query_search_and_analyze(
                 raise HTTPException(status_code=400, detail=str(e))
         # Step 1: Extract 4 structured search queries
         # Use the single query extraction as fallback since extract_keywords_with_llm doesn't exist
-        keyword_result = extract_keywords_for_single_query(query)
+        keyword_result = await asyncio.to_thread(_prepare_search_input, "query", query, user)
 
         if not keyword_result.get('success'):
             print("⚠️ Using fallback 4-query extraction")
@@ -8554,7 +8592,7 @@ async def hr_scorecard_search(
         }
 
         # Save task to database first
-        success = save_task_to_database(
+        success = await asyncio.to_thread(save_task_to_database,
             task_id=task_id,
             query=query,
             job_title=job_title,
@@ -8658,7 +8696,8 @@ async def hr_scorecard_search(
         request = create_company_search_request(
             query=optimized_query,
             company_code=company_code,
-            result_count=result_count
+            result_count=result_count,
+            user_context=user,
         )
 
         response = client.search(request)
@@ -8997,6 +9036,8 @@ async def hr_scorecard_search(
             # Don't fail the entire request if database save fails
             final_response['database_save_error'] = str(db_error)
 
+        return final_response
+
 @app.post("/api/process-hr-scorecard-task")
 async def process_hr_scorecard_task(request: Request):
     """Process HR scorecard search task - called by Cloud Tasks"""
@@ -9021,10 +9062,17 @@ async def process_hr_scorecard_task(request: Request):
         except Exception as _oidc_err:
             print(f"❌ OIDC verification failed: {_oidc_err}")
             raise HTTPException(status_code=401, detail="Invalid OIDC token")
-    try:
-        # Get task payload from request
-        task_payload = await request.json()
+    else:
+        from services.task_auth import verify
+        verify(await request.body(), request.headers)
+    return await run_hr_scorecard_task(await request.json())
 
+
+async def run_hr_scorecard_task(task_payload):
+    """Shared execution path for signed Cloud Tasks and the durable VPS worker."""
+    from services.task_lease import PermanentTaskError, TaskLeaseLost, current_lease
+    lease = current_lease.get()
+    try:
         task_id = task_payload.get('task_id')
         query = task_payload.get('query')
         job_title = task_payload.get('job_title')
@@ -9035,26 +9083,34 @@ async def process_hr_scorecard_task(request: Request):
         )
         user_data = task_payload.get('user_data')
 
-        # Idempotency: if Cloud Tasks retries a task that already finished
-        # successfully, do not redo the work (which can clobber the original
-        # search_id with a new empty run). Returning 200 OK acknowledges the
-        # delivery so the queue drops the retry.
-        try:
-            db_idem = get_db_manager()
-            existing = db_idem.get_task_status(task_id) if (db_idem and task_id) else None
-            if existing and existing.get('status') == 'completed':
-                progress_existing = existing.get('progress')
-                if isinstance(progress_existing, str):
-                    try:
-                        progress_existing = json.loads(progress_existing)
-                    except Exception:
-                        progress_existing = {}
-                if isinstance(progress_existing, dict) and progress_existing.get('search_id'):
-                    print(f"⏩ Task {task_id} already completed with search_id={progress_existing.get('search_id')}, skipping retry")
-                    return {"success": True, "skipped": True, "task_id": task_id}
-        except Exception as idem_err:
-            # Don't fail the task because of an idempotency check failure.
-            print(f"⚠️  Idempotency check failed for {task_id}: {idem_err}")
+        if not task_id or not isinstance(user_data, dict):
+            raise HTTPException(status_code=422, detail="Invalid task payload")
+        db_idem = get_db_manager()
+        if not db_idem:
+            raise HTTPException(status_code=503, detail="Task database unavailable")
+        if lease:
+            if lease[0] != task_id:
+                raise TaskLeaseLost("Task context mismatch")
+            claimed = await asyncio.to_thread(db_idem.get_owned_hr_task, task_id, lease[1])
+            if not claimed:
+                raise TaskLeaseLost("Search ownership expired")
+        else:
+            claimed = db_idem.claim_hr_scorecard_task(task_id)
+        if not claimed:
+            existing = db_idem.get_task_status(task_id)
+            if existing and existing.get('status') in ('completed', 'processing'):
+                return {"success": True, "skipped": True, "task_id": task_id}
+            raise HTTPException(status_code=404, detail="Task not found")
+        if str(claimed['user_id']) != str(user_data.get('id')):
+            raise HTTPException(status_code=403, detail="Task owner mismatch")
+        if lease:
+            if task_payload.get('company_id') != claimed['company_id']:
+                raise HTTPException(status_code=403, detail="Search company changed")
+            user_data = await asyncio.to_thread(db_idem.get_hr_task_user, claimed['user_id'], claimed['company_id'])
+            if not user_data:
+                raise HTTPException(status_code=403, detail="Search access is no longer available")
+        query, job_title = claimed['query'], claimed['job_title']
+        result_count = clamp_result_count(claimed['result_count'], default=10, max_value=MAX_HR_SCORECARD_RESULTS)
 
         print(f"\n🏢 HR SCORECARD TASK PROCESSING STARTED")
         print(f"📝 Task ID: {task_id}")
@@ -9063,30 +9119,32 @@ async def process_hr_scorecard_task(request: Request):
         print(f"📊 Requested results: {result_count}")
 
         # Update task status to running
-        update_task_status(task_id, 'running', {'step': 'initializing'})
+        await asyncio.to_thread(update_task_status, task_id, 'running', {'step': 'initializing'})
 
         # Initialize token tracking and timing
         token_tracker = TokenTracker()
         start_time = time.time()
 
         # Run both keyword-extraction LLM calls in parallel (was sequential)
-        update_task_status(task_id, 'running', {'step': 'extracting_keywords'})
+        await asyncio.to_thread(update_task_status, task_id, 'running', {'step': 'extracting_keywords'})
 
         jd_keyword_result, search_optimization = await asyncio.gather(
-            asyncio.to_thread(extract_standardized_keywords_from_jd, query, token_tracker),
-            asyncio.to_thread(extract_keywords_for_single_query, query, token_tracker),
+            asyncio.to_thread(_prepare_search_input, "keywords", query, user_data, token_tracker),
+            asyncio.to_thread(_prepare_search_input, "query", query, user_data, token_tracker),
         )
         standardized_keywords = jd_keyword_result.get('all_keywords', [])
 
         if len(standardized_keywords) == 0:
             error_msg = "No keywords extracted from job description"
+            if lease:
+                raise PermanentTaskError(error_msg)
             update_task_status(task_id, 'failed', error=error_msg)
             return {"success": False, "error": error_msg}
 
         optimized_query = search_optimization.get('optimized_query', query)
 
         # Vector search using company-specific datastore
-        update_task_status(task_id, 'running', {'step': 'searching_candidates'})
+        await asyncio.to_thread(update_task_status, task_id, 'running', {'step': 'searching_candidates'})
 
         client = get_search_client()
 
@@ -9107,6 +9165,7 @@ async def process_hr_scorecard_task(request: Request):
             task_search_criteria,
             max_value=MAX_HR_SCORECARD_FETCH_RESULTS,
         )
+        fetch_count = max(fetch_count, min(MAX_HR_SCORECARD_FETCH_RESULTS, result_count * 2))
         if fetch_count != result_count:
             print(f"🎯 Criteria overfetch enabled: requested={result_count}, pool={fetch_count}")
 
@@ -9115,9 +9174,10 @@ async def process_hr_scorecard_task(request: Request):
             company_code=company_code,
             result_count=fetch_count,
             max_value=MAX_HR_SCORECARD_FETCH_RESULTS,
+            user_context=user,
         )
 
-        response = client.search(request_obj)
+        response = await asyncio.to_thread(client.search, request_obj)
 
         result_list = list(response.results)
         found_count = len(result_list)
@@ -9137,8 +9197,9 @@ async def process_hr_scorecard_task(request: Request):
                     company_code=company_code,
                     result_count=fetch_count,
                     max_value=MAX_HR_SCORECARD_FETCH_RESULTS,
+                    user_context=user,
                 )
-                fallback_resp = client.search(fallback_req)
+                fallback_resp = await asyncio.to_thread(client.search, fallback_req)
                 fb_results = list(fallback_resp.results)
                 if fb_results:
                     logging.info("✅ Raw-query fallback recovered %d results", len(fb_results))
@@ -9148,32 +9209,23 @@ async def process_hr_scorecard_task(request: Request):
                 logging.error("Raw-query fallback failed: %s", fb_err)
 
         if found_count == 0:
-            update_task_status(task_id, 'completed', {'step': 'completed', 'results': 0})
+            await asyncio.to_thread(db_idem.complete_hr_task, task_id, [],
+                {'step': 'completed', 'results': 0, 'requested_results': result_count,
+                 'returned_results': 0, 'exact_match_shortfall': result_count}, lease[1] if lease else None)
             return {"success": True, "results": 0, "message": "No candidates found"}
 
         # Generate HR scorecards for filtered results — in PARALLEL, with a
         # bounded concurrency cap and a per-(file_path, jd_hash) cache lookup
         # so repeat searches against the same JD return without re-LLMing.
-        update_task_status(task_id, 'running', {
+        await asyncio.to_thread(update_task_status, task_id, 'running', {
             'step': 'generating_scorecards',
             'total_candidates': found_count,
             'current_candidate': 0,
             'progress_percent': 0,
         })
 
-        # Stable JD signature: derived ONLY from inputs the user actually
-        # provided (raw query + job_title). Earlier versions also mixed in
-        # `optimized_query` and `standardized_keywords`, but both come from
-        # non-deterministic Gemini calls so identical user-facing searches
-        # produced different hashes — the cache effectively never hit. With
-        # this stable hash, a repeat search for the same JD returns from
-        # cached_resume_analyses without re-LLMing.
-        try:
-            _q_sig = (query or "").strip().lower()[:500]
-            _jt_sig = (job_title or "").strip().lower()[:200]
-            jd_hash = hashlib.sha256(f"{_q_sig}|{_jt_sig}".encode("utf-8")).hexdigest()
-        except Exception:
-            jd_hash = hashlib.sha256((query or "").encode("utf-8")).hexdigest()
+        from services.scorecard_cache import signature as scorecard_signature
+        from services.analysis_quality import verified_scorecard
 
         db_cache = None
         try:
@@ -9191,10 +9243,10 @@ async def process_hr_scorecard_task(request: Request):
 
         # Concurrency cap — Gemini 2.5 Flash regional quota easily handles
         # 10+ concurrent. Bump via SCORECARD_CONCURRENCY env var.
-        max_concurrency = int(os.getenv('SCORECARD_CONCURRENCY', '15'))
+        max_concurrency = max(1, min(int(os.getenv('SCORECARD_CONCURRENCY', '15')), 32))
         sem = asyncio.Semaphore(max_concurrency)
         progress_lock = asyncio.Lock()
-        completed_counter = {'n': 0, 'cache_hits': 0}
+        completed_counter = {'n': 0, 'cache_hits': 0, 'analysis_failures': 0, 'unreadable': 0}
         user_bucket, _user_datastore = get_company_resources(user)
 
         async def _process_one(idx: int, result):
@@ -9234,11 +9286,23 @@ async def process_hr_scorecard_task(request: Request):
                         document_data["file_path"] = gcs_path[1]
 
                 file_path_for_cache = document_data.get("file_path")
+                jd_hash = None
+                if file_path_for_cache:
+                    try:
+                        def _resume_version():
+                            blob = _get_storage_client().bucket(user_bucket).blob(file_path_for_cache)
+                            blob.reload()
+                            return blob.generation
+                        version = await asyncio.to_thread(_resume_version)
+                        jd_hash = scorecard_signature(query, job_title, user_bucket,
+                                                      file_path_for_cache, version, HR_SCORECARD_PROMPT)
+                    except Exception:
+                        logging.warning("Resume metadata unavailable; bypassing scorecard cache.")
 
                 # ── Cache lookup ──────────────────────────────────────
-                if db_cache and file_path_for_cache:
+                if db_cache and file_path_for_cache and jd_hash:
                     try:
-                        cached = db_cache.get_cached_resume_analysis(
+                        cached = await asyncio.to_thread(db_cache.get_cached_resume_analysis,
                             file_path_for_cache, jd_hash, company_id=cache_company_id
                         )
                     except Exception as ce:
@@ -9274,7 +9338,7 @@ async def process_hr_scorecard_task(request: Request):
                                  or hr_sc.get('candidate_overview', {}).get('position_applied_for')
                                  or hr_sc.get('score_breakdown'))
                         )
-                        if is_legacy or not has_overview:
+                        if is_legacy or not has_overview or not verified_scorecard(ga_preview):
                             print(
                                 f"↩️  Skipping cache hit for {file_path_for_cache} "
                                 f"(legacy={is_legacy}, complete={has_overview}); will re-score with Gemini"
@@ -9297,7 +9361,7 @@ async def process_hr_scorecard_task(request: Request):
                                     ga['hr_scorecard'] = _enrich_scorecard_evidence(
                                         ga['hr_scorecard'],
                                         derived_snippet_text,
-                                        optimized_query or query,
+                                        query,
                                     )
                             except Exception as _se:
                                 print(f"⚠️ Cache sanitize error: {_se}")
@@ -9308,7 +9372,7 @@ async def process_hr_scorecard_task(request: Request):
                             async with progress_lock:
                                 completed_counter['n'] += 1
                                 completed_counter['cache_hits'] += 1
-                                update_task_status(task_id, 'running', {
+                                await asyncio.to_thread(update_task_status, task_id, 'running', {
                                     'step': 'generating_scorecards',
                                     'current_candidate': completed_counter['n'],
                                     'total_candidates': found_count,
@@ -9320,43 +9384,43 @@ async def process_hr_scorecard_task(request: Request):
                 # ── Need fresh content / LLM ─────────────────────────
                 if file_path_for_cache:
                     file_content, file_bytes = await asyncio.to_thread(get_file_content_and_bytes_from_gcs, file_path_for_cache, user)
-                    if not file_content and file_bytes:
-                        direct_analysis = await asyncio.to_thread(send_file_to_gemini_directly, file_bytes, file_path_for_cache, optimized_query)
+                    if not file_content and file_bytes and not using_deepseek():
+                        direct_analysis = await asyncio.to_thread(send_file_to_gemini_directly, file_bytes, file_path_for_cache, query)
                         if direct_analysis.get('success'):
                             document_data["gemini_analysis"] = direct_analysis
                             document_data["analysis_type"] = "direct_file_basic"
                             file_content = "Direct analysis"
 
-                if not file_content and derived_snippet_text:
-                    file_content = derived_snippet_text
-
                 if file_content and 'gemini_analysis' not in document_data:
                     async with sem:
                         hr_analysis = await analyze_resume_with_hr_scorecard(
-                            file_content, optimized_query, job_title,
+                            file_content, query, job_title,
                             standardized_keywords, token_tracker,
-                            file_path=file_path_for_cache
+                            file_path=file_path_for_cache, user_context=user
                         )
                     document_data["gemini_analysis"] = hr_analysis
                     document_data["analysis_type"] = "comprehensive_hr_scorecard"
+                    hr_analysis['input_source'] = 'full_document'
+                    if not verified_scorecard(hr_analysis):
+                        completed_counter['analysis_failures'] += 1
 
                     # Persist to cache on success
-                    if (db_cache and file_path_for_cache
-                            and hr_analysis.get('success')
-                            and hr_analysis.get('hr_scorecard')):
+                    if (db_cache and file_path_for_cache and jd_hash
+                            and verified_scorecard(hr_analysis)):
                         try:
-                            db_cache.save_cached_resume_analysis(
+                            await asyncio.to_thread(db_cache.save_cached_resume_analysis,
                                 file_path=file_path_for_cache,
                                 jd_hash=jd_hash,
                                 gemini_analysis=hr_analysis,
                                 match_score=hr_analysis.get('match_score'),
                                 jd_summary=(optimized_query or query or '')[:500],
                                 company_id=cache_company_id,
-                                source='live_gemini',
+                                source='live_deepseek' if using_deepseek() else 'live_gemini',
                             )
                         except Exception as save_err:
                             print(f"⚠️ Cache save failed: {save_err}")
                 elif 'gemini_analysis' not in document_data:
+                    completed_counter['unreadable'] += 1
                     document_data["gemini_analysis"] = {
                         "analysis": "Could not retrieve file content for HR scorecard",
                         "match_score": 0,
@@ -9366,6 +9430,9 @@ async def process_hr_scorecard_task(request: Request):
                     document_data["analysis_type"] = "no_content"
 
             except Exception as e:
+                if isinstance(e, TaskLeaseLost):
+                    raise
+                completed_counter['analysis_failures'] += 1
                 print(f"❌ Error processing candidate {idx}: {e}")
                 document_data["gemini_analysis"] = {
                     "analysis": f"HR scorecard generation failed: {e}",
@@ -9378,7 +9445,7 @@ async def process_hr_scorecard_task(request: Request):
 
             async with progress_lock:
                 completed_counter['n'] += 1
-                update_task_status(task_id, 'running', {
+                await asyncio.to_thread(update_task_status, task_id, 'running', {
                     'step': 'generating_scorecards',
                     'current_candidate': completed_counter['n'],
                     'total_candidates': found_count,
@@ -9387,41 +9454,25 @@ async def process_hr_scorecard_task(request: Request):
                 })
             return document_data
 
-        # Process candidate analyses in batches. With hard criteria, keep
-        # scoring deeper search results only until the requested number of
-        # exact matches is reached.
-        if task_search_criteria.is_empty():
-            results = await asyncio.gather(*[
-                _process_one(i, r) for i, r in enumerate(result_list)
+        # Only score enough additional CVs to fill the remaining verified slots.
+        results = []
+        batch_start = 0
+        from services.task_queue import gather_candidates
+        while batch_start < len(result_list) and len(results) < result_count:
+            batch_size = min(max_concurrency, result_count - len(results))
+            batch = result_list[batch_start:batch_start + batch_size]
+            batch_results = await gather_candidates([
+                _process_one(batch_start + i, r) for i, r in enumerate(batch)
             ])
-        else:
-            results = []
-            batch_size = max(result_count, min(max_concurrency, max(1, fetch_count)))
-            for batch_start in range(0, len(result_list), batch_size):
-                batch = result_list[batch_start:batch_start + batch_size]
-                batch_results = await asyncio.gather(*[
-                    _process_one(batch_start + i, r) for i, r in enumerate(batch)
-                ])
-                apply_criteria_to_results(
-                    batch_results,
-                    task_search_criteria,
-                    strict=True,
-                    min_kept=0,
-                )
-                results.extend(batch_results)
-                apply_criteria_to_results(
-                    results,
-                    task_search_criteria,
-                    strict=True,
-                    min_kept=0,
-                )
-                results[:] = results[:result_count]
-                print(
-                    f"🎯 Exact-match fill progress: {len(results)}/{result_count} "
-                    f"after scoring {min(batch_start + len(batch), len(result_list))}/{found_count}"
-                )
-                if len(results) >= result_count:
-                    break
+            batch_start += len(batch)
+            batch_results = [r for r in batch_results
+                if verified_scorecard(r.get('gemini_analysis'))]
+            apply_criteria_to_results(batch_results, task_search_criteria, strict=True, min_kept=0)
+            results.extend(batch_results)
+            print(f"Exact-match fill progress: {len(results)}/{result_count} after {batch_start}/{found_count} CVs")
+
+        if not results and completed_counter['analysis_failures']:
+            raise RuntimeError("Candidate assessment failed; no unverified results were accepted")
 
         # Build hr_scorecards list from successful analyses
         hr_scorecards = [
@@ -9451,10 +9502,10 @@ async def process_hr_scorecard_task(request: Request):
                 print(f"🎯 Hard-criteria filter: {before_count} -> {len(results)} "
                       f"(criteria={task_search_criteria.to_dict()})")
         except Exception as crit_err:
-            print(f"⚠️  Hard-criteria filtering failed (non-fatal): {crit_err}")
+            raise RuntimeError("Candidate criteria could not be verified; retry this search.") from crit_err
 
         # Save results to database
-        update_task_status(task_id, 'running', {'step': 'saving_results'})
+        await asyncio.to_thread(update_task_status, task_id, 'running', {'step': 'saving_results'})
 
         try:
             db = get_db_manager()
@@ -9466,20 +9517,6 @@ async def process_hr_scorecard_task(request: Request):
                     company_id = user['company'].get('company_id') or user['company'].get('id')
                 else:
                     company_id = getattr(user['company'], 'id', None)
-
-            # Save search history
-            search_id = db.save_search_history(
-                query=query,
-                job_title=job_title,
-                result_count=len(results),
-                user_id=user['id'],
-                company_id=company_id,
-                search_method='hr-scorecard-task'
-            )
-
-            # Save search results
-            if results:
-                db.save_search_results(search_id, results, company_id=company_id, user_id=user['id'])
 
             # Update task status with results
             processing_time = time.time() - start_time
@@ -9496,10 +9533,13 @@ async def process_hr_scorecard_task(request: Request):
                 'successful_scorecards': len([r for r in results if r.get('analysis_type') == 'comprehensive_hr_scorecard']),
                 'processing_time_seconds': round(processing_time, 2),
                 'token_usage': token_summary,
-                'search_id': search_id
+                'unreadable_candidates': completed_counter['unreadable'],
+                'assessment_failures': completed_counter['analysis_failures'],
+                'assessed_candidates': completed_counter['n'],
             }
 
-            update_task_status(task_id, 'completed', final_progress)
+            search_id = await asyncio.to_thread(db.complete_hr_task, task_id, results,
+                final_progress, lease[1] if lease else None)
 
             print(f"✅ HR scorecard task completed successfully: {task_id}")
             print(f"📊 Processed {found_count} candidates in {processing_time:.2f} seconds")
@@ -9516,12 +9556,17 @@ async def process_hr_scorecard_task(request: Request):
 
         except Exception as db_error:
             print(f"❌ Database save error: {str(db_error)}")
-            update_task_status(task_id, 'completed', {'step': 'completed_with_db_error', 'error': str(db_error)})
-            return {"success": True, "task_id": task_id, "results": len(results), "db_error": str(db_error)}
+            raise
 
+    except (TaskLeaseLost, PermanentTaskError):
+        raise
+    except HTTPException:
+        if not lease and 'task_id' in locals():
+            update_task_status(task_id, 'failed', error="Search could not be completed")
+        raise
     except Exception as e:
         print(f"❌ HR scorecard task failed: {str(e)}")
-        if 'task_id' in locals():
+        if not lease and 'task_id' in locals():
             update_task_status(task_id, 'failed', error=str(e))
         # Return 5xx so Cloud Tasks retries with backoff. Idempotency check
         # at the top of this handler prevents duplicate work on retries that
@@ -9535,24 +9580,12 @@ async def get_hr_scorecard_task_status(task_id: str, user: dict = Depends(requir
         db = get_db_manager()
 
         # Get task status from database
-        task_status = db.get_task_status(task_id)
+        task_status = await asyncio.to_thread(db.get_task_status, task_id)
 
         if not task_status:
             raise HTTPException(status_code=404, detail="Task not found")
 
-        # Check if user has permission to view this task
-        if task_status.get('user_id') != user['id']:
-            # Check if user is super admin or from same company
-            if user.get('user_type') != 'super_admin':
-                user_company_id = None
-                if user.get('company'):
-                    if isinstance(user['company'], dict):
-                        user_company_id = user['company'].get('company_id') or user['company'].get('id')
-                    else:
-                        user_company_id = getattr(user['company'], 'id', None)
-
-                if user_company_id != task_status.get('company_id'):
-                    raise HTTPException(status_code=403, detail="Access denied")
+        _authorize_scorecard_task(task_status, user)
 
         return task_status
 
@@ -9569,23 +9602,12 @@ async def get_hr_scorecard_task_results(task_id: str, user: dict = Depends(requi
         db = get_db_manager()
 
         # Get task status first
-        task_status = db.get_task_status(task_id)
+        task_status = await asyncio.to_thread(db.get_task_status, task_id)
 
         if not task_status:
             raise HTTPException(status_code=404, detail="Task not found")
 
-        # Check if user has permission to view this task
-        if task_status.get('user_id') != user['id']:
-            if user.get('user_type') != 'super_admin':
-                user_company_id = None
-                if user.get('company'):
-                    if isinstance(user['company'], dict):
-                        user_company_id = user['company'].get('company_id') or user['company'].get('id')
-                    else:
-                        user_company_id = getattr(user['company'], 'id', None)
-
-                if user_company_id != task_status.get('company_id'):
-                    raise HTTPException(status_code=403, detail="Access denied")
+        _authorize_scorecard_task(task_status, user)
 
         # Check if task is completed
         if task_status.get('status') != 'completed':
@@ -9606,7 +9628,7 @@ async def get_hr_scorecard_task_results(task_id: str, user: dict = Depends(requi
 
         search_id = progress.get('search_id')
         if search_id:
-            search_results = db.get_search_results(search_id)
+            search_results = await asyncio.to_thread(db.get_search_results, search_id)
 
             # Reshape DB rows into the payload shape the frontend's
             # generateEnhancedResults() expects (matches legacy synchronous
@@ -9631,6 +9653,7 @@ async def get_hr_scorecard_task_results(task_id: str, user: dict = Depends(requi
                     gemini_analysis['hr_scorecard'] = hr_scorecard
 
                 normalized_results.append({
+                    'id': str(row_dict['id']),
                     'document_name': row_dict.get('candidate_name') or 'Candidate',
                     'file_path': row_dict.get('file_path'),
                     'gemini_analysis': gemini_analysis,
@@ -9746,6 +9769,7 @@ def extract_standardized_keywords_from_jd(query: str, token_tracker: TokenTracke
             print(f"🔍 Creating generation config...")
             generate_content_config = types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0),
                 temperature=0.1,  # Very low temperature for consistency
+                response_mime_type="application/json" if using_deepseek() else None,
                 top_p=0.8,
                 max_output_tokens=4096,  # Maximum allowed for Gemini 2.5 Flash
                 safety_settings=[
@@ -10390,6 +10414,7 @@ def analyze_candidate_keywords(resume_content: str, standardized_keywords: List[
             config=types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0),
                 temperature=0.1,
                 max_output_tokens=4096,
+                response_mime_type="application/json" if using_deepseek() else None,
                 safety_settings=[
                     types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
                     types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="OFF"),
@@ -10919,16 +10944,13 @@ async def save_candidate_action(
         db = get_db_manager()
         effective_user_id = str(user["id"])
         # Tenant scoping: only super_admin may act on rows outside their company
-        is_super = (user.get('user_type') == 'super_admin')
-        tenant_company_id = None
-        if not is_super:
-            tenant_company_id = (user.get('company_info') or {}).get('id') or (
-                user.get('company') or {}
-            ).get('company_id') if isinstance(user.get('company'), dict) else None
-            if tenant_company_id is None and isinstance(user.get('company'), dict):
-                tenant_company_id = user['company'].get('id')
+        tenant_company_id = _candidate_workspace(user)
+        if search_result_id < 1 or action_type.lower() not in {'selected','shortlisted','interviewed','rejected','hired'}:
+            raise HTTPException(status_code=422, detail="Invalid candidate action")
+        if not candidate_name.strip() or len(candidate_name) > 500 or (comments is not None and len(comments) > 10000):
+            raise HTTPException(status_code=422, detail="Candidate name or notes exceed the permitted length")
 
-        ok = db.save_candidate_action(
+        ok = await asyncio.to_thread(db.save_candidate_action,
             search_result_id=search_result_id,
             candidate_name=candidate_name,
             action_type=action_type.lower(),  # normalize for consistency
@@ -10948,7 +10970,56 @@ async def save_candidate_action(
         raise
     except Exception as e:
         print(f"❌ Error saving candidate action: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to save candidate action: {str(e)}")
+        raise HTTPException(status_code=500, detail="Could not save candidate action. Please retry.")
+
+
+def _candidate_workspace(user):
+    if user.get('user_type') == 'super_admin':
+        return None
+    company_id = _get_company_id(user)
+    if not company_id:
+        raise HTTPException(status_code=403, detail="Company context required")
+    return company_id
+
+
+def _authorize_scorecard_task(task, user):
+    company_id = _candidate_workspace(user)
+    if user.get('user_type') != 'super_admin' and str(company_id) != str(task.get('company_id')):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+
+@app.get('/api/candidate-state')
+async def get_candidate_states(ids: str, user: dict = Depends(require_auth)):
+    company_id = _candidate_workspace(user)
+    try:
+        pieces = ids.split(',')
+        if len(pieces) > 100 or any(not value.isascii() or not value.isdigit() for value in pieces):
+            raise ValueError()
+        result_ids = list(dict.fromkeys(int(value) for value in pieces))
+        if any(value < 1 or value > 2147483647 for value in result_ids):
+            raise ValueError()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Provide up to 100 positive candidate record IDs")
+    rows = await asyncio.to_thread(get_db_manager().get_candidate_states, result_ids, company_id)
+    return {'success': True, 'candidates': rows}
+
+
+@app.patch('/api/candidate-notes/{search_result_id}')
+@limiter.limit('60/minute')
+async def save_candidate_notes(request: Request, search_result_id: int, user: dict = Depends(require_auth)):
+    company_id = _candidate_workspace(user)
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=422, detail="Request body must be valid JSON")
+    if (search_result_id < 1 or not isinstance(data, dict) or not isinstance(data.get('comments'), str)
+            or len(data['comments']) > 10000):
+        raise HTTPException(status_code=422, detail="Provide candidate notes up to 10000 characters")
+    saved = await asyncio.to_thread(get_db_manager().save_candidate_notes, search_result_id,
+                                   data['comments'], str(user['id']), company_id)
+    if not saved:
+        raise HTTPException(status_code=404, detail="Candidate not found in your workspace")
+    return {'success': True}
 
 @app.delete("/api/search-history")
 @limiter.limit("5/minute")
@@ -11012,10 +11083,12 @@ async def download_resume(file_path: str, user: dict = Depends(require_auth)):
 
         # Strip any gs:// prefix
         blob_name = file_path
+        requested_bucket = None
         if blob_name.startswith("gs://"):
             # gs://bucket/blob -> blob
             without_scheme = blob_name[5:]
             if "/" in without_scheme:
+                requested_bucket = without_scheme.split("/", 1)[0]
                 blob_name = without_scheme.split("/", 1)[1]
             else:
                 blob_name = without_scheme
@@ -11023,7 +11096,8 @@ async def download_resume(file_path: str, user: dict = Depends(require_auth)):
         # Reject path traversal in the blob name. Note: GCS object names
         # legitimately contain slashes for "folders" so we allow those but
         # block parent traversal segments.
-        if any(seg in ('..', '') for seg in blob_name.split('/')[:-1] if seg in ('..',)) or '\x00' in blob_name:
+        if (not blob_name or blob_name.startswith('/') or '\\' in blob_name or '\x00' in blob_name
+                or any(seg in ('..', '.', '') for seg in blob_name.split('/'))):
             raise HTTPException(status_code=400, detail="Invalid file path")
 
         is_super = (user.get('user_type') == 'super_admin')
@@ -11044,6 +11118,10 @@ async def download_resume(file_path: str, user: dict = Depends(require_auth)):
         bucket_name, _ = get_company_resources(user) if not is_super else (None, None)
         if not bucket_name:
             bucket_name = GCS_BUCKET_NAME
+        if requested_bucket:
+            if not is_super and requested_bucket not in {bucket_name, GCS_BUCKET_NAME}:
+                raise HTTPException(status_code=404, detail="Resume file not found")
+            bucket_name = requested_bucket
         if not bucket_name:
             raise HTTPException(status_code=500, detail="GCS bucket not configured")
 
@@ -11289,7 +11367,7 @@ async def get_upcoming_events(user: dict = Depends(require_auth)):
                 company_id = getattr(user['company'], 'id', None)
 
         # Get upcoming events (interviews, follow-ups, etc.)
-        events = db.get_upcoming_events(user_id, company_id)
+        events = await asyncio.to_thread(db.get_upcoming_events, user_id, company_id)
 
         return {
             "success": True,
@@ -11297,8 +11375,8 @@ async def get_upcoming_events(user: dict = Depends(require_auth)):
         }
 
     except Exception as e:
-        print(f"❌ Error getting upcoming events: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get upcoming events: {str(e)}")
+        logger.warning("Upcoming schedule unavailable: %s", type(e).__name__)
+        raise HTTPException(status_code=503, detail="Upcoming schedule is temporarily unavailable")
 
 @app.post("/api/migrate-vector-datastore")
 async def migrate_existing_files_to_vector_datastore(
@@ -11414,9 +11492,17 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
             raise HTTPException(status_code=422, detail="Request body must be valid JSON")
         if not isinstance(data, dict):
             raise HTTPException(status_code=422, detail="Request body must be a JSON object")
-        if not data.get("candidate_name"):
-            raise HTTPException(status_code=422, detail="Field 'candidate_name' is required")
+        from services.outreach_validation import validate_interview
+        from services.interview_time import utc_start
+        try:
+            validate_interview(data)
+            start_iso, duration_minutes = utc_start(data)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        data['duration'] = duration_minutes
+        data['interview_time'] = data.get('interview_time') or '09:00'
         db = get_db_manager()
+        await _validate_outreach_candidate(db, data, user)
 
         # Add user and company info
         data['created_by'] = user['id']
@@ -11431,20 +11517,38 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
                 company_name = getattr(user['company'], 'name', None)
         data['company_id'] = company_id
 
+        email_template = None
+        if data.get('send_invite_email'):
+            if data.get('email_template_id'):
+                email_template = await asyncio.to_thread(db.get_email_template, data['email_template_id'], company_id)
+                if not email_template:
+                    raise HTTPException(status_code=404, detail="Template not found")
+            else:
+                templates_ = await asyncio.to_thread(db.list_email_templates, company_id, kind='interview_invite')
+                if not templates_ and company_id is not None:
+                    templates_ = await asyncio.to_thread(db.list_email_templates, None, kind='interview_invite')
+                email_template = templates_[0] if templates_ else None
+            if email_template:
+                from services.email_service import validate_template
+                try:
+                    validate_template(email_template['subject'])
+                    validate_template(email_template['body'])
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc))
+
         # -- Optional: create Teams or Google Meet meeting -----------------
         provider = (data.get('meeting_provider') or '').strip().lower() or None
         meeting_result = None
-        if provider and provider not in ('none', 'in_person', 'phone'):
+        if provider and provider not in ('none', 'in_person', 'in-person', 'phone'):
             try:
                 from services.calendar_service import create_meeting
                 # Compose ISO datetime from date + time fields.
-                start_iso = f"{data.get('interview_date')}T{data.get('interview_time') or '09:00'}:00"
-                meeting_result = create_meeting(
+                meeting_result = await asyncio.to_thread(create_meeting,
                     provider,
                     subject=f"Interview: {data['candidate_name']} — "
-                            f"{data.get('position', 'Role')}",
+                            f"{data.get('position') or 'Role'}",
                     start_iso=start_iso,
-                    duration_minutes=int(data.get('duration') or 30),
+                    duration_minutes=duration_minutes,
                     attendee_email=data.get('candidate_email') or '',
                     organizer_user_id=user['id'],
                     db=db,
@@ -11461,30 +11565,39 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
                     # Non-fatal: persist the interview without a link and
                     # report the error back to the caller.
                     data['meeting_provider'] = provider
+                    data['meeting_event_id'] = meeting_result.get('event_id')
             except Exception as _meet_err:
-                print(f"⚠️ Meeting creation failed: {_meet_err}")
-                meeting_result = {"success": False, "error": str(_meet_err)}
+                from services.integration_errors import provider_failure
+                logger.warning("Meeting outcome unavailable: %s", type(_meet_err).__name__)
+                canonical = 'teams' if provider in ('teams', 'microsoft', 'ms_teams', 'ms-teams') else 'meet'
+                meeting_result = provider_failure(canonical, 'calendar')
 
         # Save interview to database
-        interview_id = db.schedule_interview(data)
+        try:
+            interview_id = await asyncio.to_thread(db.schedule_interview, data)
+            if not interview_id:
+                raise RuntimeError('No interview ID returned')
+        except Exception as exc:
+            logger.error("Interview persistence unavailable: %s", type(exc).__name__)
+            uncertain = meeting_result and (meeting_result.get('success') or
+                meeting_result.get('calendar_event_created') or meeting_result.get('calendar_event_maybe_created'))
+            detail = ("Interview save could not be confirmed. A calendar event may already exist; check the schedule and organizer's calendar before trying again."
+                      if uncertain else "Interview save could not be confirmed. Check the schedule before trying again. No additional invitation email was sent.")
+            return JSONResponse(status_code=503, content={'success': False, 'detail': detail,
+                'schedule_saved': None, 'persistence_unknown': True, 'meeting': meeting_result,
+                'email': {'success': False, 'skipped': True}})
 
         # -- Optional: send the candidate an invite email ------------------
         email_result = None
-        if data.get('send_invite_email') and data.get('candidate_email'):
+        if data.get('send_invite_email') and meeting_result and not meeting_result.get('success'):
+            email_result = {"success": False, "skipped": True,
+                            "error": "Additional invite email not sent because the meeting link was not created. Check the saved interview and calendar before trying again."}
+        elif data.get('send_invite_email') and data.get('candidate_email'):
             try:
                 from services.email_service import (
                     send_email, render_template, build_default_context,
                 )
-                tpl = None
-                tpl_id = data.get('email_template_id')
-                if tpl_id:
-                    tpl = db.get_email_template(tpl_id, company_id)
-                if not tpl:
-                    # Fall back to a default interview_invite (company-scoped first, then global).
-                    company_tpls = db.list_email_templates(company_id, kind='interview_invite')
-                    if not company_tpls:
-                        company_tpls = db.list_email_templates(None, kind='interview_invite')
-                    tpl = company_tpls[0] if company_tpls else None
+                tpl = email_template
                 if tpl:
                     ctx = build_default_context(
                         candidate_name=data['candidate_name'],
@@ -11500,13 +11613,13 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
                         custom_message=data.get('custom_message') or '',
                     )
                     subj, body_html = render_template(tpl['subject'], tpl['body'], ctx)
-                    email_result = send_email(
+                    email_result = await asyncio.to_thread(send_email,
                         to=data['candidate_email'],
                         subject=subj, body_html=body_html,
                         prefer=data.get('email_prefer') or 'auto',
                         organizer_user_id=user['id'], db=db,
                     )
-                    db.log_email_sent(
+                    email_result = await _record_email_outcome(db, email_result,
                         company_id=company_id,
                         sent_by_user_id=user['id'],
                         recipient_email=data['candidate_email'],
@@ -11515,14 +11628,16 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
                         subject=subj,
                         body=body_html,
                         provider=email_result.get('provider'),
-                        status='sent' if email_result.get('success') else 'failed',
-                        error_message=email_result.get('error'),
                         search_result_id=data.get('search_result_id'),
                         interview_id=interview_id,
                     )
+                else:
+                    email_result = {"success": False, "skipped": True,
+                                    "error": "Interview saved, but no invitation email template is available."}
             except Exception as _email_err:
-                print(f"⚠️ Invite email send failed: {_email_err}")
-                email_result = {"success": False, "error": str(_email_err)}
+                from services.integration_errors import provider_failure
+                logger.warning("Invitation email outcome unavailable: %s", type(_email_err).__name__)
+                email_result = provider_failure('unknown', 'email')
 
         return {
             "success": True,
@@ -11535,19 +11650,45 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error scheduling interview: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to schedule interview: {str(e)}")
+        logger.error("Scheduling request failed: %s", type(e).__name__)
+        raise HTTPException(status_code=503, detail="Scheduling is temporarily unavailable. Check your schedule and calendar before trying again.")
 
 
 # ============================================================================
 # Integrations: Email templates, candidate email sending, OAuth (Google/MS)
 # ============================================================================
 def _get_company_id(user: dict) -> Optional[int]:
+    company_id = None
     if user.get('company'):
         if isinstance(user['company'], dict):
-            return user['company'].get('company_id') or user['company'].get('id')
-        return getattr(user['company'], 'id', None)
-    return None
+            company_id = user['company'].get('company_id') or user['company'].get('id')
+        else:
+            company_id = getattr(user['company'], 'company_id', None) or getattr(user['company'], 'id', None)
+    if not company_id and user.get('user_type') != 'super_admin':
+        raise HTTPException(status_code=403, detail="Company context required")
+    return company_id
+
+
+async def _validate_outreach_candidate(db, data, user):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Outreach storage is temporarily unavailable")
+    result_id = data.get('search_result_id')
+    if result_id is not None:
+        rows = await asyncio.to_thread(db.get_candidate_states, [result_id], _candidate_workspace(user))
+        if not rows:
+            raise HTTPException(status_code=404, detail="Candidate record not found")
+
+
+async def _record_email_outcome(db, result, **fields):
+    status = 'unknown' if result.get('delivery_unknown') else 'sent' if result.get('success') else 'failed'
+    try:
+        saved = await asyncio.to_thread(db.log_email_sent, **fields, status=status, error_message=result.get('error'))
+    except Exception as exc:
+        logger.warning("Email audit write unavailable: %s", type(exc).__name__)
+        saved = None
+    if not saved:
+        result = {**result, 'audit_warning': 'Email outcome could not be recorded. Check Sent Items before retrying; the delivery status above is unchanged.'}
+    return result
 
 
 @app.get("/api/email-templates")
@@ -11580,6 +11721,12 @@ async def create_email_template_endpoint(request: Request,
     if data["kind"] not in {"shortlist", "interview_invite", "rejection", "custom"}:
         raise HTTPException(status_code=422,
                             detail="kind must be one of: shortlist, interview_invite, rejection, custom")
+    from services.email_service import validate_template
+    try:
+        validate_template(data["subject"])
+        validate_template(data["body"])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     db = get_db_manager()
     tpl_id = db.upsert_email_template(
         company_id=_get_company_id(user),
@@ -11599,6 +11746,8 @@ async def update_email_template_endpoint(template_id: int, request: Request,
         data = await request.json()
     except Exception:
         raise HTTPException(status_code=422, detail="Body must be JSON")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=422, detail="Body must be a JSON object")
     db = get_db_manager()
     company_id = _get_company_id(user)
     existing = db.get_email_template(template_id, company_id)
@@ -11606,6 +11755,12 @@ async def update_email_template_endpoint(template_id: int, request: Request,
         raise HTTPException(status_code=404, detail="Template not found")
     if existing.get("company_id") is None:
         raise HTTPException(status_code=403, detail="Cannot modify a global default template")
+    from services.email_service import validate_template
+    try:
+        validate_template(data.get("subject") or existing["subject"])
+        validate_template(data.get("body") or existing["body"])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     res = db.upsert_email_template(
         company_id=company_id,
         kind=existing["kind"],
@@ -11655,10 +11810,14 @@ async def send_candidate_email_endpoint(request: Request,
         raise HTTPException(status_code=422, detail="Body must be JSON")
     if not isinstance(data, dict):
         raise HTTPException(status_code=422, detail="Body must be a JSON object")
-    if not data.get("candidate_email"):
-        raise HTTPException(status_code=422, detail="candidate_email is required")
+    from services.outreach_validation import validate_email
+    try:
+        validate_email(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
     db = get_db_manager()
+    await _validate_outreach_candidate(db, data, user)
     company_id = _get_company_id(user)
     company_name = None
     if user.get('company') and isinstance(user['company'], dict):
@@ -11672,7 +11831,7 @@ async def send_candidate_email_endpoint(request: Request,
         if not tpl_id:
             raise HTTPException(status_code=422,
                                 detail="Provide template_id, or raw_subject+raw_body")
-        tpl = db.get_email_template(tpl_id, company_id)
+        tpl = await asyncio.to_thread(db.get_email_template, tpl_id, company_id)
         if not tpl:
             raise HTTPException(status_code=404, detail="Template not found")
         subj_tpl, body_tpl, kind = tpl["subject"], tpl["body"], tpl["kind"]
@@ -11691,21 +11850,27 @@ async def send_candidate_email_endpoint(request: Request,
         interview_location=data.get("interview_location") or "",
         meeting_join_url=data.get("meeting_join_url") or "",
     )
-    subject, body_html = render_template(subj_tpl, body_tpl, ctx)
-    result = send_email(
-        to=data["candidate_email"], subject=subject, body_html=body_html,
-        prefer=data.get("prefer") or "auto",
-        organizer_user_id=user["id"], db=db,
-    )
-    db.log_email_sent(
+    try:
+        subject, body_html = render_template(subj_tpl, body_tpl, ctx)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    try:
+        result = await asyncio.to_thread(send_email,
+            to=data["candidate_email"], subject=subject, body_html=body_html,
+            prefer=data.get("prefer") or "auto",
+            organizer_user_id=user["id"], db=db,
+        )
+    except Exception as exc:
+        from services.integration_errors import provider_failure
+        logger.warning("Email outcome unavailable: %s", type(exc).__name__)
+        result = provider_failure('unknown', 'email')
+    result = await _record_email_outcome(db, result,
         company_id=company_id,
         sent_by_user_id=user["id"],
         recipient_email=data["candidate_email"],
         candidate_name=data.get("candidate_name") or "",
         kind=kind, subject=subject, body=body_html,
         provider=result.get("provider"),
-        status="sent" if result.get("success") else "failed",
-        error_message=result.get("error"),
         search_result_id=data.get("search_result_id"),
     )
     if not result.get("success"):
@@ -11713,9 +11878,12 @@ async def send_candidate_email_endpoint(request: Request,
             "success": False,
             "error": result.get("error") or "Email send failed",
             "provider": result.get("provider"),
+            "delivery_unknown": bool(result.get('delivery_unknown')),
+            **({'audit_warning': result['audit_warning']} if result.get('audit_warning') else {}),
         })
     return {"success": True, "provider": result.get("provider"),
-            "subject": subject}
+            "subject": subject,
+            **({'audit_warning': result['audit_warning']} if result.get('audit_warning') else {})}
 
 
 @app.get("/api/integrations/status")
@@ -11725,26 +11893,30 @@ async def integrations_status(request: Request,
     """Report which integrations are configured / connected for this user."""
     from services.calendar_service import calendar_config
     from services.email_service import email_config
+    from services.integration_status import connection_status
     db = get_db_manager()
     cal = calendar_config()
     em = email_config()
-    g_row = db.get_oauth_token(user["id"], "google")
-    m_row = db.get_oauth_token(user["id"], "microsoft")
+    try:
+        if db is None:
+            raise RuntimeError("Database unavailable")
+        g_row, m_row = await asyncio.to_thread(lambda: (
+            db.get_oauth_token(user["id"], "google"), db.get_oauth_token(user["id"], "microsoft")))
+    except Exception:
+        raise HTTPException(status_code=503, detail="Connection status is temporarily unavailable")
     return {
         "success": True,
         "google": {
             "client_configured": bool((cal.get("google") or {}).get("client_id")
                                       and (cal.get("google") or {}).get("client_secret")),
-            "connected": bool(g_row),
-            "account_email": (g_row or {}).get("email"),
+            **connection_status("google", g_row),
         },
         "microsoft": {
             "client_configured": bool((cal.get("microsoft") or {}).get("client_id")
                                        and (cal.get("microsoft") or {}).get("client_secret")),
             "tenant_app_only": bool((cal.get("microsoft") or {}).get("sender_user_id")
                                      and (cal.get("microsoft") or {}).get("tenant_id")),
-            "connected": bool(m_row),
-            "account_email": (m_row or {}).get("email"),
+            **connection_status("microsoft", m_row),
         },
         "smtp": {
             "configured": bool((em.get("smtp") or {}).get("host")
@@ -11765,7 +11937,8 @@ async def oauth_google_start(request: Request,
     if not (cfg.get("client_id") and cfg.get("redirect_uri")):
         raise HTTPException(status_code=503,
                             detail="Google OAuth not configured. See docs/INTEGRATIONS_SETUP.md")
-    state = secrets.token_urlsafe(32)
+    from services.oauth_state import issue, cookie_name
+    state, signed_cookie, challenge = issue("google", user["id"], request.cookies.get("session_token"), cfg)
     from urllib.parse import urlencode
     params = {
         "client_id": cfg["client_id"],
@@ -11775,11 +11948,15 @@ async def oauth_google_start(request: Request,
         "access_type": "offline",
         "prompt": "consent",
         "state": state,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
     }
     url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
     resp = RedirectResponse(url=url, status_code=302)
-    resp.set_cookie("oauth_state_google", f"{state}:{user['id']}",
+    resp.set_cookie(cookie_name("google"), signed_cookie,
                     max_age=600, httponly=True, secure=True, samesite="lax", path="/")
+    _set_session_cookie(resp, request.cookies.get("session_token"))
+    resp.headers["Cache-Control"] = "no-store"
     return resp
 
 
@@ -11788,30 +11965,27 @@ async def oauth_google_callback(request: Request,
                                 code: Optional[str] = None,
                                 state: Optional[str] = None,
                                 error: Optional[str] = None):
-    from urllib.parse import quote as _q
+    from services.oauth_state import validate, cookie_name, callback_response
+    from services.calendar_service import calendar_config
+    try:
+        user = await require_auth(request, request.cookies.get("session_token"))
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            return callback_response('google', 'session_expired')
+        raise
+    cfg = calendar_config().get("google") or {}
+    verifier = validate(request.cookies.get(cookie_name("google"), ""), state,
+                        "google", user["id"], request.cookies.get("session_token"), cfg)
     if error:
-        # Bounce to dashboard; banner renders error safely via textContent.
-        return RedirectResponse(
-            url=f"/?integration=google&status=failed&error={_q(str(error)[:200])}",
-            status_code=302,
-        )
+        return callback_response('google', 'failed')
     if not (code and state):
-        return RedirectResponse(
-            url="/?integration=google&status=failed&error=missing_code_or_state",
-            status_code=302,
-        )
-    cookie_val = request.cookies.get("oauth_state_google") or ""
-    if ":" not in cookie_val:
-        raise HTTPException(status_code=400, detail="Missing OAuth state cookie")
-    saved_state, _, user_id_str = cookie_val.partition(":")
-    if not saved_state or saved_state != state or not user_id_str.isdigit():
-        raise HTTPException(status_code=400, detail="Invalid OAuth state")
-    user_id = int(user_id_str)
+        return callback_response('google', 'failed')
+    user_id = user["id"]
 
     from services.calendar_service import calendar_config
     cfg = (calendar_config().get("google") or {})
     try:
-        r = requests.post(
+        r = await asyncio.to_thread(requests.post,
             "https://oauth2.googleapis.com/token",
             data={
                 "code": code,
@@ -11819,42 +11993,61 @@ async def oauth_google_callback(request: Request,
                 "client_secret": cfg["client_secret"],
                 "redirect_uri": cfg["redirect_uri"],
                 "grant_type": "authorization_code",
+                "code_verifier": verifier,
             }, timeout=15,
         )
         r.raise_for_status()
         tok = r.json()
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Token exchange failed: {e}")
+        if not tok.get("access_token"):
+            raise ValueError("Missing access token")
+    except Exception:
+        return callback_response('google', 'failed')
 
     # Try to learn the connected user's email
     account_email = None
     try:
-        ui = requests.get(
+        account_response = await asyncio.to_thread(requests.get,
             "https://openidconnect.googleapis.com/v1/userinfo",
             headers={"Authorization": f"Bearer {tok.get('access_token')}"},
             timeout=10,
-        ).json()
+        )
+        account_response.raise_for_status()
+        ui = account_response.json()
         account_email = ui.get("email")
+        account_id = ui.get("sub")
     except Exception:
-        pass
+        return callback_response('google', 'failed')
+    if (not isinstance(account_email, str) or '@' not in account_email or len(account_email) > 320
+            or not isinstance(account_id, str) or not account_id or len(account_id) > 255):
+        return callback_response('google', 'failed')
 
     from datetime import datetime as _dt, timezone as _tz, timedelta as _td
-    expires_at = _dt.now(_tz.utc) + _td(seconds=int(tok.get("expires_in", 3600)))
     db = get_db_manager()
-    db.save_oauth_token(
-        user_id, "google",
-        access_token=tok.get("access_token"),
-        refresh_token=tok.get("refresh_token"),
-        expires_at=expires_at,
-        scope=tok.get("scope"),
-        email=account_email,
-    )
-    resp = RedirectResponse(url="/?integration=google&status=connected", status_code=302)
-    resp.delete_cookie("oauth_state_google", path="/")
-    return resp
+    try:
+        expires_at = _dt.now(_tz.utc) + _td(seconds=int(tok.get("expires_in", 3600)))
+        await asyncio.to_thread(db.save_oauth_token,
+            user_id, "google", access_token=tok.get("access_token"), refresh_token=tok.get("refresh_token"),
+            expires_at=expires_at, scope=tok.get("scope"), email=account_email, extra={'account_id': account_id})
+    except Exception:
+        return callback_response('google', 'failed')
+    return callback_response('google', 'connected')
 
 
 # ---- OAuth: Microsoft ------------------------------------------------------
+@app.get("/microsoft-approval")
+async def microsoft_approval_review():
+    return FileResponse(Path(__file__).resolve().parent / "static/review/microsoft-approval.html",
+                        media_type="text/html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/oauth/microsoft/admin-consent/start")
+@limiter.limit("10/minute")
+async def microsoft_admin_consent_start(request: Request):
+    from services.calendar_service import calendar_config
+    from services.microsoft_consent import start_consent
+    return start_consent(calendar_config().get("microsoft") or {})
+
+
 @app.get("/api/oauth/microsoft/start")
 @limiter.limit("20/minute")
 async def oauth_microsoft_start(request: Request,
@@ -11864,7 +12057,8 @@ async def oauth_microsoft_start(request: Request,
     if not (cfg.get("client_id") and cfg.get("redirect_uri")):
         raise HTTPException(status_code=503,
                             detail="Microsoft OAuth not configured. See docs/INTEGRATIONS_SETUP.md")
-    state = secrets.token_urlsafe(32)
+    from services.oauth_state import issue, cookie_name
+    state, signed_cookie, challenge = issue("microsoft", user["id"], request.cookies.get("session_token"), cfg)
     tenant = cfg.get("tenant_id") or "common"
     from urllib.parse import urlencode
     params = {
@@ -11874,12 +12068,16 @@ async def oauth_microsoft_start(request: Request,
         "response_mode": "query",
         "scope": " ".join(MICROSOFT_SCOPES),
         "state": state,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
         "prompt": "select_account",
     }
     url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize?" + urlencode(params)
     resp = RedirectResponse(url=url, status_code=302)
-    resp.set_cookie("oauth_state_microsoft", f"{state}:{user['id']}",
+    resp.set_cookie(cookie_name("microsoft"), signed_cookie,
                     max_age=600, httponly=True, secure=True, samesite="lax", path="/")
+    _set_session_cookie(resp, request.cookies.get("session_token"))
+    resp.headers["Cache-Control"] = "no-store"
     return resp
 
 
@@ -11887,31 +12085,34 @@ async def oauth_microsoft_start(request: Request,
 async def oauth_microsoft_callback(request: Request,
                                    code: Optional[str] = None,
                                    state: Optional[str] = None,
-                                   error: Optional[str] = None):
-    from urllib.parse import quote as _q
+                                   error: Optional[str] = None,
+                                   admin_consent: Optional[str] = None):
+    if admin_consent is not None or (state or "").startswith("ms-admin-"):
+        from services.calendar_service import calendar_config
+        from services.microsoft_consent import finish_consent
+        return finish_consent(request, calendar_config().get("microsoft") or {})
+    from services.oauth_state import validate, cookie_name, callback_response
+    from services.calendar_service import calendar_config
+    try:
+        user = await require_auth(request, request.cookies.get("session_token"))
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            return callback_response('microsoft', 'session_expired')
+        raise
+    cfg = calendar_config().get("microsoft") or {}
+    verifier = validate(request.cookies.get(cookie_name("microsoft"), ""), state,
+                        "microsoft", user["id"], request.cookies.get("session_token"), cfg)
     if error:
-        return RedirectResponse(
-            url=f"/?integration=microsoft&status=failed&error={_q(str(error)[:200])}",
-            status_code=302,
-        )
+        return callback_response('microsoft', 'failed')
     if not (code and state):
-        return RedirectResponse(
-            url="/?integration=microsoft&status=failed&error=missing_code_or_state",
-            status_code=302,
-        )
-    cookie_val = request.cookies.get("oauth_state_microsoft") or ""
-    if ":" not in cookie_val:
-        raise HTTPException(status_code=400, detail="Missing OAuth state cookie")
-    saved_state, _, user_id_str = cookie_val.partition(":")
-    if not saved_state or saved_state != state or not user_id_str.isdigit():
-        raise HTTPException(status_code=400, detail="Invalid OAuth state")
-    user_id = int(user_id_str)
+        return callback_response('microsoft', 'failed')
+    user_id = user["id"]
 
     from services.calendar_service import calendar_config, MICROSOFT_SCOPES
     cfg = (calendar_config().get("microsoft") or {})
     tenant = cfg.get("tenant_id") or "common"
     try:
-        r = requests.post(
+        r = await asyncio.to_thread(requests.post,
             f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
             data={
                 "code": code,
@@ -11919,40 +12120,45 @@ async def oauth_microsoft_callback(request: Request,
                 "client_secret": cfg["client_secret"],
                 "redirect_uri": cfg["redirect_uri"],
                 "grant_type": "authorization_code",
+                "code_verifier": verifier,
                 "scope": " ".join(MICROSOFT_SCOPES),
             }, timeout=15,
         )
         r.raise_for_status()
         tok = r.json()
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Token exchange failed: {e}")
+        if not tok.get("access_token"):
+            raise ValueError("Missing access token")
+    except Exception:
+        return callback_response('microsoft', 'failed')
 
     # Discover the user principal name for sendMail/calendar paths.
     account_email = None
     try:
-        me = requests.get(
+        account_response = await asyncio.to_thread(requests.get,
             "https://graph.microsoft.com/v1.0/me",
             headers={"Authorization": f"Bearer {tok.get('access_token')}"},
             timeout=10,
-        ).json()
+        )
+        account_response.raise_for_status()
+        me = account_response.json()
         account_email = me.get("mail") or me.get("userPrincipalName")
+        account_id = me.get("id")
     except Exception:
-        pass
+        return callback_response('microsoft', 'failed')
+    if (not isinstance(account_email, str) or '@' not in account_email or len(account_email) > 320
+            or not isinstance(account_id, str) or not account_id or len(account_id) > 255):
+        return callback_response('microsoft', 'failed')
 
     from datetime import datetime as _dt, timezone as _tz, timedelta as _td
-    expires_at = _dt.now(_tz.utc) + _td(seconds=int(tok.get("expires_in", 3600)))
     db = get_db_manager()
-    db.save_oauth_token(
-        user_id, "microsoft",
-        access_token=tok.get("access_token"),
-        refresh_token=tok.get("refresh_token"),
-        expires_at=expires_at,
-        scope=tok.get("scope"),
-        email=account_email,
-    )
-    resp = RedirectResponse(url="/?integration=microsoft&status=connected", status_code=302)
-    resp.delete_cookie("oauth_state_microsoft", path="/")
-    return resp
+    try:
+        expires_at = _dt.now(_tz.utc) + _td(seconds=int(tok.get("expires_in", 3600)))
+        await asyncio.to_thread(db.save_oauth_token,
+            user_id, "microsoft", access_token=tok.get("access_token"), refresh_token=tok.get("refresh_token"),
+            expires_at=expires_at, scope=tok.get("scope"), email=account_email, extra={'account_id': account_id})
+    except Exception:
+        return callback_response('microsoft', 'failed')
+    return callback_response('microsoft', 'connected')
 
 
 @app.post("/api/oauth/{provider}/disconnect")
@@ -11962,7 +12168,7 @@ async def oauth_disconnect(provider: str, request: Request,
     if provider not in ("google", "microsoft"):
         raise HTTPException(status_code=400, detail="Unknown provider")
     db = get_db_manager()
-    ok = db.delete_oauth_token(user["id"], provider)
+    ok = await asyncio.to_thread(db.delete_oauth_token, user["id"], provider)
     return {"success": bool(ok)}
 
 
@@ -11974,6 +12180,9 @@ def search_web_for_company_info(company_name: str) -> str:
     Falls back to resume search engine if web search app is not available.
     """
     if not company_name:
+        return ""
+    if os.getenv("SMARTHR_LOCAL_MODE", "").lower() in {"1", "true", "yes", "on"}:
+        # The local Discovery shim searches private CVs, not the public web.
         return ""
 
     try:
@@ -12576,7 +12785,7 @@ def generate_jd_with_gemini(job_details: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "job_description": job_description,
             "success": True,
-            "generated_by": "Gemini 2.5 Flash",
+            "generated_by": llm_display_name(),
             "word_count": len(job_description.split()),
             "input_details": job_details
         }
@@ -12587,7 +12796,7 @@ def generate_jd_with_gemini(job_details: Dict[str, Any]) -> Dict[str, Any]:
             "job_description": f"Failed to generate job description: {str(e)}",
             "success": False,
             "error": str(e),
-            "generated_by": "Gemini 2.5 Flash"
+            "generated_by": llm_display_name()
         }
 
 def enhance_jd_with_gemini(existing_content: str, skills: List[str] = None) -> Dict[str, Any]:
@@ -12689,7 +12898,7 @@ def enhance_jd_with_gemini(existing_content: str, skills: List[str] = None) -> D
         return {
             "enhanced_description": enhanced_description,
             "success": True,
-            "enhanced_by": "Gemini 2.5 Flash",
+            "enhanced_by": llm_display_name(),
             "word_count": len(enhanced_description.split())
         }
 
@@ -12699,7 +12908,7 @@ def enhance_jd_with_gemini(existing_content: str, skills: List[str] = None) -> D
             "enhanced_description": f"Failed to enhance job description: {str(e)}",
             "success": False,
             "error": str(e),
-            "enhanced_by": "Gemini 2.5 Flash"
+            "enhanced_by": llm_display_name()
         }
 
 def extract_keywords_with_gemini(content: str) -> Dict[str, Any]:
@@ -12802,7 +13011,7 @@ def extract_keywords_with_gemini(content: str) -> Dict[str, Any]:
                 "qualifications": keywords_data.get('qualifications', []),
                 "industry_terms": keywords_data.get('industry_terms', []),
                 "success": True,
-                "extracted_by": "Gemini 2.5 Flash"
+                "extracted_by": llm_display_name()
             }
 
         except json.JSONDecodeError as e:
@@ -12820,7 +13029,7 @@ def extract_keywords_with_gemini(content: str) -> Dict[str, Any]:
                 "qualifications": [],
                 "industry_terms": [],
                 "success": True,
-                "extracted_by": "Gemini 2.5 Flash (Fallback)",
+                "extracted_by": llm_display_name("(Fallback)"),
                 "note": "JSON parsing failed, used fallback extraction"
             }
 
@@ -12834,7 +13043,7 @@ def extract_keywords_with_gemini(content: str) -> Dict[str, Any]:
             "industry_terms": [],
             "success": False,
             "error": str(e),
-            "extracted_by": "Gemini 2.5 Flash"
+            "extracted_by": llm_display_name()
         }
 
 @app.post("/api/generate-jd")

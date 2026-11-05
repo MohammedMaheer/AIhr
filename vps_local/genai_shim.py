@@ -163,6 +163,21 @@ class GenerateContentResponse:
 class _Models:
     def generate_content(self, model: str, contents: Any,
                          config: Optional[Any] = None, **kwargs) -> GenerateContentResponse:
+        if os.environ.get("LLM_PROVIDER", "auto").strip().lower() == "deepseek":
+            from services.deepseek_provider import generate_completion
+            result = generate_completion(contents, config)
+            choice = result.choices[0]
+            usage = result.usage
+            return GenerateContentResponse(
+                text=choice.message.content,
+                candidates=[_Candidate(content=_ContentShape(parts=[_PartShape(text=choice.message.content)]),
+                                       finish_reason=str(choice.finish_reason or "STOP").upper())],
+                usage_metadata=_UsageMetadata(
+                    prompt_token_count=getattr(usage, "prompt_tokens", 0) or 0,
+                    candidates_token_count=getattr(usage, "completion_tokens", 0) or 0,
+                    total_token_count=getattr(usage, "total_tokens", 0) or 0,
+                ),
+            )
         # 1. Try real Gemini (Google AI Studio) if GEMINI_API_KEY is set.
         gem = _get_gemini()
         if gem is not None:

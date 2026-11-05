@@ -1,0 +1,16 @@
+---
+description: Publish reviewed SmartHR changes with clear GitHub commit descriptions after each completed change turn
+alwaysApply: true
+---
+
+# GitHub Updates
+
+- At the end of each completed change turn, commit and push reviewed changes to the verified project remote unless the user asks otherwise. Confirm the pushed commit exists on the remote.
+- Use a specific commit subject and these body headings: Changes, Verification, Deployment, Remaining Limitations.
+- Describe actual behavior changes, exact test results and whether work is local, staged or deployed. Do not label mocked tests as real provider acceptance.
+- Stage explicit reviewed paths. Never use `git add .` in this workspace.
+- Never publish runtime configuration, credentials, real CVs, mailbox content, local audit receipts, backups or unreviewed operational scripts. Scan the proposed tree for secrets before committing.
+- Preserve local `config.json` and `config.docker.json`; publish `config.example.json` instead. Keep production secrets external to images and Git.
+- Inspect the branch, remote and incoming changes before pushing. Do not force-push, rewrite shared history or discard another person's work.
+- For a read-only turn with no project changes, do not create an empty commit. Report that no source update was required.
+- If publishing is blocked by authentication, permissions, conflicts or a failed safety check, report the concrete blocker rather than claiming an update succeeded.

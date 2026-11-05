@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import smtplib
+import ssl
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -32,14 +33,69 @@ from email.utils import formataddr
 from typing import Any, Optional
 
 import requests
-from jinja2 import Environment, BaseLoader, select_autoescape
+from jinja2 import BaseLoader, TemplateError, nodes
+from jinja2.sandbox import ImmutableSandboxedEnvironment
+
+from services.integration_errors import provider_failure
 
 log = logging.getLogger(__name__)
 
-# Sandbox Jinja env — templates come from DB strings, never the filesystem.
-_jinja = Environment(loader=BaseLoader(),
-                     autoescape=select_autoescape(["html", "xml"]),
-                     trim_blocks=True, lstrip_blocks=True)
+_jinja = ImmutableSandboxedEnvironment(loader=BaseLoader(), autoescape=True,
+                                     trim_blocks=True, lstrip_blocks=True)
+_jinja.globals.clear()
+_jinja.filters = {name: _jinja.filters[name] for name in
+                  ("escape", "e", "default", "d", "lower", "upper", "title", "capitalize", "trim")}
+_ALLOWED_NODES = (nodes.Template, nodes.Output, nodes.TemplateData, nodes.Name,
+                  nodes.Const, nodes.If, nodes.Compare, nodes.Operand,
+                  nodes.And, nodes.Or, nodes.Not, nodes.Filter, nodes.CondExpr)
+_MAX_TEMPLATE = 32768
+_MAX_RENDERED = 262144
+
+
+def validate_template(template: str) -> None:
+    """Allow substitutions, safe filters and conditions, not executable Jinja."""
+    if not isinstance(template, str) or len(template) > _MAX_TEMPLATE:
+        raise ValueError("Email templates must be text of at most 32,768 characters.")
+    try:
+        tree = _jinja.parse(template)
+        pending = [(tree, 0)]
+        count = 0
+        while pending:
+            node, depth = pending.pop()
+            count += 1
+            if depth > 32 or count > 1000 or not isinstance(node, _ALLOWED_NODES):
+                raise ValueError("Email templates support named variables, conditions and basic text filters only.")
+            if isinstance(node, nodes.Name) and node.name.startswith("_"):
+                raise ValueError("Private template variables are not allowed.")
+            if isinstance(node, nodes.Filter) and node.name not in _jinja.filters:
+                raise ValueError("This email template filter is not supported.")
+            pending.extend((child, depth + 1) for child in node.iter_child_nodes())
+    except (TemplateError, RecursionError) as exc:
+        raise ValueError("Invalid email template syntax.") from exc
+
+
+def _render_bounded(template: str, ctx: dict, *, html: bool) -> str:
+    validate_template(template)
+    context = {}
+    if not isinstance(ctx, dict) or len(ctx) > 100:
+        raise ValueError("Invalid email template context.")
+    for key, value in ctx.items():
+        if not isinstance(key, str) or key.startswith("_") or type(value) not in (str, int, float, bool, type(None)):
+            raise ValueError("Email template variables must be simple values.")
+        if len(str(value)) > 8192:
+            raise ValueError("Email template variable is too long.")
+        context[key] = value
+    try:
+        compiled = _jinja.overlay(autoescape=html).from_string(template)
+        parts, length = [], 0
+        for part in compiled.generate(**context):
+            length += len(part)
+            if length > _MAX_RENDERED:
+                raise ValueError("Rendered email is too large.")
+            parts.append(part)
+        return "".join(parts)
+    except TemplateError as exc:
+        raise ValueError("Email template could not be rendered safely.") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -73,16 +129,10 @@ def email_config() -> dict:
 # ---------------------------------------------------------------------------
 def render_template(subject_tpl: str, body_tpl: str, ctx: dict) -> tuple[str, str]:
     """Render subject + body Jinja templates with `ctx`. Returns (subject, body)."""
-    try:
-        subj = _jinja.from_string(subject_tpl or "").render(**ctx)
-    except Exception as e:
-        log.warning(f"subject template render failed: {e}")
-        subj = subject_tpl or ""
-    try:
-        body = _jinja.from_string(body_tpl or "").render(**ctx)
-    except Exception as e:
-        log.warning(f"body template render failed: {e}")
-        body = body_tpl or ""
+    subj = _render_bounded(subject_tpl or "", ctx, html=False)
+    body = _render_bounded(body_tpl or "", ctx, html=True)
+    if "\r" in subj or "\n" in subj:
+        raise ValueError("Email subjects cannot contain newlines.")
     return subj, body
 
 
@@ -139,27 +189,34 @@ def _send_via_smtp(to: str, subject: str, body_html: str,
     # Always attach HTML last so most clients show it.
     msg.attach(MIMEText(body_html or body_text or "", "html", "utf-8"))
     port = int(cfg.get("port") or 587)
+    submission_started = accepted = False
     try:
         if port == 465:
-            with smtplib.SMTP_SSL(host, port, timeout=20) as s:
+            with smtplib.SMTP_SSL(host, port, timeout=20, context=ssl.create_default_context()) as s:
                 if user and pwd:
                     s.login(user, pwd)
+                submission_started = True
                 s.sendmail(sender, [to], msg.as_string())
+                accepted = True
         else:
             with smtplib.SMTP(host, port, timeout=20) as s:
                 s.ehlo()
                 if cfg.get("use_tls", True):
-                    try:
-                        s.starttls()
-                        s.ehlo()
-                    except smtplib.SMTPException:
-                        pass
+                    s.starttls(context=ssl.create_default_context())
+                    s.ehlo()
                 if user and pwd:
                     s.login(user, pwd)
+                submission_started = True
                 s.sendmail(sender, [to], msg.as_string())
+                accepted = True
         return {"success": True, "provider": "smtp", "error": None}
     except Exception as e:
-        return {"success": False, "provider": "smtp", "error": f"SMTP send failed: {e}"}
+        log.warning("SMTP transport error: %s", type(e).__name__)
+        if accepted:
+            return {"success": True, "provider": "smtp", "error": None}
+        rejected = isinstance(e, (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused,
+                                  smtplib.SMTPDataError))
+        return provider_failure("smtp", "email", uncertain=submission_started and not rejected)
 
 
 # ---------------------------------------------------------------------------
@@ -186,11 +243,12 @@ def _send_via_graph(token: str, sender_user: Optional[str],
             data=json.dumps(payload), timeout=20,
         )
         if r.status_code >= 400:
-            return {"success": False, "provider": "microsoft",
-                    "error": f"Graph sendMail {r.status_code}: {r.text[:300]}"}
+            log.warning("Graph sendMail rejected: status=%s", r.status_code)
+            return provider_failure("microsoft", "email", status_code=r.status_code)
         return {"success": True, "provider": "microsoft", "error": None}
     except Exception as e:
-        return {"success": False, "provider": "microsoft", "error": f"Graph sendMail failed: {e}"}
+        log.warning("Graph sendMail outcome unavailable: %s", type(e).__name__)
+        return provider_failure("microsoft", "email")
 
 
 # ---------------------------------------------------------------------------
@@ -212,11 +270,12 @@ def _send_via_gmail(token: str, sender_email: Optional[str],
             data=json.dumps({"raw": raw}), timeout=20,
         )
         if r.status_code >= 400:
-            return {"success": False, "provider": "gmail",
-                    "error": f"Gmail send {r.status_code}: {r.text[:300]}"}
+            log.warning("Gmail send rejected: status=%s", r.status_code)
+            return provider_failure("gmail", "email", status_code=r.status_code)
         return {"success": True, "provider": "gmail", "error": None}
     except Exception as e:
-        return {"success": False, "provider": "gmail", "error": f"Gmail send failed: {e}"}
+        log.warning("Gmail send outcome unavailable: %s", type(e).__name__)
+        return provider_failure("gmail", "email")
 
 
 # ---------------------------------------------------------------------------
@@ -265,13 +324,15 @@ def send_email(*, to: str, subject: str, body_html: str,
         elif transport == "microsoft":
             if not (organizer_user_id and db):
                 continue
-            tok, who = _get_valid_token("microsoft", organizer_user_id, db)
+            tok, who = _get_valid_token("microsoft", organizer_user_id, db, delegated_actor=True)
             if not tok:
                 continue
             res = _send_via_graph(tok, who, to, subject, body_html)
         else:
             continue
         if res.get("success"):
+            return res
+        if res.get("delivery_unknown"):
             return res
         last_err = res.get("error")
     return {"success": False, "provider": "none",

@@ -66,26 +66,13 @@
     };
 
     window.sanitizeGeneratedHtml = window.sanitizeGeneratedHtml || function sanitizeGeneratedHtml(html) {
-        const template = document.createElement("template");
-        template.innerHTML = html || "";
-
-        template.content
-            .querySelectorAll("script, iframe, object, embed, link, meta, base, form, input, button")
-            .forEach((node) => node.remove());
-
-        template.content.querySelectorAll("*").forEach((node) => {
-            Array.from(node.attributes).forEach((attr) => {
-                const name = attr.name.toLowerCase();
-                const value = (attr.value || "").trim().toLowerCase();
-                if (name.startsWith("on") || name === "srcdoc" || name === "style") {
-                    node.removeAttribute(attr.name);
-                }
-                if ((name === "href" || name === "src" || name === "xlink:href") && value.startsWith("javascript:")) {
-                    node.removeAttribute(attr.name);
-                }
-            });
+        if (!window.DOMPurify) return window.escapeHtml(html || "");
+        return window.DOMPurify.sanitize(String(html || ""), {
+            USE_PROFILES: { html: true },
+            FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "link", "meta", "base", "form", "input", "button", "textarea", "select"],
+            FORBID_ATTR: ["style", "srcdoc", "srcset"],
+            ALLOW_DATA_ATTR: false,
+            SANITIZE_NAMED_PROPS: true
         });
-
-        return template.innerHTML;
     };
 })();

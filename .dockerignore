@@ -66,6 +66,7 @@ deploy/*.sh
 !start.sh
 
 # Config backups
+config.json
 config.*.json
 
 # Large development files
@@ -98,3 +99,24 @@ proxy.*.log
 cloud-sql-proxy.exe
 service-account.json
 service-account.example.json
+
+# Operational material and secrets are never runtime source.
+.env
+.env.*
+**/.env
+**/.env.*
+scripts/
+deploy/
+audit_out/
+tests/
+output/
+tmp/
+attachments/
+*.pem
+*.key
+*.pfx
+*.p12
+*.sqlite*
+*.db*
+cookies*.txt
+.pytest_cache/

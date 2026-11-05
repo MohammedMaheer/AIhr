@@ -1,3 +1,9 @@
+function destroyCanvasCharts(root) {
+    if (root && window.Chart && typeof window.Chart.getChart === 'function') {
+        root.querySelectorAll('canvas').forEach(canvas => window.Chart.getChart(canvas)?.destroy());
+    }
+}
+
 // Authentication and user management functions
 async function checkAuthAndLoadUser() {
     try {
@@ -32,6 +38,8 @@ async function checkAuthAndLoadUser() {
                 if (typeof window.initializeDashboard === 'function') {
                     window.initializeDashboard();
                 }
+            } else if (document.getElementById('recruiter-integrations')) {
+                loadUserInfo();
             }
         }, 200);
 
@@ -45,6 +53,7 @@ async function checkAuthAndLoadUser() {
 function toggleUserMenu() {
     const dropdown = document.getElementById('userDropdown');
     dropdown.classList.toggle('hidden');
+    document.querySelector('[aria-controls="userDropdown"]')?.setAttribute('aria-expanded', String(!dropdown.classList.contains('hidden')));
 }
 
 // Logout function
@@ -57,7 +66,68 @@ async function logout() {
     }
 }
 
+function localDateInputValue(date = new Date()) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function setupResponsiveNavigation() {
+    const sidebar = document.getElementById('app-navigation');
+    const toggle = document.getElementById('navigation-toggle');
+    const close = document.getElementById('navigation-close');
+    const backdrop = document.getElementById('navigation-backdrop');
+    const content = document.getElementById('app-content');
+    if (!sidebar || !toggle || !close || !backdrop || !content) return;
+    const mobile = window.matchMedia('(max-width: 768px)');
+    let opened = false;
+    const focusable = () => [...sidebar.querySelectorAll('a[href],button,input,select,textarea,[tabindex="0"]')]
+        .filter(element => !element.disabled && !element.closest('.hidden') && !element.hidden);
+    function setOpen(value, restoreFocus = true) {
+        opened = mobile.matches && value;
+        document.getElementById('app-shell').classList.toggle('is-navigation-open', opened);
+        sidebar.inert = mobile.matches && !opened;
+        if (opened) sidebar.setAttribute('aria-modal', 'true');
+        else sidebar.removeAttribute('aria-modal');
+        if (opened) sidebar.setAttribute('role', 'dialog');
+        else sidebar.removeAttribute('role');
+        content.inert = opened;
+        backdrop.hidden = !opened;
+        toggle.setAttribute('aria-expanded', String(opened));
+        if (opened) close.focus();
+        else if (restoreFocus && mobile.matches) toggle.focus();
+    }
+    toggle.addEventListener('click', () => setOpen(!opened));
+    close.addEventListener('click', () => setOpen(false));
+    backdrop.addEventListener('click', () => setOpen(false));
+    sidebar.addEventListener('click', event => {
+        if (opened && event.target.closest('.nav-link')) {
+            setOpen(false, false);
+            document.getElementById('main-content').focus();
+        }
+    });
+    sidebar.addEventListener('keydown', event => {
+        if (!opened) return;
+        if (event.key === 'Escape') { event.preventDefault(); setOpen(false); }
+        if (event.key !== 'Tab') return;
+        const items = focusable();
+        const first = items[0], last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault(); last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault(); first.focus();
+        }
+    });
+    mobile.addEventListener('change', () => {
+        const wasInside = sidebar.contains(document.activeElement);
+        const wasMobileControl = document.activeElement === toggle || document.activeElement === close;
+        setOpen(false, false);
+        if (mobile.matches && wasInside) toggle.focus();
+        else if (!mobile.matches && wasMobileControl) sidebar.querySelector('.nav-link').focus();
+    });
+    setOpen(false, false);
+}
+
 document.addEventListener('DOMContentLoaded', function () {
+    setupResponsiveNavigation();
     // Check authentication first
     checkAuthAndLoadUser();
 
@@ -398,7 +468,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <p class="text-sm text-gray-600">Your latest search activities and results</p>
                                 </div>
                                 <div class="flex items-center space-x-2">
-                                    <button onclick="refreshSearchHistory()" class="text-gray-400 hover:text-gray-600 p-2">
+                                    <button onclick="refreshSearchHistory()" aria-label="Refresh recent searches" title="Refresh recent searches" class="text-gray-400 hover:text-gray-600 p-2">
                                         <i class="fas fa-sync-alt"></i>
                                     </button>
                                     
@@ -505,13 +575,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     <!-- Search Input -->
                     <div class="w-full max-w-3xl mb-8">
                         <div class="relative">
-                            <input type="text" id="chat-input" class="w-full px-6 py-4 text-base border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm" placeholder="Describe your ideal candidate or job requirements...">
+                            <input type="text" id="chat-input" aria-label="Candidate search requirements" class="w-full px-6 py-4 text-base border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm" placeholder="Describe your ideal candidate or job requirements...">
                             <input type="file" id="jd-upload-input" accept=".pdf,.doc,.docx,.txt" class="hidden">
                             <div class="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-2">
-                                <button id="jd-upload-button" type="button" title="Upload Job Description (PDF, DOCX, or TXT)" class="p-2 text-gray-400 hover:text-blue-600 transition-colors">
+                                <button id="jd-upload-button" type="button" aria-label="Upload job description" title="Upload Job Description (PDF, DOCX, or TXT)" class="p-2 text-gray-400 hover:text-blue-600 transition-colors">
                                     <i class="fas fa-paperclip text-sm"></i>
                                 </button>
-                                <button id="send-button" class="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                                <button id="send-button" aria-label="Search candidates" title="Search candidates" class="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                                     <i class="fas fa-paper-plane text-sm"></i>
                                 </button>
                             </div>
@@ -521,13 +591,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     <!-- Search Options -->
                     <div class="w-full max-w-3xl mb-12">
-                        <div class="flex items-center justify-center space-x-4 p-4 bg-gray-50 rounded-xl">
+                        <div class="search-options flex items-center justify-center space-x-4 p-4 bg-gray-50 rounded-xl">
                             <div class="flex items-center space-x-2">
                                 <i class="fas fa-search text-blue-600"></i>
                                 <span class="text-sm font-medium text-gray-700">Search Results:</span>
                             </div>
                             <div class="flex items-center space-x-2">
-                                <input type="number" id="result-count" min="1" max="100" value="10" class="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" placeholder="10">
+                                <input type="number" id="result-count" aria-label="Number of candidates" min="1" max="100" value="10" class="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" placeholder="10">
                                 <span class="text-sm text-gray-700">results</span>
                             </div>
                             <div class="text-xs text-gray-500">
@@ -545,7 +615,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                             <!-- Sample Job Description Card -->
-                            <div class="search-category-card p-6 border border-gray-200 rounded-2xl hover:shadow-md transition-all duration-200 cursor-pointer col-span-3">
+                            <div role="button" tabindex="0" aria-label="Search using the sample job description" class="search-category-card p-6 border border-gray-200 rounded-2xl hover:shadow-md transition-all duration-200 cursor-pointer col-span-3">
                                 <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
                                     <i class="fas fa-briefcase text-blue-600 text-lg"></i>
                                 </div>
@@ -566,8 +636,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 <div id="bottom-chat-container" class="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 opacity-0 pointer-events-none transition-all duration-500">
                     <div class="max-w-4xl mx-auto">
                         <div class="relative">
-                            <input type="text" id="bottom-chat-input" class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" placeholder="Ask another question or refine your search...">
-                            <button id="bottom-send-button" class="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                            <input type="text" id="bottom-chat-input" aria-label="Refine candidate search" class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" placeholder="Ask another question or refine your search...">
+                            <button id="bottom-send-button" aria-label="Search candidates" title="Search candidates" class="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                                 <i class="fas fa-paper-plane text-xs"></i>
                             </button>
                         </div>
@@ -576,7 +646,7 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>
         `,
         history: `
-            <div class="p-4 h-full overflow-y-auto bg-gray-50">
+            <div id="history-page" class="p-4 h-full overflow-y-auto bg-gray-50">
                 <div class="max-w-6xl mx-auto">
                     <div class="mb-6">
                         <div class="flex items-center justify-between">
@@ -586,7 +656,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             </div>
                             <div class="flex items-center space-x-3">
                                 <div class="relative">
-                                    <input type="text" id="history-search" placeholder="Search history..." 
+                                    <input type="text" id="history-search" aria-label="Search reports" placeholder="Search history..."
                                            class="w-64 px-3 py-2 pl-10 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                                     <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
                                 </div>
@@ -597,7 +667,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         </div>
                     </div>
                     
-                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="history-table-scroll bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" role="region" aria-label="Search reports table" tabindex="0">
                         <!-- Table Header -->
                         <div class="bg-gray-50 border-b border-gray-200 px-6 py-3">
                             <div class="grid grid-cols-12 gap-4 items-center text-xs font-medium text-gray-600 uppercase tracking-wide">
@@ -703,14 +773,14 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <div class="flex items-center">
                                         <i class="fas fa-info-circle text-yellow-600 mr-2"></i>
                                         <span class="text-sm text-yellow-800">
-                                            <strong>Email Scraping:</strong> This feature will scan your email for resume attachments and interview-related documents. Your credentials are used only for this session and are not stored.
+                                            <strong>Email Scraping:</strong> Scan email for resume attachments and interview-related documents. Passwords are used only for this import and are not stored.
                                         </span>
                                     </div>
                                 </div>
 
                                 <div class="space-y-4">
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Email Provider</label>
+                                        <label for="email-provider" class="block text-sm font-medium text-gray-700 mb-2">Email Provider</label>
                                         <select id="email-provider" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                             <option value="">Select Email Provider</option>
                                             <option value="gmail">Gmail</option>
@@ -719,15 +789,20 @@ document.addEventListener('DOMContentLoaded', function () {
                                     </div>
 
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-                                        <input type="email" id="email-address" placeholder="your.email@company.com" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        <label for="email-address" class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                                        <input type="email" id="email-address" autocomplete="off" placeholder="your.email@company.com" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+
+                                    <div id="outlook-connection-row" class="hidden connection-row">
+                                        <p data-outlook-account-state role="status">Not connected</p>
+                                        <button type="button" data-open-connection-settings><i class="fas fa-link" aria-hidden="true"></i> Microsoft connection</button>
                                     </div>
 
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Email Password</label>
+                                        <label for="email-password" class="block text-sm font-medium text-gray-700 mb-2">Email Password</label>
                                         <div class="relative">
-                                            <input type="password" id="email-password" placeholder="Your email password or app password" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10">
-                                            <button type="button" id="toggle-password" class="absolute inset-y-0 right-0 pr-3 flex items-center">
+                                            <input type="password" id="email-password" autocomplete="new-password" placeholder="Your email password or app password" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10">
+                                            <button type="button" id="toggle-password" aria-label="Show email password" title="Show email password" aria-pressed="false" class="absolute inset-y-0 right-0 pr-3 flex items-center">
                                                 <i class="fas fa-eye text-gray-400 hover:text-gray-600"></i>
                                             </button>
                                         </div>
@@ -735,7 +810,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                     </div>
 
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Email Limit</label>
+                                        <label for="email-limit" class="block text-sm font-medium text-gray-700 mb-2">Email Limit</label>
                                         <input type="number" id="email-limit" value="100" min="1" max="1000" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                         <p class="text-xs text-gray-500 mt-1">Maximum number of recent emails to scan (default: 100)</p>
                                     </div>
@@ -807,7 +882,7 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>
         `,
         jdBuilder: `
-            <div class="p-4 h-full overflow-y-auto bg-gray-50">
+            <div id="jd-builder-page" class="p-4 h-full overflow-y-auto bg-gray-50">
                 <div class="max-w-7xl mx-auto">
                     <!-- Main Content -->
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -821,28 +896,28 @@ document.addEventListener('DOMContentLoaded', function () {
                                 </h3>
                                 <div class="space-y-4">
                                 <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Job Title *</label>
+                                        <label for="jd-job-title" class="block text-sm font-medium text-gray-700 mb-2">Job Title *</label>
                                         <input type="text" id="jd-job-title" placeholder="e.g., Senior Software Engineer" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                     </div>
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Company Name</label>
+                                        <label for="jd-company-name" class="block text-sm font-medium text-gray-700 mb-2">Company Name</label>
                                         <input type="text" id="jd-company-name" placeholder="e.g., Acme Corp" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                     </div>
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Company Details</label>
+                                        <label for="jd-company-details" class="block text-sm font-medium text-gray-700 mb-2">Company Details</label>
                                         <textarea id="jd-company-details" rows="3" placeholder="Brief company description, mission, values, culture, or any specific information about the company you'd like to include..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
                                     </div>
                                     
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Department</label>
+                                        <label for="jd-department" class="block text-sm font-medium text-gray-700 mb-2">Department</label>
                                         <input type="text" id="jd-department" placeholder="e.g., Engineering" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                     </div>
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Location</label>
+                                        <label for="jd-location" class="block text-sm font-medium text-gray-700 mb-2">Location</label>
                                         <input type="text" id="jd-location" placeholder="e.g., San Francisco, CA / Remote" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                     </div>
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Experience Level</label>
+                                        <label for="jd-experience-level" class="block text-sm font-medium text-gray-700 mb-2">Experience Level</label>
                                         <select id="jd-experience-level" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                             <option value="">Select Level</option>
                                             <option value="entry">Entry Level (0-2 years)</option>
@@ -853,7 +928,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                         </select>
                                     </div>
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Employment Type</label>
+                                        <label for="jd-employment-type" class="block text-sm font-medium text-gray-700 mb-2">Employment Type</label>
                                         <select id="jd-employment-type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                             <option value="full-time">Full-time</option>
                                             <option value="part-time">Part-time</option>
@@ -870,7 +945,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                                 <div class="space-y-4">
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <label for="jd-ai-input" class="block text-sm font-medium text-gray-700 mb-2">
                                             Describe the role or paste existing content
                                         </label>
                                         <textarea id="jd-ai-input" rows="4" placeholder="Describe what kind of person you're looking for, key responsibilities, or paste an existing job description to improve..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"></textarea>
@@ -887,7 +962,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 </h3>
                                 <div class="space-y-4">
                                     <div>
-                                        <input type="text" id="jd-skill-input" placeholder="Add a skill and press Enter" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                                        <input type="text" id="jd-skill-input" aria-label="Required skill" placeholder="Add a skill and press Enter" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
                                     </div>
                                     <div id="jd-skills-list" class="flex flex-wrap gap-2 min-h-[40px] p-3 border border-gray-200 rounded-lg bg-gray-50">
                                         <span class="text-gray-500 text-sm">Skills will appear here...</span>
@@ -919,7 +994,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                     </div>
                                 </div>
                                 
-                                <div id="jd-preview" class="min-h-[600px] border border-gray-200 rounded-lg p-6 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" contenteditable="true" style="line-height: 1.6;">
+                                <div id="jd-preview" role="textbox" aria-label="Job description preview" aria-multiline="true" class="min-h-[600px] border border-gray-200 rounded-lg p-6 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" contenteditable="true" style="line-height: 1.6;">
                                     <div class="text-center text-gray-500 mt-20">
                                         <i class="fas fa-file-contract text-4xl mb-4"></i>
                                         <p class="text-lg">Your job description will appear here</p>
@@ -953,6 +1028,30 @@ document.addEventListener('DOMContentLoaded', function () {
                         <h2 class="text-2xl font-bold text-gray-900">Settings & User Management</h2>
                         <p class="mt-1 text-gray-600 text-sm">Manage your preferences and users</p>
                     </div>
+
+                    <section id="recruiter-integrations" class="recruiter-integrations" aria-labelledby="connections-title">
+                        <div class="connections-heading">
+                            <h3 id="connections-title" class="text-lg font-semibold text-gray-900">Connected accounts</h3>
+                            <button type="button" data-refresh-connections aria-label="Refresh connections" title="Refresh connections"><i class="fas fa-sync-alt" aria-hidden="true"></i></button>
+                        </div>
+                        <p data-connection-notice role="status" aria-live="polite"></p>
+                        <div class="connection-row" data-provider="microsoft">
+                            <div><h4>Microsoft 365</h4><p data-account-state>Loading...</p></div>
+                            <div class="connection-actions">
+                                <button type="button" data-connect disabled><i class="fas fa-link" aria-hidden="true"></i> <span>Connect Microsoft</span></button>
+                                <button type="button" data-disconnect disabled aria-label="Disconnect Microsoft" title="Disconnect Microsoft"><i class="fas fa-unlink" aria-hidden="true"></i></button>
+                            </div>
+                        </div>
+                        <div class="connection-row" data-provider="google">
+                            <div><h4>Google</h4><p data-account-state>Loading...</p></div>
+                            <div class="connection-actions">
+                                <button type="button" data-connect disabled><i class="fas fa-link" aria-hidden="true"></i> <span>Connect Google</span></button>
+                                <button type="button" data-disconnect disabled aria-label="Disconnect Google" title="Disconnect Google"><i class="fas fa-unlink" aria-hidden="true"></i></button>
+                            </div>
+                        </div>
+                        <div class="connection-row"><h4>SMTP email</h4><p data-smtp-state>Loading...</p></div>
+                        <a href="/microsoft-approval" target="_blank" rel="noopener noreferrer">Microsoft administrator review</a>
+                    </section>
                     
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <!-- User Management Section (Tenant Admin Only) -->
@@ -1019,6 +1118,7 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
+        destroyCanvasCharts(mainContent);
         mainContent.innerHTML = pages[page];
 
         // Update page title and description
@@ -1074,6 +1174,12 @@ document.addEventListener('DOMContentLoaded', function () {
         // Handle category card clicks
         console.log('Found category cards:', categoryCards.length); // Debug log
         categoryCards.forEach(card => {
+            card.addEventListener('keydown', event => {
+                if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
+                    event.preventDefault();
+                    card.click();
+                }
+            });
             card.addEventListener('click', () => {
                 const cardTitle = card.querySelector('h3').textContent;
                 console.log('Category card clicked:', cardTitle); // Debug log
@@ -1696,6 +1802,8 @@ document.addEventListener('DOMContentLoaded', function () {
         return 'Position';
     }
 
+    const pendingCandidateSearches = new Map();
+
     function performRealSearch(query) {
         const formData = new FormData();
         formData.append('query', query);
@@ -1716,8 +1824,17 @@ document.addEventListener('DOMContentLoaded', function () {
         const jobTitle = extractJobTitleFromQuery(query);
         formData.append('job_title', jobTitle);
 
+        const user = window.currentUser;
+        const key = user?.id != null ? JSON.stringify([
+            user.id, user.user_type, user.company, query, resultCount, jobTitle
+        ]) : null;
+        const copyResult = value => JSON.parse(JSON.stringify(value));
+        if (key && pendingCandidateSearches.has(key)) {
+            return pendingCandidateSearches.get(key).then(copyResult);
+        }
+
         // Use HR scorecard search with keyword analysis (instead of smart-search-stream)
-        return fetch('/api/hr-scorecard-search', {
+        const request = fetch('/api/hr-scorecard-search', {
             method: 'POST',
             body: formData
         })
@@ -1746,7 +1863,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
 
                 // Legacy/synchronous path
-                console.log('HR Scorecard search response:', data);
+                console.debug('HR Scorecard search response received');
                 return {
                     results: data.results || [],
                     total_results: data.total_results || 0,
@@ -1762,7 +1879,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     top_result_analysis: data.top_result_analysis || null,
                     top_scorecard: data.top_scorecard || null
                 };
+            }).finally(() => {
+                if (key && pendingCandidateSearches.get(key) === request) pendingCandidateSearches.delete(key);
             });
+        if (key && pendingCandidateSearches.size < 16) pendingCandidateSearches.set(key, request);
+        return request.then(copyResult);
     }
 
     // Poll an HR-scorecard Cloud Task until it completes (or fails / times out)
@@ -1775,7 +1896,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const fixedIntervalMs = opts.intervalMs;
         const backoffSchedule = [800, 1200, 1800, 2500, 3500, 4000];
         const maxIntervalMs = 4000;
-        const timeoutMs = opts.timeoutMs || 10 * 60 * 1000;
+        const timeoutMs = opts.timeoutMs || 17 * 60 * 1000;
         const startedAt = Date.now();
         let pollCount = 0;
 
@@ -1788,22 +1909,43 @@ document.addEventListener('DOMContentLoaded', function () {
             return backoffSchedule[idx] || maxIntervalMs;
         }
 
-        function fetchStatus() {
-            return fetch('/api/hr-scorecard-task-status/' + encodeURIComponent(taskId), {
-                method: 'GET', credentials: 'same-origin'
-            }).then(function (r) {
-                if (!r.ok) throw new Error('Task status check failed (' + r.status + ')');
-                return r.json();
-            });
+        async function requestJson(path) {
+            for (let attempt = 0; attempt < 6; attempt += 1) {
+                if (Date.now() - startedAt > timeoutMs) {
+                    throw new Error('Search is still running or unavailable. Check Search Reports before starting another search.');
+                }
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), opts.requestTimeoutMs || 15000);
+                let retryDelay = Math.min(500 * (2 ** attempt), 8000);
+                try {
+                    const response = await fetch(path, {method:'GET', credentials:'same-origin', signal:controller.signal});
+                    if (!response.ok) {
+                        const error = new Error(response.status === 401 ? 'Session expired. Sign in to check your search.' :
+                            'Search status unavailable (' + response.status + '). Check Search Reports before starting another search.');
+                        error.retryable = response.status === 429 || response.status >= 500;
+                        const retryAfter = response.headers?.get('Retry-After');
+                        if (retryAfter) {
+                            const seconds = Number(retryAfter);
+                            const wait = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now();
+                            if (Number.isFinite(wait)) retryDelay = Math.max(250, Math.min(wait, 30000));
+                        }
+                        throw error;
+                    }
+                    try { return await response.json(); }
+                    catch (_) { const error = new Error('Search status response unavailable'); error.retryable = true; throw error; }
+                } catch (error) {
+                    const transient = error.retryable || error.name === 'TypeError' || error.name === 'AbortError';
+                    if (!transient || attempt === 5) throw error;
+                } finally { clearTimeout(timer); }
+                await delay(retryDelay);
+            }
         }
 
+        function fetchStatus() {
+            return requestJson('/api/hr-scorecard-task-status/' + encodeURIComponent(taskId));
+        }
         function fetchResults() {
-            return fetch('/api/hr-scorecard-task-results/' + encodeURIComponent(taskId), {
-                method: 'GET', credentials: 'same-origin'
-            }).then(function (r) {
-                if (!r.ok) throw new Error('Task results fetch failed (' + r.status + ')');
-                return r.json();
-            });
+            return requestJson('/api/hr-scorecard-task-results/' + encodeURIComponent(taskId));
         }
 
         function loop() {
@@ -1839,7 +1981,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
 
                 if (Date.now() - startedAt > timeoutMs) {
-                    throw new Error('Search is taking too long. Please try again.');
+                    throw new Error('Search is still running. Check Search Reports before starting another search.');
                 }
 
                 return delay(nextDelay()).then(loop);
@@ -1855,7 +1997,7 @@ document.addEventListener('DOMContentLoaded', function () {
         window.searchResultsData = data;
 
         // Debug logging
-        console.log('generateEnhancedResults called with data:', data);
+        console.debug('Rendering candidate results');
         console.log('Total results received:', data.results ? data.results.length : 0);
 
         // Show all results with analysis data (improved filtering)
@@ -1994,6 +2136,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Create list item
                 const listItem = document.createElement('div');
                 listItem.className = 'candidate-list-item';
+                listItem.setAttribute('role', 'button');
+                listItem.tabIndex = 0;
+                listItem.setAttribute('aria-label', `View ${candidateName}`);
                 listItem.dataset.candidateIndex = index;
                 const cmHere = candidate && candidate.criteria_match;
                 if (cmHere && cmHere.evaluated && (cmHere.misses || []).length > 0) {
@@ -2021,6 +2166,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Add click event
                 listItem.addEventListener('click', () => {
                     selectCandidate(index, highScoreResults);
+                });
+                listItem.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        selectCandidate(index, highScoreResults);
+                    }
                 });
 
                 candidateList.appendChild(listItem);
@@ -2198,7 +2349,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!resultsContainer) return;
 
         try {
-            console.log('generateDetailedCandidateCard called for candidate:', candidate);
+            console.debug('Rendering candidate detail', index);
 
             // Improved analysis data extraction with more debugging
             const analysis = candidate.gemini_analysis || candidate.analysis || candidate;
@@ -2216,17 +2367,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 analysis: !!analysis,
                 analysisData: !!analysisData,
                 score: score,
-                candidateName: analysisData?.candidate_overview?.name,
-                analysisDataKeys: analysisData ? Object.keys(analysisData) : [],
-                analysisDataStructure: analysisData
+                analysisDataKeys: analysisData ? Object.keys(analysisData) : []
             });
 
             // Validate we have minimum required data
             if (!analysisData || typeof analysisData !== 'object') {
-                console.error('Invalid analysisData structure:', analysisData);
+                console.error('Invalid candidate analysis structure');
                 throw new Error('Invalid analysis data structure');
             }
 
+            // Chart.js retains detached canvases unless their instances are destroyed.
+            destroyCanvasCharts(resultsContainer);
             // Clear container
             resultsContainer.innerHTML = '';
 
@@ -2755,7 +2906,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 const commentsTextarea = card.querySelector('.hr-comments-textarea');
                 if (commentsTextarea) {
                     commentsTextarea.addEventListener('change', () => {
-                        saveCandidateComment(finalCandidateName, commentsTextarea.value);
+                        saveCandidateComment(finalCandidateName, commentsTextarea.value, commentsTextarea);
                     });
                 }
 
@@ -2786,8 +2937,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Initialize keyword chart if we have keyword data
                 if (keywordCoverage.matched_keywords || keywordCoverage.missing_keywords) {
                     setTimeout(() => {
-                        const canvas = document.getElementById(`keywordChart${index}`);
-                        if (canvas && typeof Chart !== 'undefined') {
+                        const canvas = card.querySelector('canvas');
+                        if (canvas && card.isConnected && typeof Chart !== 'undefined') {
+                            Chart.getChart(canvas)?.destroy();
                             const ctx = canvas.getContext('2d');
                             const matched = keywordCoverage.matched_keywords ? keywordCoverage.matched_keywords.length : 0;
                             const missing = keywordCoverage.missing_keywords ? keywordCoverage.missing_keywords.length : 0;
@@ -2823,7 +2975,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
 
                 // Load saved candidate data
-                loadCandidateData();
+                loadCandidateData(card);
 
             } catch (htmlError) {
                 console.error('Error creating HTML template:', htmlError);
@@ -3064,7 +3216,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     </div>
                     <h3 class="text-lg font-medium text-red-900 mb-2">Search Failed</h3>
                     <p class="text-red-700 mb-4">An error occurred while searching the vector store.</p>
-                    <p class="text-sm text-red-600">${error.message || 'Unknown error'}</p>
+                    <p class="text-sm text-red-600">${window.escapeHtml(error.message || 'Unknown error')}</p>
                 `;
 
                     // Replace loading with error
@@ -3100,7 +3252,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (result.snippets && result.snippets.length > 0) {
                     snippets = result.snippets.slice(0, 3).map(snippet => {
                         const text = snippet.snippet || '';
-                        return text.length > 150 ? text.substring(0, 150) + '...' : text;
+                        return window.escapeHtml(text.length > 150 ? text.substring(0, 150) + '...' : text);
                     }).join('</p><p class="text-sm text-gray-600 mt-2">');
                 }
 
@@ -3109,7 +3261,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         <div class="flex items-start justify-between mb-3">
                             <div class="flex items-center space-x-2">
                                 <span class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full text-xs font-bold flex items-center justify-center">${index + 1}</span>
-                                <h4 class="font-medium text-gray-900">Document ${result.id || 'Unknown'}</h4>
+                                <h4 class="font-medium text-gray-900">Document ${window.escapeHtml(result.id || 'Unknown')}</h4>
                             </div>
                             ${result.relevance_score ? `<span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">Score: ${result.relevance_score.toFixed(2)}</span>` : ''}
                         </div>
@@ -3117,14 +3269,14 @@ document.addEventListener('DOMContentLoaded', function () {
                         ${result.document_name && result.document_name !== 'Unknown' ? `
                             <p class="text-sm text-gray-600 mb-2">
                                 <i class="fas fa-file-alt mr-1"></i>
-                                ${result.document_name}
+                                ${window.escapeHtml(result.document_name)}
                             </p>
                         ` : ''}
                         
                         ${contentPreview ? `
                             <div class="mb-3">
                                 <h5 class="text-xs font-medium text-gray-700 mb-1">Content Preview:</h5>
-                                <p class="text-sm text-gray-600 bg-gray-50 p-2 rounded border-l-2 border-blue-300">${contentPreview}</p>
+                                <p class="text-sm text-gray-600 bg-gray-50 p-2 rounded border-l-2 border-blue-300">${window.escapeHtml(contentPreview)}</p>
                             </div>
                         ` : ''}
                         
@@ -3455,12 +3607,12 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <div class="flex items-center justify-center space-x-1">
                                     <button class="view-search p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" 
                                             data-search-id="${search.id}" data-query="${search.search_query || search.query}"
-                                            title="View Results">
+                                            title="View Results" aria-label="View Results">
                                         <i class="fas fa-eye text-xs"></i>
                                     </button>
                                     <button class="delete-search p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" 
                                             data-search-id="${search.id}"
-                                            title="Delete Search">
+                                            title="Delete Search" aria-label="Delete Search">
                                         <i class="fas fa-trash text-xs"></i>
                                     </button>
                                 </div>
@@ -3788,12 +3940,12 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <div class="flex items-center justify-center space-x-1">
                                     <button class="view-search p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" 
                                             data-search-id="${search.id}" data-query="${search.search_query || search.query}"
-                                            title="View Results">
+                                            title="View Results" aria-label="View Results">
                                         <i class="fas fa-eye text-xs"></i>
                                     </button>
                                     <button class="delete-search p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" 
                                             data-search-id="${search.id}"
-                                            title="Delete Search">
+                                            title="Delete Search" aria-label="Delete Search">
                                         <i class="fas fa-trash text-xs"></i>
                                     </button>
                                 </div>
@@ -4394,7 +4546,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         <h3 class="text-sm font-medium">${type === 'error' ? 'Upload Limit Reached' :
                     type === 'warning' ? 'Warning' : 'Information'
                 }</h3>
-                        <p class="mt-1 text-sm">${message}</p>
+                        <p class="mt-1 text-sm">${window.escapeHtml(message)}</p>
                     </div>
                     <div class="ml-auto pl-3">
                         <button class="inline-flex rounded-md p-1.5 hover:bg-gray-100 focus:outline-none" onclick="this.parentElement.parentElement.parentElement.remove()">
@@ -4639,12 +4791,39 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         // Password visibility toggle
+        const providerInput = document.getElementById('email-provider');
+        const outlookRow = document.getElementById('outlook-connection-row');
+        outlookRow.querySelector('button').addEventListener('click', () => document.getElementById('settings-link').click());
+        providerInput.addEventListener('change', async () => {
+            outlookRow.classList.toggle('hidden', providerInput.value !== 'outlook');
+            document.querySelector('label[for="email-password"]').textContent =
+                providerInput.value === 'outlook' ? 'Email Password (optional)' : 'Email Password';
+            if (providerInput.value !== 'outlook') return;
+            const state = outlookRow.querySelector('[data-outlook-account-state]');
+            state.textContent = 'Checking Microsoft connection...';
+            try {
+                const response = await fetch('/api/integrations/status', {credentials:'same-origin'});
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error('Status unavailable');
+                if (!outlookRow.isConnected || providerInput.value !== 'outlook') return;
+                const account = data.microsoft || {};
+                state.textContent = account.connected ? (account.account_email || 'Account saved') +
+                    (account.reconnect_required ? ' - Reconnect required' : '') : 'Microsoft not connected';
+                const address = document.getElementById('email-address');
+                if (!address.value && account.connected && account.account_email) address.value = account.account_email;
+            } catch (_) {
+                if (outlookRow.isConnected) state.textContent = 'Microsoft connection status unavailable';
+            }
+        });
         const togglePasswordBtn = document.getElementById('toggle-password');
         const passwordInput = document.getElementById('email-password');
 
         togglePasswordBtn.addEventListener('click', () => {
             const isPassword = passwordInput.type === 'password';
             passwordInput.type = isPassword ? 'text' : 'password';
+            togglePasswordBtn.setAttribute('aria-label', isPassword ? 'Hide email password' : 'Show email password');
+            togglePasswordBtn.title = isPassword ? 'Hide email password' : 'Show email password';
+            togglePasswordBtn.setAttribute('aria-pressed', String(isPassword));
 
             const icon = togglePasswordBtn.querySelector('i');
             icon.classList.toggle('fa-eye');
@@ -4671,7 +4850,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
 
-            if (!emailPassword) {
+            if (!emailPassword && emailProvider !== 'outlook') {
                 showLimitNotification('Please enter your email password', 'error');
                 return;
             }
@@ -4840,7 +5019,7 @@ document.addEventListener('DOMContentLoaded', function () {
             div.textContent = value == null ? '' : String(value);
             return div.innerHTML;
         });
-        const sanitize = window.sanitizeGeneratedHtml || ((html) => html || '');
+        const sanitize = window.sanitizeGeneratedHtml || ((html) => window.escapeHtml(html || ''));
         // Create modal HTML
         const modalHTML = `
             <div id="analysisModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -5343,8 +5522,21 @@ document.addEventListener('DOMContentLoaded', function () {
     } catch (e) { console.warn('Handler re-export failed:', e); }
 
     // Set active navigation link
-    setActiveLink(dashboardLink);
-    loadPage('dashboard');
+    const integrationReturn = new URLSearchParams(window.location.search);
+    const returnedProvider = integrationReturn.get('integration');
+    const returnedStatus = integrationReturn.get('status');
+    const isIntegrationReturn = ['microsoft', 'google'].includes(returnedProvider) &&
+        ['connected', 'failed'].includes(returnedStatus);
+    setActiveLink(isIntegrationReturn ? settingsLink : dashboardLink);
+    loadPage(isIntegrationReturn ? 'settings' : 'dashboard');
+    if (isIntegrationReturn) {
+        const notice = document.querySelector('[data-connection-notice]');
+        notice.textContent = returnedStatus === 'failed' ? 'Account connection was not completed.' :
+            'Sign-in returned. Checking your saved connection...';
+        const cleanUrl = new URL(window.location.href);
+        ['integration', 'status', 'error'].forEach(key => cleanUrl.searchParams.delete(key));
+        window.history.replaceState(null, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+    }
 });
 
 // Helper function to download resume
@@ -6244,175 +6436,14 @@ function getCandidateCommentsTextarea(candidateName) {
 
 // HR Actions Functions
 async function setCandidateStatus(candidateName, status, checkbox) {
-    // Get the search result ID from the candidate card
     const candidateCard = checkbox.closest('.professional-resume-card');
-    const searchResultId = candidateCard ? candidateCard.getAttribute('data-search-result-id') : null;
-
-    // If checkbox is being unchecked, clear the status
-    if (!checkbox.checked) {
-        // Remove status from localStorage
-        const candidateData = JSON.parse(localStorage.getItem('candidateStatuses') || '{}');
-        delete candidateData[candidateName];
-        localStorage.setItem('candidateStatuses', JSON.stringify(candidateData));
-
-        // Save to database if we have search result ID
-        if (searchResultId) {
-            try {
-                const formData = new FormData();
-                formData.append('search_result_id', searchResultId);
-                formData.append('candidate_name', candidateName);
-                formData.append('action_type', status);
-                formData.append('action_status', 'false');
-
-                await fetch('/api/candidate-action', {
-                    method: 'POST',
-                    body: formData
-                });
-            } catch (error) {
-                console.error('Error clearing candidate status in database:', error);
-            }
-        }
-
-        console.log(`Candidate ${candidateName} status cleared`);
-        return;
-    }
-
-    // Store the status in localStorage (or you can send to backend)
-    const candidateData = JSON.parse(localStorage.getItem('candidateStatuses') || '{}');
-    candidateData[candidateName] = {
-        status: status,
-        timestamp: new Date().toISOString(),
-        updatedBy: 'HR User' // You can get actual user info
-    };
-    localStorage.setItem('candidateStatuses', JSON.stringify(candidateData));
-
-    // Save to database if we have search result ID
-    if (searchResultId) {
-        try {
-            const formData = new FormData();
-            formData.append('search_result_id', searchResultId);
-            formData.append('candidate_name', candidateName);
-            formData.append('action_type', status);
-            formData.append('action_status', 'true');
-
-            const comments = getCandidateCommentsTextarea(candidateName);
-            if (comments && comments.value) {
-                formData.append('comments', comments.value);
-            }
-
-            await fetch('/api/candidate-action', {
-                method: 'POST',
-                body: formData
-            });
-        } catch (error) {
-            console.error('Error saving candidate status to database:', error);
-        }
-    }
-
-    // Update checkbox states (only one can be selected)
-    await updateStatusCheckboxes(candidateName, status);
-
-    // Show confirmation
-    showStatusNotification(candidateName, status);
-
-    // Refresh dashboard statistics to reflect the updated counts
-    try {
-        loadCandidateStatusCounts();
-    } catch (err) {
-        console.error('Failed to refresh candidate status counts:', err);
-    }
-
-    console.log(`Candidate ${candidateName} marked as ${status}`);
+    return window.CandidateState.setStatus(candidateCard, status, checkbox);
 }
 
-async function updateStatusCheckboxes(candidateName, activeStatus) {
-    const candidateCard = getCandidateCardByName(candidateName);
-    if (!candidateCard) {
-        return;
-    }
-    const allCheckboxes = candidateCard.querySelectorAll('.hr-checkbox');
-
-    const updatePromises = [];
-
-    allCheckboxes.forEach(checkbox => {
-        const checkboxStatus = checkbox.getAttribute('data-status');
-        if (checkboxStatus === activeStatus) {
-            checkbox.checked = true;
-            return;
-        }
-
-        checkbox.checked = false;
-
-        const searchResultId = candidateCard.getAttribute('data-search-result-id');
-        if (searchResultId) {
-            const updatePromise = (async () => {
-                try {
-                    const formData = new FormData();
-                    formData.append('search_result_id', searchResultId);
-                    formData.append('candidate_name', candidateName);
-                    formData.append('action_type', checkboxStatus);
-                    formData.append('action_status', 'false');
-
-                    await fetch('/api/candidate-action', {
-                        method: 'POST',
-                        body: formData
-                    });
-                } catch (error) {
-                    console.error(`Error unchecking ${checkboxStatus} status for ${candidateName}:`, error);
-                }
-            })();
-
-            updatePromises.push(updatePromise);
-        }
-    });
-
-    // Wait for all uncheck operations to complete
-    if (updatePromises.length > 0) {
-        await Promise.all(updatePromises);
-    }
-}
-
-async function saveCandidateComment(candidateName, comment) {
-    // Get the search result ID from the candidate card
-    const textarea = getCandidateCommentsTextarea(candidateName);
+async function saveCandidateComment(candidateName, comment, sourceTextarea) {
+    const textarea = sourceTextarea || getCandidateCommentsTextarea(candidateName);
     const candidateCard = textarea ? textarea.closest('.professional-resume-card') : null;
-    const searchResultId = candidateCard ? candidateCard.getAttribute('data-search-result-id') : null;
-
-    // Store the comment in localStorage (or you can send to backend)
-    const candidateComments = JSON.parse(localStorage.getItem('candidateComments') || '{}');
-    candidateComments[candidateName] = {
-        comment: comment,
-        timestamp: new Date().toISOString(),
-        updatedBy: 'HR User' // You can get actual user info
-    };
-    localStorage.setItem('candidateComments', JSON.stringify(candidateComments));
-
-    // Save to database if we have search result ID
-    if (searchResultId) {
-        try {
-            // Get current status if any
-            const candidateData = JSON.parse(localStorage.getItem('candidateStatuses') || '{}');
-            const currentStatus = candidateData[candidateName]?.status;
-
-            if (currentStatus) {
-                const formData = new FormData();
-                formData.append('search_result_id', searchResultId);
-                formData.append('candidate_name', candidateName);
-                formData.append('action_type', currentStatus);
-                formData.append('action_status', 'true');
-                formData.append('comments', comment);
-
-                await fetch('/api/candidate-action', {
-                    method: 'POST',
-                    body: formData
-                });
-            }
-        } catch (error) {
-            console.error('Error saving candidate comment to database:', error);
-        }
-    }
-
-    console.log(`Comment saved for ${candidateName}: ${comment}`);
+    return window.CandidateState.saveNotes(candidateCard, textarea);
 }
 
 function showStatusNotification(candidateName, status) {
@@ -6463,24 +6494,10 @@ function showStatusNotification(candidateName, status) {
 }
 
 // Load saved statuses and comments when page loads
-function loadCandidateData() {
-    const statuses = JSON.parse(localStorage.getItem('candidateStatuses') || '{}');
-    const comments = JSON.parse(localStorage.getItem('candidateComments') || '{}');
-
-    // Apply saved statuses
-    Object.keys(statuses).forEach(candidateName => {
-        const status = statuses[candidateName].status;
-        updateStatusCheckboxes(candidateName, status);
-    });
-
-    // Apply saved comments
-    Object.keys(comments).forEach(candidateName => {
-        const comment = comments[candidateName].comment;
-        const textarea = getCandidateCommentsTextarea(candidateName);
-        if (textarea) {
-            textarea.value = comment;
-        }
-    });
+function loadCandidateData(card) {
+    if (card) return window.CandidateState.load(card);
+    return Promise.all(Array.from(document.querySelectorAll('.professional-resume-card'),
+        candidateCard => window.CandidateState.load(candidateCard)));
 }
 
 // JD Builder Page Initialization
@@ -6657,24 +6674,7 @@ function initializeJDBuilderPage() {
             const data = await response.json();
 
             function sanitizeGeneratedHtml(html) {
-                const template = document.createElement('template');
-                template.innerHTML = html || '';
-
-                template.content.querySelectorAll('script, iframe, object, embed, link, meta, base, form, input, button').forEach((node) => node.remove());
-                template.content.querySelectorAll('*').forEach((node) => {
-                    Array.from(node.attributes).forEach((attr) => {
-                        const name = attr.name.toLowerCase();
-                        const value = (attr.value || '').trim().toLowerCase();
-                        if (name.startsWith('on') || name === 'srcdoc' || name === 'style') {
-                            node.removeAttribute(attr.name);
-                        }
-                        if ((name === 'href' || name === 'src' || name === 'xlink:href') && value.startsWith('javascript:')) {
-                            node.removeAttribute(attr.name);
-                        }
-                    });
-                });
-
-                return template.innerHTML;
+                return window.sanitizeGeneratedHtml(html);
             }
 
             if (data.success) {
@@ -6816,6 +6816,77 @@ function initializeSettingsPage() {
     loadCompanyInfo();
     loadUsers();
     initializeUserManagement();
+    initializeRecruiterIntegrations();
+}
+
+async function initializeRecruiterIntegrations() {
+    const root = document.getElementById('recruiter-integrations');
+    if (!root) return;
+    const notice = root.querySelector('[data-connection-notice]');
+    let version = 0;
+    let pending = false;
+    async function load() {
+        const current = ++version;
+        root.setAttribute('aria-busy', 'true');
+        try {
+            const response = await fetch('/api/integrations/status', {credentials:'same-origin'});
+            const data = await response.json();
+            if (!response.ok || data.success !== true) throw new Error('Connection status unavailable.');
+            if (!root.isConnected || current !== version) return;
+            if (notice.textContent === 'Sign-in returned. Checking your saved connection...') notice.textContent = '';
+            root.querySelectorAll('[data-provider]').forEach(row => {
+                const provider = row.dataset.provider;
+                const state = data[provider] || {};
+                const text = state.connected ? (state.account_email || 'Account saved') : 'Not connected';
+                row.querySelector('[data-account-state]').textContent = text +
+                    (state.reconnect_required ? ' - Reconnect required' : '');
+                const connect = row.querySelector('[data-connect]');
+                connect.querySelector('span').textContent = state.connected ? 'Reconnect' :
+                    (provider === 'microsoft' ? 'Connect Microsoft' : 'Connect Google');
+                connect.disabled = pending || !state.client_configured;
+                connect.title = state.client_configured ? '' : 'Provider is not configured';
+                row.querySelector('[data-disconnect]').disabled = pending || !state.connected;
+            });
+            root.querySelector('[data-smtp-state]').textContent = data.smtp?.configured ? 'Configured' : 'Not configured';
+        } catch (_) {
+            if (root.isConnected && current === version) {
+                notice.textContent = 'Connection status unavailable. Refresh to retry.';
+                root.querySelectorAll('[data-connect],[data-disconnect]').forEach(button => button.disabled = true);
+            }
+        } finally {
+            if (root.isConnected && current === version) root.removeAttribute('aria-busy');
+        }
+    }
+    root.querySelector('[data-refresh-connections]').addEventListener('click', () => {
+        notice.textContent = '';
+        load();
+    });
+    root.querySelectorAll('[data-provider]').forEach(row => {
+        const provider = row.dataset.provider;
+        row.querySelector('[data-connect]').addEventListener('click', () => {
+            window.location.assign('/api/oauth/' + provider + '/start');
+        });
+        row.querySelector('[data-disconnect]').addEventListener('click', async () => {
+            if (pending || !window.confirm('Disconnect ' + (provider === 'microsoft' ? 'Microsoft' : 'Google') + ' for your account?')) return;
+            pending = true;
+            root.querySelectorAll('button').forEach(button => button.disabled = true);
+            try {
+                const response = await fetch('/api/oauth/' + provider + '/disconnect', {
+                    method:'POST', credentials:'same-origin'
+                });
+                const data = await response.json();
+                if (!response.ok || data.success !== true) throw new Error('Disconnect failed');
+                if (root.isConnected) notice.textContent = 'Account disconnected.';
+            } catch (_) {
+                if (root.isConnected) notice.textContent = 'Account could not be disconnected. Refresh to check its status.';
+            } finally {
+                pending = false;
+                root.querySelector('[data-refresh-connections]').disabled = false;
+                await load();
+            }
+        });
+    });
+    await load();
 }
 
 // Load current user information
@@ -6986,25 +7057,25 @@ function displayUsers(users) {
     }
 
     usersList.innerHTML = users.map(user => `
-        <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
-            <div class="flex items-center space-x-3">
-                <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+        <div class="user-management-row flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+            <div class="user-management-identity flex items-center space-x-3">
+                <div class="user-management-avatar w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
                     <i class="fas fa-user text-blue-600"></i>
                 </div>
                 <div>
-                    <p class="text-sm font-medium text-gray-900">${user.full_name}</p>
-                    <p class="text-xs text-gray-500">${user.email}</p>
+                    <p class="text-sm font-medium text-gray-900">${window.escapeHtml(user.full_name)}</p>
+                    <p class="text-xs text-gray-500">${window.escapeHtml(user.email)}</p>
                     <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getUserTypeColor(user.user_type)}">
                         ${getUserTypeLabel(user.user_type)}
                     </span>
                 </div>
             </div>
-            <div class="flex items-center space-x-2">
+            <div class="user-management-actions flex items-center space-x-2">
                 <span class="text-xs text-gray-500">
                     ${user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}
                 </span>
                 ${window.currentUser.user_type === 'super_admin' || window.currentUser.user_type === 'tenant_admin' ? `
-                    <button onclick="editUser(${user.id})" class="text-blue-600 hover:text-blue-800 text-sm">
+                    <button onclick="editUser(${user.id})" aria-label="Edit user" title="Edit user" class="text-blue-600 hover:text-blue-800 text-sm">
                         <i class="fas fa-edit"></i>
                     </button>
                 ` : ''}
@@ -7533,7 +7604,13 @@ function updateTrendingSkills(skills) {
     trendingSkillsContainer.innerHTML = skillsHtml;
 }
 
+let upcomingEventsRequest = 0;
 async function loadUpcomingEvents() {
+    const container = document.getElementById('upcoming-events');
+    if (!container) return;
+    const requestId = ++upcomingEventsRequest;
+    const current = () => requestId === upcomingEventsRequest && container.isConnected && container === document.getElementById('upcoming-events');
+    container.setAttribute('aria-busy', 'true');
     try {
         const response = await fetch('/api/upcoming-events');
         if (!response.ok) {
@@ -7541,19 +7618,29 @@ async function loadUpcomingEvents() {
         }
 
         const data = await response.json();
-        if (data.success) {
-            updateUpcomingEvents(data.events || []);
+        if (data.success !== true || !Array.isArray(data.events) ||
+            data.events.some(event => !event || typeof event !== 'object' || Array.isArray(event))) {
+            throw new Error('Schedule response unavailable');
         }
+        if (current()) updateUpcomingEvents(data.events);
     } catch (error) {
-        console.error('Error loading upcoming events:', error);
-        // Show empty state if API fails
-        updateUpcomingEvents([]);
+        if (!current()) return;
+        console.warn('Upcoming schedule unavailable:', error?.name || 'Error');
+        container.innerHTML = '<div role="status" class="text-center py-8 text-gray-500"><p class="text-sm">Schedule unavailable</p><button type="button" aria-label="Retry upcoming events" title="Retry upcoming events" class="mt-3 p-2"><i class="fas fa-sync-alt" aria-hidden="true"></i></button></div>';
+        container.querySelector('button').addEventListener('click', loadUpcomingEvents);
+    } finally {
+        if (current()) container.setAttribute('aria-busy', 'false');
     }
 }
 
 function updateUpcomingEvents(events) {
     const eventsContainer = document.getElementById('upcoming-events');
     if (!eventsContainer) return;
+    const esc = window.escapeHtml || (value => {
+        const element = document.createElement('span');
+        element.textContent = value == null ? '' : String(value);
+        return element.innerHTML;
+    });
 
     if (events.length === 0) {
         eventsContainer.innerHTML = `
@@ -7566,7 +7653,9 @@ function updateUpcomingEvents(events) {
     }
 
     const eventsHtml = events.slice(0, 5).map(event => {
-        const eventDate = new Date(event.date);
+        const dateValue = typeof event.date === 'string' ? event.date : '';
+        const eventDate = new Date(/^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? dateValue + 'T00:00:00' : dateValue);
+        const dateLabel = Number.isFinite(eventDate.getTime()) ? eventDate.toLocaleDateString() : 'Date unavailable';
         const eventTypeColor = event.type === 'interviewed' ? 'border-green-500' : 'border-yellow-500';
         const eventIcon = event.type === 'interviewed' ? 'fa-video' : 'fa-user-check';
 
@@ -7578,9 +7667,9 @@ function updateUpcomingEvents(events) {
                     </div>
                 </div>
                 <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-gray-900 truncate">${event.title}</p>
-                    <p class="text-xs text-gray-500">${event.position || 'Position not specified'}</p>
-                    <p class="text-xs text-gray-400 mt-1">${eventDate.toLocaleDateString()}</p>
+                    <p class="text-sm font-medium text-gray-900 truncate">${esc(event.title || 'Scheduled event')}</p>
+                    <p class="text-xs text-gray-500">${esc(event.position || 'Position not specified')}</p>
+                    <p class="text-xs text-gray-400 mt-1">${esc(dateLabel)}</p>
                 </div>
             </div>
         `;
@@ -7956,7 +8045,7 @@ function openGeneralScheduleModal(prefillName, prefillEmail) {
                     <h3 class="text-lg font-semibold text-gray-900">Add to Schedule</h3>
                     <p class="text-sm text-gray-600 mt-1">Create a new interview or meeting</p>
                 </div>
-                <button type="button" onclick="closeGeneralScheduleModal()" class="text-gray-400 hover:text-gray-600">
+                <button type="button" onclick="closeGeneralScheduleModal()" aria-label="Close schedule" title="Close schedule" class="text-gray-400 hover:text-gray-600">
                     <i class="fas fa-times text-lg"></i>
                 </button>
             </div>
@@ -7994,7 +8083,7 @@ function openGeneralScheduleModal(prefillName, prefillEmail) {
                         <label class="block text-sm font-medium text-gray-700 mb-2">Date <span class="text-red-500">*</span></label>
                         <input type="date" id="gs-date" required
                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               min="${new Date().toISOString().split('T')[0]}">
+                               min="${localDateInputValue()}">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Time <span class="text-red-500">*</span></label>
@@ -8028,6 +8117,7 @@ function openGeneralScheduleModal(prefillName, prefillEmail) {
                         <option value="meet">Google Meet (requires connected Google)</option>
                         <option value="teams">Microsoft Teams (requires connected Microsoft)</option>
                     </select>
+                    <p class="text-xs text-gray-500 mt-1">Teams/Meet calendar events also send an invitation to the attendee.</p>
                 </div>
 
                 <div class="mb-4">
@@ -8041,7 +8131,7 @@ function openGeneralScheduleModal(prefillName, prefillEmail) {
                 <div class="mb-4 flex items-start">
                     <input type="checkbox" id="gs-send-email" class="mt-1 mr-2">
                     <label for="gs-send-email" class="text-sm text-gray-700">
-                        Email the candidate an interview invitation (requires email above)
+                        Send an additional invitation email (requires email above)
                     </label>
                 </div>
 
@@ -8071,11 +8161,12 @@ function openGeneralScheduleModal(prefillName, prefillEmail) {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const dEl = document.getElementById('gs-date');
     const tEl = document.getElementById('gs-time');
-    if (dEl) dEl.value = tomorrow.toISOString().split('T')[0];
+    if (dEl) dEl.value = localDateInputValue(tomorrow);
     if (tEl) tEl.value = '10:00';
 
     const form = document.getElementById('general-schedule-form');
     if (form) form.addEventListener('submit', submitGeneralScheduleForm);
+    bindScheduleDialog(modal, 'Add to schedule');
 }
 
 function closeGeneralScheduleModal() {
@@ -8084,6 +8175,8 @@ function closeGeneralScheduleModal() {
 
 async function submitGeneralScheduleForm(event) {
     event.preventDefault();
+    const form = event.currentTarget || event.target;
+    if (!form || form.dataset.submitting === 'true') return;
     const v = (id) => (document.getElementById(id) || {}).value || '';
     const candidate_name = v('gs-candidate-name').trim();
     if (!candidate_name) {
@@ -8097,6 +8190,7 @@ async function submitGeneralScheduleForm(event) {
         interview_type:  v('gs-type') || 'video',
         interview_date:  v('gs-date'),
         interview_time:  v('gs-time'),
+        time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         duration:        v('gs-duration') || '60',
         location:        v('gs-location'),
         interviewer:     v('gs-interviewer'),
@@ -8106,8 +8200,9 @@ async function submitGeneralScheduleForm(event) {
         created_by: window.currentUser ? window.currentUser.id : null,
     };
 
-    const submitBtn = event.target.querySelector('button[type="submit"]');
+    const submitBtn = form.querySelector('button[type="submit"]');
     const originalText = submitBtn ? submitBtn.innerHTML : '';
+    form.dataset.submitting = 'true';
     if (submitBtn) {
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Adding...';
         submitBtn.disabled = true;
@@ -8121,28 +8216,37 @@ async function submitGeneralScheduleForm(event) {
             body: JSON.stringify(payload),
         });
         const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) {
+        if (!resp.ok || data.success !== true) {
             throw new Error(data.detail || `HTTP ${resp.status}`);
         }
         closeGeneralScheduleModal();
         if (typeof showNotification === 'function') {
             showNotification(`Added: ${payload.interview_type} with ${candidate_name} on ${payload.interview_date} ${payload.interview_time}`, 'success');
         }
-        if (data && data.meeting && data.meeting.join_url) {
+        if (data?.meeting?.success === false) {
+            if (typeof showNotification === 'function') showNotification(data.meeting.error || 'Meeting link was not created.', 'warning');
+        } else if (data?.meeting?.join_url) {
             if (typeof showNotification === 'function') showNotification(`Meeting link: ${data.meeting.join_url}`, 'info');
         }
-        if (data && data.email && data.email.success) {
-            if (typeof showNotification === 'function') showNotification('Invite email sent to candidate.', 'success');
+        if (data?.email?.success === false) {
+            if (typeof showNotification === 'function') showNotification(data.email.error || 'Invite email was not sent.', 'warning');
+        } else if (data?.email?.success) {
+            if (typeof showNotification === 'function') showNotification('Invite email accepted for sending.', 'success');
+        }
+        if (data?.email?.audit_warning && typeof showNotification === 'function') {
+            showNotification(data.email.audit_warning, 'warning');
         }
         // Refresh upcoming events list if on dashboard
         if (typeof loadUpcomingEvents === 'function') {
-            try { loadUpcomingEvents(); } catch (_) { /* noop */ }
+            try { await loadUpcomingEvents(); } catch (_) { /* The schedule is already confirmed. */ }
         }
     } catch (err) {
-        console.error('submitGeneralScheduleForm failed:', err);
+        console.error('Schedule confirmation unavailable:', err?.name || 'Error');
         if (typeof showNotification === 'function') {
-            showNotification(`Failed to add to schedule: ${err.message || err}`, 'error');
+            showNotification(`Schedule not confirmed: ${err.message || 'Request failed'}. Check your schedule before trying again.`, 'error');
         }
+    } finally {
+        delete form.dataset.submitting;
         if (submitBtn) {
             submitBtn.innerHTML = originalText;
             submitBtn.disabled = false;
@@ -8167,7 +8271,7 @@ function showInterviewScheduleModal(candidateName, candidateEmail) {
                     <h3 class="text-lg font-semibold text-gray-900">Schedule Interview</h3>
                     <p class="text-sm text-gray-600 mt-1">with ${esc(candidateName)}</p>
                 </div>
-                <button onclick="closeInterviewModal()" class="text-gray-400 hover:text-gray-600">
+                <button type="button" onclick="closeInterviewModal()" aria-label="Close interview" title="Close interview" class="text-gray-400 hover:text-gray-600">
                     <i class="fas fa-times text-lg"></i>
                 </button>
             </div>
@@ -8191,7 +8295,7 @@ function showInterviewScheduleModal(candidateName, candidateEmail) {
                         <label class="block text-sm font-medium text-gray-700 mb-2">Date</label>
                         <input type="date" id="interview-date" 
                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               min="${new Date().toISOString().split('T')[0]}" required>
+                               min="${localDateInputValue()}" required>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Time</label>
@@ -8228,7 +8332,7 @@ function showInterviewScheduleModal(candidateName, candidateEmail) {
                         <option value="meet">Google Meet (requires connected Google account)</option>
                         <option value="teams">Microsoft Teams (requires connected Microsoft account)</option>
                     </select>
-                    <p class="text-xs text-gray-500 mt-1">A join link will be generated and saved with the interview.</p>
+                    <p class="text-xs text-gray-500 mt-1">Teams/Meet calendar events also send an invitation to the attendee.</p>
                 </div>
 
                 <!-- Send candidate an invite email -->
@@ -8236,7 +8340,7 @@ function showInterviewScheduleModal(candidateName, candidateEmail) {
                     <input type="checkbox" id="interview-send-email" class="mt-1 mr-2"
                            ${candidateEmail ? 'checked' : 'disabled'}>
                     <label for="interview-send-email" class="text-sm text-gray-700">
-                        Email the candidate an interview invitation
+                        Send an additional invitation email
                         ${candidateEmail ? '' : '<span class="text-xs text-gray-400">(no email on file)</span>'}
                     </label>
                 </div>
@@ -8280,7 +8384,7 @@ function showInterviewScheduleModal(candidateName, candidateEmail) {
     // Set default date to tomorrow
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    document.getElementById('interview-date').value = tomorrow.toISOString().split('T')[0];
+    document.getElementById('interview-date').value = localDateInputValue(tomorrow);
 
     // Set default time to 10:00 AM
     document.getElementById('interview-time').value = '10:00';
@@ -8289,6 +8393,38 @@ function showInterviewScheduleModal(candidateName, candidateEmail) {
     if (form) {
         form.addEventListener('submit', (event) => saveInterviewSchedule(event, candidateName, candidateEmail));
     }
+    bindScheduleDialog(modal, 'Schedule interview');
+}
+
+function bindScheduleDialog(modal, label) {
+    const previous = document.activeElement;
+    const shell = document.getElementById('app-shell');
+    const wasInert = shell?.inert || false;
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-label', label);
+    modal.setAttribute('aria-modal', 'true');
+    modal.querySelectorAll('label:not([for])').forEach(label => {
+        const field = label.parentElement.querySelector('input,select,textarea');
+        if (field?.id) label.htmlFor = field.id;
+    });
+    const items = () => [...modal.querySelectorAll('button,input:not([type="hidden"]),select,textarea,a[href],[tabindex="0"]')]
+        .filter(element => !element.disabled && !element.closest('.hidden,[hidden]'));
+    if (shell) shell.inert = true;
+    items()[0]?.focus();
+    modal.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { event.preventDefault(); modal.remove(); return; }
+        if (event.key !== 'Tab') return;
+        const controls = items(), first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    });
+    const observer = new MutationObserver(() => {
+        if (modal.isConnected) return;
+        observer.disconnect();
+        if (shell) shell.inert = wasInert;
+        if (previous?.isConnected) previous.focus();
+    });
+    observer.observe(document.body, {childList:true});
 }
 
 function closeInterviewModal() {
@@ -8300,6 +8436,8 @@ function closeInterviewModal() {
 
 async function saveInterviewSchedule(event, candidateName, candidateEmail) {
     event.preventDefault();
+    const form = event.currentTarget || event.target;
+    if (!form || form.dataset.submitting === 'true') return;
 
     const formData = {
         candidate_name: candidateName,
@@ -8307,6 +8445,7 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
         interview_type: document.getElementById('interview-type').value,
         interview_date: document.getElementById('interview-date').value,
         interview_time: document.getElementById('interview-time').value,
+        time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         duration: document.getElementById('interview-duration').value,
         location: document.getElementById('interview-location').value,
         interviewer: document.getElementById('interview-interviewer').value,
@@ -8316,24 +8455,28 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
         created_by: window.currentUser ? window.currentUser.id : null
     };
 
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const originalText = submitBtn ? submitBtn.innerHTML : '';
+    form.dataset.submitting = 'true';
     try {
-        // Show loading state
-        const submitBtn = event.target.querySelector('button[type="submit"]');
-        const originalText = submitBtn.innerHTML;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Scheduling...';
-        submitBtn.disabled = true;
+        if (submitBtn) {
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Scheduling...';
+            submitBtn.disabled = true;
+        }
 
         // Save to database
         const response = await fetch('/api/schedule-interview', {
             method: 'POST',
+            credentials: 'same-origin',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(formData)
         });
 
+        const result = await response.json().catch(() => ({}));
         if (response.ok) {
-            const result = await response.json();
+            if (result.success !== true) throw new Error('Interview was not confirmed');
 
             // Close modal
             closeInterviewModal();
@@ -8343,53 +8486,37 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
 
             // Surface meeting / email outcomes (non-fatal)
             if (result && result.meeting && result.meeting.success === false && result.meeting.error) {
-                showNotification(`Meeting link not created: ${result.meeting.error}`, 'warning');
+                showNotification(`Meeting status: ${result.meeting.error}`, 'warning');
             } else if (result && result.meeting && result.meeting.join_url) {
                 showNotification(`Meeting link: ${result.meeting.join_url}`, 'info');
             }
             if (result && result.email && result.email.success === false && result.email.error) {
-                showNotification(`Invite email not sent: ${result.email.error}`, 'warning');
+                showNotification(`Invite email status: ${result.email.error}`, 'warning');
             } else if (result && result.email && result.email.success) {
-                showNotification('Invite email sent to candidate.', 'success');
+                showNotification('Invite email accepted for sending.', 'success');
             }
+            if (result?.email?.audit_warning) showNotification(result.email.audit_warning, 'warning');
 
-            // Update candidate status to interviewed
-            const candidateCard = getCandidateCardByName(candidateName);
-            const candidateCheckbox = candidateCard ? candidateCard.querySelector('input[data-status="interviewed"]') : null;
-            if (candidateCheckbox) {
-                candidateCheckbox.checked = true;
-                await setCandidateStatus(candidateName, 'interviewed', candidateCheckbox);
-            }
-            else {
-                // If no checkbox (e.g., card not loaded), persist status directly
-                try {
-                    const actionForm = new FormData();
-                    actionForm.append('search_result_id', searchId || '');
-                    actionForm.append('candidate_name', candidateName);
-                    actionForm.append('action_type', 'interviewed');
-                    actionForm.append('action_status', 'true');
-                    await fetch('/api/candidate-action', { method: 'POST', body: actionForm });
-                    loadCandidateStatusCounts();
-                } catch (e) { console.error('Direct interviewed action save failed', e); }
-            }
+            // Scheduling a future interview does not mark it as completed.
 
             // Refresh dashboard if we're on it
             if (window.location.pathname === '/dashboard' || document.getElementById('user-dashboard')) {
-                loadUpcomingEvents();
+                try { await loadUpcomingEvents(); } catch (_) { /* The interview is already confirmed. */ }
             }
 
         } else {
-            throw new Error('Failed to schedule interview');
+            throw new Error(result.detail || result.error || 'Failed to schedule interview');
         }
 
     } catch (error) {
-        console.error('Error scheduling interview:', error);
-        showNotification('Failed to schedule interview. Please try again.', 'error');
-
-        // Reset button
-        const submitBtn = event.target.querySelector('button[type="submit"]');
-        submitBtn.innerHTML = '<i class="fas fa-calendar-plus mr-2"></i>Schedule Interview';
-        submitBtn.disabled = false;
+        console.error('Interview confirmation unavailable:', error?.name || 'Error');
+        showNotification(`Interview not confirmed: ${error.message || 'Request failed'}. Check your schedule before trying again.`, 'error');
+    } finally {
+        delete form.dataset.submitting;
+        if (submitBtn) {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        }
     }
 }
 

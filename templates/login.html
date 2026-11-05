@@ -109,6 +109,12 @@
         <div class="glass-effect p-8">
             <h2 class="text-xl font-medium text-gray-800 mb-6">Sign in to your account</h2>
 
+            {% if request.query_params.get('status') == 'session_expired' and request.query_params.get('integration') in ('microsoft', 'google') %}
+            <div role="alert" class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm mb-5">
+                Your SmartHR session expired or is unavailable in this browser. Sign in, then reconnect your account in Settings.
+            </div>
+            {% endif %}
+
             <form id="loginForm" class="space-y-5">
                 <!-- Email Input -->
                 <div>

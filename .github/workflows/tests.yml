@@ -1,0 +1,65 @@
+name: SmartHR Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  source-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject tracked private runtime configuration
+        run: test -z "$(git ls-files -- config.json config.docker.json .env)"
+      - name: Export committed source without Git history or local runtime files
+        run: |
+          mkdir -p "$RUNNER_TEMP/smarthr-source"
+          git archive --format=tar HEAD --output="$RUNNER_TEMP/smarthr-source.tar"
+          tar -xf "$RUNNER_TEMP/smarthr-source.tar" -C "$RUNNER_TEMP/smarthr-source"
+      - name: Scan source for secrets with redacted output
+        run: >-
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges
+          --mount "type=bind,src=$RUNNER_TEMP/smarthr-source,dst=/review,readonly"
+          ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
+          dir /review --redact=100 --no-banner --no-color
+  regression:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: smarthr_qa
+          POSTGRES_PASSWORD: isolated-ci-test-only
+          POSTGRES_DB: smarthr_qa
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U smarthr_qa"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DISABLE_STARTUP_VALIDATION: "1"
+      SMARTHR_LOCAL_MODE: "1"
+      SMARTHR_STORAGE_ROOT: /tmp/smarthr-tests
+      LLM_USAGE_DB_LOG: "0"
+      SMARTHR_TEST_DATABASE_URL: postgresql://smarthr_qa:isolated-ci-test-only@127.0.0.1:5432/smarthr_qa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: pip install -r requirements-dev.txt
+      - name: Prepare non-secret test configuration
+        run: cp config.example.json config.json
+      - run: pytest tests -q
+      - run: node --check static/js/main.js
+      - run: node --check static/js/security.js
+      - run: node --check static/js/candidate-state.js
+      - run: npm install --prefix "$RUNNER_TEMP/smarthr-dom" --ignore-scripts --no-audit --no-fund jsdom@27.4.0
+      - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_security.cjs
+      - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_candidate_state.cjs
+      - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_navigation.cjs
+      - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_integrations.cjs
+      - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_dashboard.cjs
+      - run: NODE_PATH="$RUNNER_TEMP/smarthr-dom/node_modules" node tests/frontend_polling.cjs
+      - run: pip-audit -r requirements.txt --no-deps --disable-pip --progress-spinner off

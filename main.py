@@ -582,6 +582,8 @@ def _compute_asset_versions() -> dict[str, str]:
     for key, path in (("main_js", "static/js/main.js"),
                       ("dashboard_ui_js", "static/js/dashboard-ui.js"),
                       ("notifications_js", "static/js/notifications.js"),
+                      ("outreach_js", "static/js/recruiter-outreach.js"),
+                      ("interview_manager_js", "static/js/interview-manager.js"),
                       ("components_css", "static/css/components.css"),
                       ("candidate_state_js", "static/js/candidate-state.js"),
                       ("style_css", "static/css/style.css"),
@@ -4917,12 +4919,12 @@ async def update_user_endpoint(
     if is_active is not None:
         updates['is_active'] = str(is_active).lower() in ('true', '1', 'yes', 'on')
 
+    if new_password and len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     try:
         if updates:
             db.update_user(user_id, updates, user['id'])
         if new_password:
-            if len(new_password) < 8:
-                raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
             db.change_password(user_id, new_password)
         if not updates and not new_password:
             raise HTTPException(status_code=400, detail="No changes provided")
@@ -5004,6 +5006,8 @@ async def get_users(user: dict = Depends(require_auth)):
             raise HTTPException(status_code=403, detail="Access denied")
 
         return {"users": users}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching users: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch users")
@@ -11384,6 +11388,101 @@ async def get_upcoming_events(user: dict = Depends(require_auth)):
         logger.warning("Upcoming schedule unavailable: %s", type(e).__name__)
         raise HTTPException(status_code=503, detail="Upcoming schedule is temporarily unavailable")
 
+
+@app.get('/api/interviews')
+async def interview_history(page:int=1,page_size:int=25,status:str='all',user:dict=Depends(require_auth)):
+    from services.workspace_records import list_interviews
+    return await asyncio.to_thread(list_interviews,get_db_manager(),user['id'],_get_company_id(user),page,page_size,status)
+
+
+@app.get('/api/interviews/{interview_id}')
+async def read_interview(interview_id: int, user: dict = Depends(require_auth)):
+    from services.workspace_records import get_interview
+    return {'success':True,'interview':await asyncio.to_thread(get_interview,get_db_manager(),interview_id,user['id'],_get_company_id(user))}
+
+
+@app.put('/api/interviews/{interview_id}')
+@limiter.limit('20/minute')
+async def edit_interview(interview_id: int, request: Request, user: dict = Depends(require_auth)):
+    from services.interview_management import change
+    try:data=await request.json()
+    except ValueError:raise HTTPException(422,'Body must be JSON')
+    result=await asyncio.to_thread(change,get_db_manager(),interview_id,user['id'],_get_company_id(user),'edit',data)
+    return result if result.get('success') else JSONResponse(status_code=502,content=result)
+
+
+@app.delete('/api/interviews/{interview_id}')
+@limiter.limit('20/minute')
+async def cancel_interview(interview_id: int, request: Request, user: dict = Depends(require_auth)):
+    from services.interview_management import change
+    try:data=await request.json()
+    except ValueError:raise HTTPException(422,'Body must be JSON')
+    result=await asyncio.to_thread(change,get_db_manager(),interview_id,user['id'],_get_company_id(user),'cancel',data)
+    return result if result.get('success') else JSONResponse(status_code=502,content=result)
+
+
+@app.post('/api/interviews/{interview_id}/reconcile')
+@limiter.limit('20/minute')
+async def reconcile_interview(interview_id: int, request: Request, user: dict = Depends(require_auth)):
+    from services.interview_management import reconcile
+    result=await asyncio.to_thread(reconcile,get_db_manager(),interview_id,user['id'],_get_company_id(user))
+    return result if result.get('success') else JSONResponse(status_code=502,content=result)
+
+
+@app.get('/api/outreach-templates')
+async def list_outreach_templates(user: dict = Depends(require_auth)):
+    from services.workspace_records import templates as message_templates
+    return {'success':True,'templates':await asyncio.to_thread(message_templates,get_db_manager(),user['id'],_get_company_id(user))}
+
+
+async def _save_outreach_template(request, user, template_id=None, delete=False):
+    from services.workspace_records import templates as message_templates
+    try:data=await request.json()
+    except ValueError:raise HTTPException(422,'Body must be JSON')
+    if not isinstance(data,dict):raise HTTPException(422,'Body must be a JSON object')
+    record=await asyncio.to_thread(message_templates,get_db_manager(),user['id'],_get_company_id(user),template_id=template_id,data=data,delete=delete)
+    return {'success':True,'template':record}
+
+
+@app.post('/api/outreach-templates')
+@limiter.limit('30/minute')
+async def create_outreach_template(request: Request, user: dict = Depends(require_auth)):
+    return await _save_outreach_template(request,user)
+
+
+@app.put('/api/outreach-templates/{template_id}')
+@limiter.limit('30/minute')
+async def edit_outreach_template(template_id: int, request: Request, user: dict = Depends(require_auth)):
+    return await _save_outreach_template(request,user,template_id)
+
+
+@app.delete('/api/outreach-templates/{template_id}')
+@limiter.limit('30/minute')
+async def remove_outreach_template(template_id: int, request: Request, user: dict = Depends(require_auth)):
+    return await _save_outreach_template(request,user,template_id,True)
+
+
+@app.post('/api/outreach-templates/{template_id}/draft')
+@limiter.limit('60/minute')
+async def render_outreach_template(template_id: int, request: Request, user: dict = Depends(require_auth)):
+    from services.workspace_records import templates as message_templates
+    from services.email_service import _render_bounded
+    from services.outreach_validation import text_fields
+    try:
+        data=await request.json()
+        if not isinstance(data,dict):raise ValueError('Body must be a JSON object')
+        text_fields(data,{'candidate_name':500,'position':500,'company':255,'recruiter_name':200,'job_location':200})
+        records=await asyncio.to_thread(message_templates,get_db_manager(),user['id'],_get_company_id(user))
+        record=next((row for row in records if row['id']==template_id),None)
+        if not record:raise HTTPException(404,'Template not found')
+        ctx={key:data[key] for key in ('candidate_name','position','company','recruiter_name','job_location')}
+        subject=_render_bounded(record['subject'],ctx,html=False)
+        message=_render_bounded(record['message'],ctx,html=False)
+        from services.email_branding import render_plain_message
+        render_plain_message(subject,message)
+    except ValueError as exc:raise HTTPException(422,str(exc)) from None
+    return {'success':True,'subject':subject,'message':message}
+
 @app.post("/api/migrate-vector-datastore")
 async def migrate_existing_files_to_vector_datastore(
     user: dict = Depends(require_super_admin)
@@ -11550,6 +11649,10 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
         if provider and provider not in ('none', 'in_person', 'in-person', 'phone'):
             try:
                 from services.calendar_service import create_meeting
+                account_provider='microsoft' if provider in ('teams','microsoft','ms_teams','ms-teams') else 'google'
+                saved_account=await asyncio.to_thread(db.get_oauth_token,user['id'],account_provider)
+                account_extra=saved_account.get('extra') if isinstance(saved_account,dict) else None
+                if isinstance(account_extra,dict):data['calendar_account_id']=account_extra.get('account_id')
                 # Compose ISO datetime from date + time fields.
                 meeting_result = await asyncio.to_thread(create_meeting,
                     provider,
@@ -11802,6 +11905,26 @@ async def delete_email_template_endpoint(template_id: int, request: Request,
     return {"success": bool(ok)}
 
 
+@app.post("/api/preview-candidate-email")
+@limiter.limit("60/minute")
+async def preview_candidate_email(request: Request, user: dict = Depends(require_auth)):
+    try:
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise ValueError('Body must be a JSON object')
+        from services.outreach_validation import validate_email
+        validate_email(data)
+        db = get_db_manager()
+        await _validate_outreach_candidate(db, data, user)
+        company_info = user.get('company')
+        company = (company_info.get('company_name') if isinstance(company_info, dict) else None) or data.get('company') or 'Efforts Solutions'
+        from services.email_branding import render_plain_message
+        subject, body = render_plain_message(data['message_subject'], data['message_body'], company=company)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {'success': True, 'subject': subject, 'body_html': body, 'recipient': data['candidate_email']}
+
+
 @app.post("/api/send-candidate-email")
 @limiter.limit("60/minute")
 async def send_candidate_email_endpoint(request: Request,
@@ -11823,6 +11946,7 @@ async def send_candidate_email_endpoint(request: Request,
         raise HTTPException(status_code=422, detail="Body must be JSON")
     if not isinstance(data, dict):
         raise HTTPException(status_code=422, detail="Body must be a JSON object")
+    plain_mode = 'message_subject' in data or 'message_body' in data
     from services.outreach_validation import validate_email
     try:
         validate_email(data)
@@ -11836,10 +11960,10 @@ async def send_candidate_email_endpoint(request: Request,
     if user.get('company') and isinstance(user['company'], dict):
         company_name = user['company'].get('company_name') or user['company'].get('name')
 
-    subj_tpl = data.get("raw_subject")
-    body_tpl = data.get("raw_body")
+    subj_tpl = data.get('message_subject') if plain_mode else data.get("raw_subject")
+    body_tpl = data.get('message_body') if plain_mode else data.get("raw_body")
     kind = data.get("kind") or "custom"
-    if not (subj_tpl and body_tpl):
+    if not plain_mode and not (subj_tpl and body_tpl):
         tpl_id = data.get("template_id")
         if not tpl_id:
             raise HTTPException(status_code=422,
@@ -11867,13 +11991,18 @@ async def send_candidate_email_endpoint(request: Request,
         meeting_join_url=data.get("meeting_join_url") or "",
     )
     try:
-        subject, body_html = render_candidate_email(subj_tpl, body_tpl, ctx)
+        if plain_mode:
+            from services.email_branding import render_plain_message
+            subject, body_html = render_plain_message(subj_tpl, body_tpl, company=ctx['company'])
+        else:
+            subject, body_html = render_candidate_email(subj_tpl, body_tpl, ctx)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     try:
         result = await asyncio.to_thread(send_email,
             to=data["candidate_email"], subject=subject, body_html=body_html,
             prefer=data.get("prefer") or "auto",
+            strict_transport=plain_mode,
             organizer_user_id=user["id"], db=db,
         )
     except Exception as exc:
@@ -13062,6 +13191,14 @@ def extract_keywords_with_gemini(content: str) -> Dict[str, Any]:
             "extracted_by": llm_display_name()
         }
 
+def _parse_jd_skills(value: str) -> list[str]:
+    skills = json.loads(value) if value else []
+    if (not isinstance(skills, list) or len(skills) > 100 or
+            any(not isinstance(skill, str) or not skill.strip() or len(skill) > 200 for skill in skills)):
+        raise HTTPException(status_code=422, detail="Skills must be a list of up to 100 non-empty text values, each at most 200 characters")
+    return skills
+
+
 @app.post("/api/generate-jd")
 @limiter.limit("15/minute")
 async def generate_job_description(
@@ -13087,8 +13224,10 @@ async def generate_job_description(
         experience_level = _sanitize_user_text(experience_level, max_len=100)
         employment_type = _sanitize_user_text(employment_type, max_len=100) or "full-time"
         description = _sanitize_user_text(description, max_len=8000)
+        if not job_title:
+            raise HTTPException(status_code=422, detail="Job title is required")
         # Parse skills JSON
-        skills_list = json.loads(skills) if skills else []
+        skills_list = _parse_jd_skills(skills)
 
         # Use LLM-only approach with provided company details
         job_details = {
@@ -13111,10 +13250,12 @@ async def generate_job_description(
         print(f"👤 Requested by: {user['email']}")
         print(f"🤖 Using LLM-only generation with company details")
 
-        result = generate_jd_with_gemini(job_details)
+        result = await asyncio.to_thread(generate_jd_with_gemini, job_details)
 
         return result
 
+    except HTTPException:
+        raise
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid skills format")
     except Exception as e:
@@ -13132,16 +13273,20 @@ async def enhance_job_description(
     """Enhance an existing job description using AI"""
     try:
         existing_content = _sanitize_user_text(existing_content, max_len=20000)
+        if not existing_content:
+            raise HTTPException(status_code=422, detail="Job description content is required")
         # Parse skills JSON
-        skills_list = json.loads(skills) if skills else []
+        skills_list = _parse_jd_skills(skills)
 
         print(f"🔧 Enhancing JD (length: {len(existing_content)} chars)")
         print(f"👤 Requested by: {user['email']}")
 
-        result = enhance_jd_with_gemini(existing_content, skills_list)
+        result = await asyncio.to_thread(enhance_jd_with_gemini, existing_content, skills_list)
 
         return result
 
+    except HTTPException:
+        raise
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid skills format")
     except Exception as e:
@@ -13158,13 +13303,17 @@ async def extract_jd_keywords(
     """Extract keywords from job description or requirements"""
     try:
         content = _sanitize_user_text(content, max_len=20000)
+        if not content:
+            raise HTTPException(status_code=422, detail="Job description content is required")
         print(f"🔍 Extracting keywords from content (length: {len(content)} chars)")
         print(f"👤 Requested by: {user['email']}")
 
-        result = extract_keywords_with_gemini(content)
+        result = await asyncio.to_thread(extract_keywords_with_gemini, content)
 
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ Extract keywords endpoint error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to extract keywords: {str(e)}")

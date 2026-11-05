@@ -37,6 +37,16 @@ def display_time(day, clock, zone="UTC"):
     return date_text, time_text
 
 
+def render_plain_message(subject, message, *, company=BRAND):
+    if not isinstance(subject, str) or not subject.strip() or len(subject) > 998 or any(c in subject for c in '\r\n\x00'):
+        raise ValueError('Provide a subject of at most 998 characters without line breaks')
+    if not isinstance(message, str) or not message.strip() or len(message) > 32768 or '\x00' in message:
+        raise ValueError('Provide a message of at most 32,768 characters')
+    content = ''.join('<p>' + escape(paragraph).replace('\n', '<br>') + '</p>'
+                      for paragraph in message.replace('\r\n', '\n').replace('\r', '\n').strip().split('\n\n'))
+    return subject.strip(), branded_html(content, company=company)
+
+
 def branded_html(body, *, company=BRAND):
     if not isinstance(body, str) or len(body) > 262144:
         raise ValueError("Email content is too large")

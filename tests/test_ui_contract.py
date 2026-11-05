@@ -22,3 +22,12 @@ def test_admin_ui_asset_is_versioned_and_served(api):
     response = client.get('/static/js/dashboard-ui.js')
     assert response.status_code == 200
     assert 'window.AdminUI = {openDialog, closeDialog}' in response.text
+
+
+def test_recruiter_keeps_original_application_logo(api):
+    client, _db = api
+    response = client.get('/')
+    assert response.status_code == 200
+    assert 'src="/static/img/ai-logo.png" alt="AI Agent Recruiter"' in response.text
+    assert 'Your AI Agent for Seamless Recruitment' in response.text
+    assert 'efforts-solutions-logo.png' not in response.text

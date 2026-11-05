@@ -520,9 +520,10 @@ document.addEventListener('DOMContentLoaded', function () {
                         <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
                             <div class="flex items-center justify-between mb-6">
                                 <h3 class="text-lg font-semibold text-gray-900">📅 Schedule</h3>
+                                <div class="flex items-center gap-2"><button type="button" onclick="InterviewManager.list()" aria-label="View schedule history" title="View schedule history" class="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"><i class="fas fa-list" aria-hidden="true"></i></button>
                                 <button type="button" onclick="openGeneralScheduleModal()" title="Add a new scheduled item" class="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:text-white hover:bg-blue-600 transition-colors">
                                     <i class="fas fa-plus"></i>
-                                </button>
+                                </button></div>
                             </div>
                             
                             
@@ -1296,13 +1297,13 @@ document.addEventListener('DOMContentLoaded', function () {
                         throw new Error('No text could be extracted from the file.');
                     }
                     if (chatInput) {
-                        chatInput.value = text;
+                        chatInput.value = text.replace(/\r\n?|\n|\u2028|\u2029/g, ' ');
                         chatInput.focus();
                     }
                     if (jdUploadStatus) {
                         jdUploadStatus.classList.remove('text-red-600');
                         jdUploadStatus.classList.add('text-green-600');
-                        jdUploadStatus.textContent = 'Loaded "' + file.name + '" (' + text.length + ' chars). You can edit before searching.';
+                        jdUploadStatus.textContent = 'Loaded "' + file.name + '" (' + (chatInput ? chatInput.value.length : text.length) + ' chars). You can edit before searching.';
                     }
                 } catch (err) {
                     console.error('JD upload failed:', err);
@@ -1596,14 +1597,12 @@ document.addEventListener('DOMContentLoaded', function () {
         const candidateList = document.getElementById('candidate-list');
         if (candidateList) {
             candidateList.innerHTML = `
-                <div class="text-center py-8">
-                    <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <i class="fas fa-spinner fa-spin text-blue-600 text-lg"></i>
-                    </div>
-                    <div id="search-progress-step" class="text-gray-600 text-sm">Searching for candidates...</div>
-                    <div id="search-progress-detail" class="text-gray-500 text-xs mt-2">Analyzing resumes with AI</div>
-                    <div class="w-full max-w-xs mx-auto mt-3 bg-gray-200 rounded-full h-1.5 overflow-hidden">
-                        <div id="search-progress-bar" class="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style="width:0%"></div>
+                <div class="ai-search-state" role="status" aria-live="polite">
+                    <div class="ai-search-symbol"><i class="fas fa-brain" aria-hidden="true"></i></div>
+                    <div id="search-progress-step" class="text-gray-700 text-sm">AI is understanding your requirements</div>
+                    <div id="search-progress-detail" class="text-gray-500 text-xs mt-2">Your next match starts here.</div>
+                    <div class="ai-search-track is-indeterminate">
+                        <div id="search-progress-bar" role="progressbar" aria-label="Candidate review progress" aria-valuemin="0" aria-valuemax="100"></div>
                     </div>
                 </div>
             `;
@@ -1614,12 +1613,11 @@ document.addEventListener('DOMContentLoaded', function () {
         if (resultsContainer) {
             resultsContainer.innerHTML = `
                 <div class="flex items-center justify-center h-full">
-                    <div class="text-center">
-                        <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <i class="fas fa-search text-gray-400 text-2xl"></i>
-                        </div>
-                        <h3 id="search-progress-title" class="text-lg font-medium text-gray-600 mb-2">Searching candidates...</h3>
-                        <p id="search-progress-subtitle" class="text-sm text-gray-500">Please wait while we analyze the resumes</p>
+                    <div class="ai-search-state">
+                        <div class="ai-search-symbol"><i class="fas fa-brain" aria-hidden="true"></i></div>
+                        <span class="ai-live-label">Live matching</span>
+                        <h3 id="search-progress-title">AI is understanding your requirements</h3>
+                        <p id="search-progress-subtitle">Your next match starts here.</p>
                     </div>
                 </div>
             `;
@@ -1636,32 +1634,35 @@ document.addEventListener('DOMContentLoaded', function () {
             const pct = (typeof progress.progress_percent === 'number')
                 ? progress.progress_percent
                 : (cur && total ? Math.round(cur / total * 100) : 0);
-            const cacheHits = progress.cache_hits || 0;
-
             const stepLabels = {
-                'extracting_keywords': 'Extracting keywords from job description-',
-                'optimizing_query':    'Optimizing search query-',
-                'searching_candidates':'Searching candidate database-',
-                'generating_scorecards': total
-                    ? `Analyzing candidate ${cur || 0} / ${total} (${pct}%)-`
-                    : 'Analyzing candidates-',
-                'saving_results':      'Saving results-',
-                'completed':           'Done.',
+                'pending':             'Your search is in line',
+                'extracting_keywords': 'AI is understanding the role',
+                'optimizing_query':    'Preparing your candidate search',
+                'searching_candidates':'Discovering potential matches',
+                'generating_scorecards':'AI is reviewing candidate profiles',
+                'saving_results':      'Preparing your matched candidates',
+                'completed':           'Your matches are ready',
             };
-            const label = stepLabels[step] || (step ? `${step}-` : 'Working-');
+            const label = stepLabels[step] || 'AI is working on your matches';
+            const detail = step === 'generating_scorecards' && Number.isFinite(total) && total > 0
+                ? `${Number.isFinite(cur) ? cur : 0} of ${total} profiles reviewed. Matching skills, experience and location.`
+                : step === 'pending' ? 'Your search will begin as soon as a review slot is available.'
+                : 'Focused on the requirements that matter to you.';
 
             const stepEl    = document.getElementById('search-progress-step');
             const detailEl  = document.getElementById('search-progress-detail');
             const barEl     = document.getElementById('search-progress-bar');
             const titleEl   = document.getElementById('search-progress-title');
             const subEl     = document.getElementById('search-progress-subtitle');
-            if (stepEl)   stepEl.textContent = label;
-            if (titleEl)  titleEl.textContent = label;
-            if (detailEl) detailEl.textContent = cacheHits
-                ? `${cacheHits} reused from cache`
-                : 'Powered by Vertex AI Search + Gemini';
-            if (subEl)    subEl.textContent   = detailEl ? detailEl.textContent : '';
-            if (barEl && pct >= 0) barEl.style.width = Math.max(2, Math.min(100, pct)) + '%';
+            for (const [node, text] of [[stepEl,label],[titleEl,label],[detailEl,detail],[subEl,detail]]) {
+                if (node && node.textContent !== text) node.textContent = text;
+            }
+            if (barEl) {
+                const measured = Number.isFinite(pct) && pct > 0;
+                barEl.parentElement.classList.toggle('is-indeterminate', !measured);
+                if (measured) {barEl.style.width = Math.min(100, pct) + '%'; barEl.setAttribute('aria-valuenow', String(Math.min(100,pct)));}
+                else barEl.removeAttribute('aria-valuenow');
+            }
         } catch (e) {
             console.warn('updateSearchProgress error', e);
         }
@@ -1892,7 +1893,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     top_result_analysis: data.top_result_analysis || null,
                     top_scorecard: data.top_scorecard || null
                 };
-            }).finally(() => {
+            }).then(value => ({...value, query: value.query || query, job_title: value.job_title || jobTitle})).finally(() => {
                 if (key && pendingCandidateSearches.get(key) === request) pendingCandidateSearches.delete(key);
             });
         if (key && pendingCandidateSearches.size < 16) pendingCandidateSearches.set(key, request);
@@ -2925,7 +2926,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 card.querySelector('.js-contact-candidate')?.addEventListener('click', () => {
                     if (canEmailCandidate) {
-                        window.location.href = `mailto:${safeEmailValue}`;
+                        window.RecruiterOutreach.open({candidateName: finalCandidateName, candidateEmail: safeEmailValue,
+                            position: candidateRole, searchResultId: card.getAttribute('data-search-result-id')});
                     } else {
                         showNotification('No valid email address is available for this candidate.', 'error');
                     }
@@ -6498,6 +6500,7 @@ function initializeJDBuilderPage() {
     const skillsList = document.getElementById('jd-skills-list');
 
     const preview = document.getElementById('jd-preview');
+    const emptyPreviewHtml = preview.innerHTML;
     const progress = document.getElementById('jd-progress');
     const progressText = document.getElementById('jd-progress-text');
 
@@ -6508,6 +6511,18 @@ function initializeJDBuilderPage() {
         if (downloadBtn) downloadBtn.disabled = empty;
     }
     preview.addEventListener('input', syncPreviewControls);
+    preview.addEventListener('focus', () => {
+        if (preview.textContent.includes('Your job description will appear here')) {
+            preview.replaceChildren();
+            syncPreviewControls();
+        }
+    });
+    preview.addEventListener('blur', () => {
+        if (!preview.textContent.trim()) {
+            preview.innerHTML = emptyPreviewHtml;
+            syncPreviewControls();
+        }
+    });
 
     // Skills management
     function addSkill(skill) {
@@ -6683,7 +6698,7 @@ function initializeJDBuilderPage() {
                 syncPreviewControls();
                 showNotification('Job description generated successfully!', 'success');
             } else {
-                showNotification('Failed to generate job description: ' + data.error, 'error');
+                showNotification('Failed to generate job description: ' + (data.detail || data.error || 'Request failed'), 'error');
             }
         } catch (error) {
             console.error('Error generating JD:', error);
@@ -7667,11 +7682,14 @@ function updateUpcomingEvents(events) {
                     <p class="text-xs text-gray-500">${esc(event.position || 'Position not specified')}</p>
                     <p class="text-xs text-gray-400 mt-1">${esc(dateLabel)}</p>
                 </div>
+                ${/^[1-9]\d*$/.test(String(event.interview_id||'')) ? `<div class="schedule-item-actions"><button type="button" data-edit-interview="${Number(event.interview_id)}" aria-label="Edit interview" title="Edit interview"><i class="fas fa-pen" aria-hidden="true"></i></button><button type="button" data-cancel-interview="${Number(event.interview_id)}" aria-label="Cancel interview" title="Cancel interview"><i class="fas fa-trash" aria-hidden="true"></i></button></div>` : ''}
             </div>
         `;
     }).join('');
 
     eventsContainer.innerHTML = eventsHtml;
+    eventsContainer.querySelectorAll('[data-edit-interview]').forEach(button=>button.addEventListener('click',()=>window.InterviewManager?.open(button.dataset.editInterview)));
+    eventsContainer.querySelectorAll('[data-cancel-interview]').forEach(button=>button.addEventListener('click',()=>window.InterviewManager?.open(button.dataset.cancelInterview,true)));
 }
 
 async function loadResourceUsageData() {
@@ -7819,12 +7837,9 @@ function loadUserDashboardData() {
     // Show loading state first
     showDashboardLoadingState();
 
-    // Load data with a slight delay to show the loading state
-    setTimeout(() => {
-        loadSearchHistoryForDashboard();
-        loadCandidateStatusCounts();
-        loadUpcomingEvents();
-    }, 1500); // 1.5 second delay to show loading state
+    loadSearchHistoryForDashboard();
+    loadCandidateStatusCounts();
+    loadUpcomingEvents();
 }
 
 function showRecentSearches() {
@@ -8026,7 +8041,8 @@ function openGeneralScheduleModal(prefillName, prefillEmail) {
         return d.innerHTML;
     });
     const attrFn = window.escapeAttr || escFn;
-    const interviewerName = window.currentUser ? (window.currentUser.full_name || '') : '';
+    const context = window.RecruiterOutreach?.context({useSearch:false}) || {};
+    const interviewerName = context.recruiter || (window.currentUser ? (window.currentUser.full_name || '') : '');
 
     // Remove any pre-existing schedule modal
     document.querySelectorAll('[data-modal="general-schedule"]').forEach((m) => m.remove());
@@ -8113,8 +8129,6 @@ function openGeneralScheduleModal(prefillName, prefillEmail) {
                     <label class="block text-sm font-medium text-gray-700 mb-2">Auto-create online meeting</label>
                     <select id="gs-provider" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="none" selected>No — use Location field</option>
-                        <option value="meet">Google Meet (requires connected Google)</option>
-                        <option value="teams">Microsoft Teams (requires connected Microsoft)</option>
                     </select>
                     <p class="text-xs text-gray-500 mt-1">Teams/Meet calendar events also send an invitation to the attendee.</p>
                 </div>
@@ -8166,6 +8180,7 @@ function openGeneralScheduleModal(prefillName, prefillEmail) {
     const form = document.getElementById('general-schedule-form');
     if (form) form.addEventListener('submit', submitGeneralScheduleForm);
     bindScheduleDialog(modal, 'Add to schedule');
+    window.RecruiterOutreach?.configureSchedule(modal);
 }
 
 function closeGeneralScheduleModal() {
@@ -8257,6 +8272,7 @@ async function submitGeneralScheduleForm(event) {
 }
 
 function showInterviewScheduleModal(candidateName, candidateEmail, context = {}) {
+    context = window.RecruiterOutreach?.context(context) || context;
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
     const esc = window.escapeHtml || ((value) => {
@@ -8265,13 +8281,14 @@ function showInterviewScheduleModal(candidateName, candidateEmail, context = {})
         return div.innerHTML;
     });
     const attr = window.escapeAttr || esc;
-    const interviewerName = window.currentUser ? window.currentUser.full_name : '';
+    const interviewerName = context.recruiter || (window.currentUser ? window.currentUser.full_name : '');
     modal.innerHTML = `
-        <div class="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
+        <div class="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div class="flex items-center justify-between mb-6">
                 <div>
                     <h3 class="text-lg font-semibold text-gray-900">Schedule Interview</h3>
                     <p class="text-sm text-gray-600 mt-1">with ${esc(candidateName)}</p>
+                    <p class="text-xs text-gray-500 mt-1">${esc(candidateEmail || 'No candidate email on file')}</p>
                 </div>
                 <button type="button" onclick="closeInterviewModal()" aria-label="Close interview" title="Close interview" class="text-gray-400 hover:text-gray-600">
                     <i class="fas fa-times text-lg"></i>
@@ -8287,7 +8304,7 @@ function showInterviewScheduleModal(candidateName, candidateEmail, context = {})
                     <label class="block text-sm font-medium text-gray-700 mb-2">Interview Type</label>
                     <select id="interview-type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="phone">Phone Screening</option>
-                        <option value="video">Video Interview</option>
+                        <option value="video" selected>Video Interview</option>
                         <option value="in-person">In-Person Interview</option>
                         <option value="technical">Technical Interview</option>
                         <option value="final">Final Interview</option>
@@ -8326,7 +8343,7 @@ function showInterviewScheduleModal(candidateName, candidateEmail, context = {})
                     <label class="block text-sm font-medium text-gray-700 mb-2">Location/Platform</label>
                     <input type="text" id="interview-location" 
                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                           placeholder="e.g., Zoom, Office Conference Room A, Google Meet">
+                           placeholder="Office location or call details">
                 </div>
 
                 <!-- Online meeting provider (Teams / Meet / none) -->
@@ -8334,8 +8351,6 @@ function showInterviewScheduleModal(candidateName, candidateEmail, context = {})
                     <label class="block text-sm font-medium text-gray-700 mb-2">Auto-create online meeting</label>
                     <select id="interview-provider" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="none">No — use Location field above</option>
-                        <option value="meet">Google Meet (requires connected Google account)</option>
-                        <option value="teams">Microsoft Teams (requires connected Microsoft account)</option>
                     </select>
                     <p class="text-xs text-gray-500 mt-1">Teams/Meet calendar events also send an invitation to the attendee.</p>
                 </div>
@@ -8400,6 +8415,7 @@ function showInterviewScheduleModal(candidateName, candidateEmail, context = {})
         form.addEventListener('submit', (event) => saveInterviewSchedule(event, candidateName, candidateEmail));
     }
     bindScheduleDialog(modal, 'Schedule interview');
+    window.RecruiterOutreach?.configureSchedule(modal);
 }
 
 function bindScheduleDialog(modal, label) {
@@ -8585,11 +8601,14 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
             const missing = new Set();
             els.forEach(function (el) {
                 const code = el.getAttribute('onclick') || '';
-                const m = code.match(/([A-Za-z_$][\w$]*)\s*\(/);
+                const m = code.match(/([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\(/);
                 if (m) {
                     const name = m[1];
-                    if (typeof window[name] !== 'function'
-                        && !['this', 'event', 'return', 'window'].includes(name)) {
+                    const parts = name.split('.');
+                    let handler = window;
+                    for (const part of parts) handler = handler?.[part];
+                    if (typeof handler !== 'function'
+                        && !['this', 'event', 'return'].includes(parts[0])) {
                         missing.add(name);
                     }
                 }

@@ -314,6 +314,7 @@ def _send_via_gmail(token: str, sender_email: Optional[str],
 def send_email(*, to: str, subject: str, body_html: str,
                body_text: Optional[str] = None,
                prefer: str = "auto",
+               strict_transport: bool = False,
                organizer_user_id: Optional[int] = None,
                db=None) -> dict:
     """Send an email to a single recipient.
@@ -339,6 +340,8 @@ def send_email(*, to: str, subject: str, body_html: str,
         order = ["microsoft", "smtp"]
     else:
         order = ["gmail", "microsoft", "smtp"]
+    if strict_transport and prefer != 'auto':
+        order = order[:1]
 
     last_err = None
     for transport in order:

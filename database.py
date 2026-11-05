@@ -1217,7 +1217,9 @@ class DatabaseManager:
             offset = 0
         with self.get_cursor() as (cursor, conn):
             cursor.execute("""
-                SELECT u.*, uc.role, uc.joined_at, tc.company_name, tc.company_code
+                SELECT u.id, u.email, u.full_name, u.user_type, u.is_active,
+                       u.created_at, u.last_login, uc.role, uc.joined_at,
+                       tc.company_name, tc.company_code
                 FROM users u
                 JOIN user_companies uc ON u.id = uc.user_id
                 JOIN tenant_companies tc ON uc.company_id = tc.id
@@ -1247,6 +1249,7 @@ class DatabaseManager:
             # Get old values for audit
             cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
             old_values = dict(cursor.fetchone())
+            old_values.pop('password_hash', None)
 
             # Update user
             query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = %s"
@@ -1556,6 +1559,7 @@ class DatabaseManager:
 
                 cursor.execute(f"""
                     SELECT
+                        id, position,
                         candidate_name,
                         interview_type,
                         interview_date,
@@ -1574,6 +1578,8 @@ class DatabaseManager:
                 # Add scheduled interviews to events
                 for interview in interviews:
                     events.append({
+                        'interview_id': interview.get('id'),
+                        'position': interview.get('position'),
                         'title': f'{interview["interview_type"].title()} with {interview["candidate_name"]}',
                         'candidate': interview['candidate_name'],
                         'type': 'interview',
@@ -1654,6 +1660,8 @@ class DatabaseManager:
                         ADD COLUMN IF NOT EXISTS meeting_event_id   VARCHAR(255),
                         ADD COLUMN IF NOT EXISTS search_result_id   INTEGER
                 """)
+                from services.workspace_records import SCHEMA_SQL
+                cursor.execute(SCHEMA_SQL)
                 # 2. Per-tenant email templates.
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS email_templates (
@@ -1898,9 +1906,9 @@ class DatabaseManager:
                  interview_time, duration_minutes, location, interviewer, notes,
                  created_by, company_id, status,
                  meeting_provider, meeting_join_url, meeting_event_id,
-                 search_result_id)
+                 search_result_id, position, time_zone, calendar_account_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s)
+                        %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """, (
                 interview_data['candidate_name'],
@@ -1919,6 +1927,9 @@ class DatabaseManager:
                 interview_data.get('meeting_join_url'),
                 interview_data.get('meeting_event_id'),
                 interview_data.get('search_result_id'),
+                interview_data.get('position'),
+                interview_data.get('time_zone'),
+                interview_data.get('calendar_account_id'),
             ))
 
             interview_id = cursor.fetchone()['id']

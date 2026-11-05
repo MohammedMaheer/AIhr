@@ -18,6 +18,16 @@ async function run(){
  assert.equal(d.getElementById('result-count').max,'7');
  assert.equal(d.getElementById('result-count').value,'7');
  d.getElementById('result-count').value='8';assert.equal(d.getElementById('result-count').checkValidity(),false);
+ const parsed='Fictional Engineer\r\nLocation: Dubai\nExperience: 5 years\u2028Skills: Python, SQL';
+ w.handleSendMessage=()=>{throw new Error('Upload must not submit a paid search');};
+ w.handleBottomSendMessage=w.handleSendMessage;
+ w.fetch=async url=>{assert.equal(url,'/api/parse-jd-file');return {ok:true,json:async()=>({text:parsed})};};
+ w.eval(source.slice(source.indexOf('    function initializeSearchPage()'),source.indexOf('    function handleSendMessage()'))+';initializeSearchPage();');
+ const upload=d.getElementById('jd-upload-input');
+ Object.defineProperty(upload,'files',{value:[new w.File(['fixture'],'fictional.txt',{type:'text/plain'})]});
+ upload.dispatchEvent(new w.Event('change'));await flush();
+ assert.equal(d.getElementById('chat-input').value,'Fictional Engineer Location: Dubai Experience: 5 years Skills: Python, SQL');
+ assert(d.getElementById('jd-upload-status').textContent.includes(d.getElementById('chat-input').value.length+' chars'));
  d.body.innerHTML=w.qaPages.uploadFiles;
  assert.equal(d.getElementById('email-limit').max,'23');
  assert.equal(d.getElementById('email-limit').value,'23');
@@ -31,6 +41,11 @@ async function run(){
  const generate=d.getElementById('jd-generate-btn'),copy=d.getElementById('jd-copy-btn');
  const download=d.getElementById('jd-download-btn'),preview=d.getElementById('jd-preview');
  assert.equal(copy.disabled,true);assert.equal(download.disabled,true);
+ preview.dispatchEvent(new w.Event('focus'));
+ assert.equal(preview.innerHTML,'','Typing must not inherit placeholder icon or centered styles');
+ preview.dispatchEvent(new w.Event('blur'));
+ assert.match(preview.textContent,/Your job description will appear here/);
+ assert.equal(copy.disabled,true);
  generate.click();assert.equal(calls,0,'Missing title must not call AI');
  d.getElementById('jd-job-title').value='Synthetic role';
  generate.click();generate.click();assert.equal(calls,1);assert.equal(generate.disabled,true);

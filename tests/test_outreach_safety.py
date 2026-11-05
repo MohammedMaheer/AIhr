@@ -195,6 +195,7 @@ def outreach_db(state_db, monkeypatch):
             search_result_id INTEGER, interview_id INTEGER);''')
         migration = Path('deploy/vps/migrations/20261105_outreach_location.sql').read_text()
         cur.execute(migration)
+        cur.execute(Path('deploy/vps/migrations/20261105_workspace_lifecycle.sql').read_text())
     monkeypatch.setattr(db, 'ensure_integrations_tables', lambda: None)
     monkeypatch.setattr(db, 'log_audit', lambda *a: None)
     return db, ids

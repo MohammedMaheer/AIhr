@@ -84,6 +84,7 @@ def validate_email(data):
                       'custom_message': 8192, 'interview_date': 32, 'interview_time': 32,
                       'interview_location': 2000, 'meeting_join_url': 8000,
                       'raw_subject': 32768, 'raw_body': 32768, 'kind': 40, 'prefer': 40,
+                      'message_subject': 998, 'message_body': 32768,
                       'company': 255, 'time_zone': 128})
     data['candidate_email'] = address(data['candidate_email'], required=True)
     if any('\r' in data[field] or '\n' in data[field] for field in ('candidate_name', 'position', 'company')):

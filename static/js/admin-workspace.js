@@ -16,14 +16,13 @@
 
     function dialog(title, content, submitText, onSubmit) {
         const modal = document.createElement('div');
-        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+        modal.className = 'workspace-overlay';
         modal.dataset.adminDialog = 'true';
-        modal.innerHTML = `<div class="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
-            <div class="flex items-center justify-between gap-4 mb-4"><h3 class="text-lg font-semibold">${esc(title)}</h3>
-            <button type="button" data-close aria-label="Close dialog" title="Close dialog" class="p-2"><i class="fas fa-times" aria-hidden="true"></i></button></div>
-            <form class="space-y-4">${content}<p data-error role="alert" class="text-sm text-red-700 hidden"></p>
-            <div class="flex justify-end gap-3 pt-3"><button type="button" data-close class="px-4 py-2 border rounded-md">Cancel</button>
-            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md"><i class="fas fa-check mr-2" aria-hidden="true"></i>${esc(submitText)}</button></div></form></div>`;
+        modal.innerHTML = `<section class="workspace-dialog workspace-admin-dialog"><header><h3>${esc(title)}</h3>
+            <button type="button" data-close aria-label="Close dialog" title="Close dialog" class="workspace-icon-button"><i class="fas fa-times" aria-hidden="true"></i></button></header>
+            <form class="workspace-form"><div class="workspace-dialog-body">${content}<p data-error role="alert" class="workspace-inline-error hidden"></p></div>
+            <footer><button type="button" data-close class="workspace-button">Cancel</button>
+            <button type="submit" class="workspace-button ${submitText === 'Delete user' ? 'is-danger' : 'is-primary'}"><i class="fas ${submitText === 'Delete user' ? 'fa-trash' : 'fa-check'}" aria-hidden="true"></i>${esc(submitText)}</button></footer></form></section>`;
         document.body.append(modal);
         window.bindScheduleDialog(modal, title);
         let pending = false;
@@ -37,11 +36,14 @@
             if (pending || !form.reportValidity()) return;
             pending = true;
             modal.dataset.submitting = 'true';
+            const values = new FormData(form);
+            const submit = form.querySelector('[type="submit"]'), submitLabel = submit.innerHTML;
+            submit.innerHTML = '<i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>Saving...';
             const controls = [...form.querySelectorAll('button'), modal.querySelector('[data-close]')];
             controls.forEach(button => { button.disabled = true; });
             modal.querySelector('[data-error]').classList.add('hidden');
             try {
-                await onSubmit(new FormData(form));
+                await onSubmit(values);
                 modal.remove();
             } catch (error) {
                 const message = modal.querySelector('[data-error]');
@@ -51,13 +53,14 @@
                 pending = false;
                 delete modal.dataset.submitting;
                 controls.forEach(button => { button.disabled = false; });
+                submit.innerHTML = submitLabel;
             }
         });
         return modal;
     }
 
     function field(label, name, value, type = 'text', attributes = '') {
-        return `<div><label class="block text-sm font-medium mb-1">${esc(label)}</label>
+        return `<div><label for="admin-${name}" class="block text-sm font-medium mb-1">${esc(label)}</label>
             <input id="admin-${name}" name="${name}" type="${type}" value="${esc(value ?? '')}"
                 class="w-full border border-gray-300 rounded-md px-3 py-2" ${attributes}></div>`;
     }
@@ -67,17 +70,17 @@
         if (!allowed(user)) { root.textContent = 'Administrator access required.'; return () => {}; }
         const superAdmin = user.user_type === 'super_admin';
         let active = superAdmin && initialTab !== 'users' ? 'companies' : 'users';
-        let sequence = 0, disposed = false, rows = [], companies = [];
-        root.innerHTML = `<header class="flex flex-wrap items-center justify-between gap-3 mb-5">
-            <h2 class="text-2xl font-bold text-gray-900">Administration</h2>
-            <button type="button" data-connections class="px-3 py-2 border rounded-md text-sm"><i class="fas fa-plug mr-2" aria-hidden="true"></i>Connections</button></header>
-            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3 mb-4">
-                <div class="flex gap-2" role="tablist" aria-label="Administration views">
-                ${superAdmin ? '<button type="button" role="tab" data-tab="companies" class="px-3 py-2 rounded-md text-sm">Companies</button>' : ''}
-                <button type="button" role="tab" data-tab="users" class="px-3 py-2 rounded-md text-sm">Users</button></div>
-                <div class="flex gap-2"><button type="button" data-refresh aria-label="Refresh administration" title="Refresh administration" class="p-2 border rounded-md"><i class="fas fa-sync-alt" aria-hidden="true"></i></button>
-                <button type="button" data-add class="px-3 py-2 bg-blue-600 text-white rounded-md text-sm"><i class="fas fa-plus mr-2" aria-hidden="true"></i><span></span></button></div></div>
-            <div data-table role="tabpanel" aria-live="polite" class="overflow-x-auto"></div>`;
+        let sequence = 0, disposed = false, rows = [], companies = [], query = '';
+        root.classList.add('recruiter-workspace','workspace-admin-view');
+        root.innerHTML = `<header class="workspace-header"><h2>Administration</h2>
+            <button type="button" data-connections class="workspace-button"><i class="fas fa-plug" aria-hidden="true"></i>Connections</button></header>
+            <div class="workspace-toolbar admin-toolbar"><div class="workspace-tabs" role="tablist" aria-label="Administration views">
+                ${superAdmin ? '<button id="admin-tab-companies" type="button" role="tab" data-tab="companies" aria-controls="admin-list">Companies</button>' : ''}
+                <button id="admin-tab-users" type="button" role="tab" data-tab="users" aria-controls="admin-list">Users</button></div>
+                <div class="workspace-toolbar-actions"><button type="button" data-refresh aria-label="Refresh administration" title="Refresh administration" class="workspace-icon-button"><i class="fas fa-sync-alt" aria-hidden="true"></i></button>
+                <button type="button" data-add class="workspace-button is-primary"><i class="fas fa-plus" aria-hidden="true"></i><span></span></button></div></div>
+            <div class="workspace-toolbar admin-list-toolbar"><span data-count class="workspace-count" role="status"></span><label class="workspace-search"><i class="fas fa-search" aria-hidden="true"></i><input type="search" data-query aria-label="Search administration" placeholder="Search companies" maxlength="200" autocomplete="off"></label></div>
+            <div id="admin-list" data-table role="tabpanel" class="workspace-table-region"></div>`;
         const table = root.querySelector('[data-table]');
         const notify = message => window.showNotification(message, 'success');
         root.querySelector('[data-connections]').addEventListener('click', () => window.loadPage('settings'));
@@ -85,32 +88,38 @@
         function render() {
             root.querySelectorAll('[data-tab]').forEach(tab => {
                 tab.setAttribute('aria-selected', String(tab.dataset.tab === active));
-                tab.classList.toggle('bg-blue-100', tab.dataset.tab === active);
+                tab.tabIndex = tab.dataset.tab === active ? 0 : -1;
             });
+            table.setAttribute('aria-labelledby','admin-tab-' + active);
+            root.querySelector('[data-query]').placeholder = active === 'companies' ? 'Search companies' : 'Search users';
             root.querySelector('[data-add] span').textContent = active === 'companies' ? 'Add company' : 'Add user';
-            if (!rows.length) { table.textContent = active === 'companies' ? 'No companies found.' : 'No users found.'; return; }
+            const filtered = rows.filter(row => [row.company_name,row.company_code,row.full_name,row.email,roleName(row.user_type || '')].some(value => String(value || '').toLocaleLowerCase().includes(query.toLocaleLowerCase())));
+            const noun = active === 'companies' ? (rows.length === 1 ? 'company' : 'companies') : (rows.length === 1 ? 'user' : 'users');
+            root.querySelector('[data-count]').textContent = (query ? filtered.length + ' of ' : '') + rows.length.toLocaleString() + ' ' + noun;
+            if (!filtered.length) { table.innerHTML = `<div class="workspace-empty"><span class="workspace-empty-icon"><i class="fas ${active === 'companies' ? 'fa-building' : 'fa-users'}" aria-hidden="true"></i></span><h3>${query ? 'No matches found' : active === 'companies' ? 'No companies found' : 'No users found'}</h3></div>`; return; }
             const headers = active === 'companies' ? ['Company', 'Plan', 'Limits', 'Status', 'Actions'] : ['User', 'Role', 'Company', 'Status', 'Actions'];
-            table.innerHTML = `<table class="w-full text-sm text-left"><thead><tr>${headers.map(label => `<th scope="col" class="px-3 py-3 border-b">${label}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
+            table.innerHTML = `<table class="workspace-table admin-table"><thead><tr>${headers.map(label => `<th scope="col">${label}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
             const body = table.querySelector('tbody');
-            for (const row of rows) {
+            for (const row of filtered) {
                 const tr = document.createElement('tr');
                 const content = active === 'companies' ? [
                     `<strong>${esc(row.company_name)}</strong><div class="text-xs text-gray-500">${esc(row.company_code)}</div>`,
-                    esc(row.subscription_plan || 'basic'),
-                    `${esc(row.max_users)} users / ${esc(row.max_resumes)} uploads / ${esc(row.max_searches ?? 10000)} searches`,
-                    row.is_active ? 'Active' : 'Inactive'] : [
+                    `<span class="workspace-plan">${esc(row.subscription_plan || 'basic')}</span>`,
+                    `<div class="admin-limits"><span><strong>${Number(row.max_users || 0).toLocaleString()}</strong> users</span><span><strong>${Number(row.max_resumes || 0).toLocaleString()}</strong> uploads</span><span><strong>${Number(row.max_searches ?? 10000).toLocaleString()}</strong> searches</span></div>`,
+                    `<span class="workspace-status ${row.is_active ? 'is-active' : ''}"><span aria-hidden="true"></span>${row.is_active ? 'Active' : 'Inactive'}</span>`] : [
                     `<strong>${esc(row.full_name)}</strong><div class="text-xs text-gray-500">${esc(row.email)}</div>`,
-                    esc(roleName(row.user_type)), esc(row.company_name || 'Unassigned'), row.is_active ? 'Active' : 'Inactive'];
-                tr.innerHTML = content.map(value => `<td class="px-3 py-3 border-b align-top">${value}</td>`).join('');
-                const actions = document.createElement('td'); actions.className = 'px-3 py-3 border-b whitespace-nowrap';
-                const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'p-2 text-blue-700';
+                    esc(roleName(row.user_type)), esc(row.company_name || (row.user_type === 'super_admin' ? 'All companies' : 'Unassigned')),
+                    `<span class="workspace-status ${row.is_active ? 'is-active' : ''}"><span aria-hidden="true"></span>${row.is_active ? 'Active' : 'Inactive'}</span>`];
+                tr.innerHTML = content.map((value,index) => `<td data-label="${headers[index]}">${value}</td>`).join('');
+                const actions = document.createElement('td'); actions.className = 'workspace-row-actions'; actions.dataset.label = 'Actions';
+                const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'workspace-icon-button';
                 edit.title = edit.ariaLabel = active === 'companies' ? 'Edit company' : 'Edit user';
                 edit.innerHTML = '<i class="fas fa-pen" aria-hidden="true"></i>';
                 edit.addEventListener('click', () => active === 'companies' ? companyForm(row) : userForm(row));
                 const editable = active === 'companies' || superAdmin || row.user_type !== 'super_admin';
                 if (editable) actions.append(edit);
                 if (editable && active === 'users' && Number(row.id) !== Number(user.id)) {
-                    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'p-2 text-red-700';
+                    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'workspace-icon-button is-danger';
                     remove.title = remove.ariaLabel = 'Delete user'; remove.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>';
                     remove.addEventListener('click', () => dialog('Delete user', `<p class="text-sm">Delete the account for <strong>${esc(row.full_name || row.email)}</strong>? This cannot be undone.</p>`, 'Delete user', async () => {
                         await request(`/api/users/${Number(row.id)}`, {method:'DELETE'}); notify('User deleted.'); await load();
@@ -123,7 +132,7 @@
         async function load() {
             if (disposed || !root.isConnected) return;
             const current = ++sequence;
-            table.textContent = 'Loading...'; table.setAttribute('aria-busy', 'true');
+            table.innerHTML = '<div class="workspace-loading" role="status"><i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>Loading...</div>'; table.setAttribute('aria-busy', 'true');
             try {
                 const data = await request(active === 'companies' ? '/api/companies' : '/api/users');
                 if (disposed || current !== sequence || !root.isConnected) return;
@@ -132,14 +141,18 @@
                 if (active === 'companies') companies = rows;
                 render();
             } catch (error) {
-                if (!disposed && current === sequence && root.isConnected) table.textContent = error.message || 'The list could not be loaded.';
+                if (!disposed && current === sequence && root.isConnected) {
+                    root.querySelector('[data-count]').textContent = 'Count unavailable';
+                    table.innerHTML = `<div class="workspace-empty is-error" role="alert"><h3>List unavailable</h3><p>${esc(error.message || 'The list could not be loaded.')}</p><button type="button" data-retry class="workspace-button"><i class="fas fa-redo" aria-hidden="true"></i>Retry</button></div>`;
+                    table.querySelector('[data-retry]').onclick = load;
+                }
             } finally {
                 if (!disposed && current === sequence) table.setAttribute('aria-busy', 'false');
             }
         }
 
         function companyForm(company) {
-            if (!superAdmin) return;
+            if (!superAdmin || disposed || !root.isConnected) return;
             const editing = !!company;
             const plans = [...new Set([company?.subscription_plan || 'basic', 'basic', 'premium', 'enterprise'])];
             dialog(editing ? 'Edit company' : 'Add company',
@@ -159,10 +172,16 @@
         }
 
         async function userForm(target) {
+            if (disposed || !root.isConnected) return;
             const editing = !!target, self = editing && Number(target.id) === Number(user.id);
             if (!editing && superAdmin) {
-                try { companies = (await request('/api/companies')).companies || []; }
-                catch (error) { window.showNotification(error.message, 'error'); return; }
+                try {
+                    const data = await request('/api/companies');
+                    if (disposed || !root.isConnected) return;
+                    if (!Array.isArray(data.companies)) throw new Error('Company list is temporarily unavailable.');
+                    companies = data.companies;
+                }
+                catch (error) { if (!disposed) window.showNotification(error.message, 'error'); return; }
             }
             const roles = superAdmin ? ['tenant_user', 'tenant_admin', 'super_admin'] : editing ? ['tenant_user','tenant_admin'] : ['tenant_user'];
             const modal = dialog(editing ? 'Edit user' : 'Add user',
@@ -191,7 +210,17 @@
                 role.addEventListener('change', sync); sync();
             }
         }
-        root.querySelectorAll('[data-tab]').forEach(tab => tab.addEventListener('click', () => { active = tab.dataset.tab; render(); load(); }));
+        const tabs = [...root.querySelectorAll('[data-tab]')];
+        tabs.forEach((tab,index) => {
+            tab.addEventListener('click', () => { active = tab.dataset.tab; query = ''; rows = []; root.querySelector('[data-query]').value = ''; render(); load(); });
+            tab.addEventListener('keydown', event => {
+                if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+                event.preventDefault();
+                const target = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs[tabs.length-1] : tabs[(index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length)%tabs.length];
+                target.click(); target.focus();
+            });
+        });
+        root.querySelector('[data-query]').addEventListener('input', event => { query = event.target.value.trim(); render(); });
         root.querySelector('[data-refresh]').addEventListener('click', load);
         root.querySelector('[data-add]').addEventListener('click', async event => {
             const button = event.currentTarget;

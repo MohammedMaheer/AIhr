@@ -356,7 +356,7 @@ document.addEventListener('DOMContentLoaded', function () {
             <!-- Tenant User Dashboard -->
             <div id="user-dashboard" class="p-4 h-full overflow-y-auto bg-gray-50" style="display: none;">
                 <div class="max-w-7xl mx-auto">
-                    <div class="flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-gray-200 pb-4 mb-6">
+                    <div class="dashboard-library-metrics flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-gray-200 pb-4 mb-6">
                         <button type="button" data-workspace-target="resumeLibrary" class="text-left hover:text-blue-700"><i class="fas fa-file-alt mr-2" aria-hidden="true"></i><strong id="activity-total-resumes">-</strong> <span class="text-sm">Uploaded CVs</span></button>
                         <button type="button" data-workspace-target="history" class="text-left hover:text-blue-700"><i class="fas fa-history mr-2" aria-hidden="true"></i><strong id="activity-total-searches">-</strong> <span class="text-sm">Searches</span></button>
                     </div>
@@ -542,7 +542,7 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>
         `,
         searchResumes: `
-            <div class="flex flex-col h-full relative bg-white overflow-hidden">
+            <div class="candidate-search-workspace flex flex-col h-full relative bg-white overflow-hidden">
                 <!-- Results Area (Initially Hidden) -->
                 <div id="results-area" class="absolute inset-0 opacity-0 pointer-events-none transition-all duration-500">
                     <!-- Split View Container -->
@@ -644,6 +644,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <!-- Fixed Bottom Chat Input (Initially Hidden) -->
                 <div id="bottom-chat-container" class="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 opacity-0 pointer-events-none transition-all duration-500">
                     <div class="max-w-4xl mx-auto">
+                        <div class="search-scope-toolbar"><button type="button" id="result-search-filters" class="workspace-icon-button" aria-label="Search filters" title="Search filters" hidden><i class="fas fa-sliders-h" aria-hidden="true"></i></button><span id="result-search-scope" class="workspace-muted"></span></div>
                         <div class="relative">
                             <input type="text" id="bottom-chat-input" aria-label="Refine candidate search" class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" placeholder="Ask another question or refine your search...">
                             <button id="bottom-send-button" aria-label="Search candidates" title="Search candidates" class="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
@@ -744,6 +745,11 @@ document.addEventListener('DOMContentLoaded', function () {
                         </div>
                     </div>
 
+                    <div class="recruiter-upload-folder">
+                        <label for="upload-folder"><i class="fas fa-folder-open" aria-hidden="true"></i>Destination folder</label>
+                        <input type="text" id="upload-folder" value="resume" maxlength="512" required list="upload-folder-choices" placeholder="e.g. Network Engineers/Riyadh/November 2026" autocomplete="off">
+                        <datalist id="upload-folder-choices"></datalist>
+                    </div>
                     <!-- Upload Options -->
                     <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-6">
                         <div class="mb-6">
@@ -845,10 +851,6 @@ document.addEventListener('DOMContentLoaded', function () {
                         </div>
                     </div>
 
-                    <div class="mb-5">
-                        <label for="upload-folder" class="block text-sm font-medium text-gray-700 mb-2">CV folder</label>
-                        <input type="text" id="upload-folder" value="resume" maxlength="512" required placeholder="e.g. Network Engineers/Riyadh/November 2026" class="w-full border border-gray-300 rounded-md p-3">
-                    </div>
                     <!-- Hidden Configuration Panel -->
                     <div class="hidden">
                         <input type="text" id="bucket-name" value="">
@@ -1221,7 +1223,21 @@ document.addEventListener('DOMContentLoaded', function () {
             root.id = 'resume-search-filters';
             count.closest('.w-full')?.append(root);
             if (!root.isConnected) count.parentElement.parentElement.parentElement.append(root);
-            activePageCleanup = window.ResumeFolders.mount(root);
+            const disposeFilters = window.ResumeFolders.mount(root);
+            const filterButton = document.getElementById('result-search-filters');
+            const scopeLabel = document.getElementById('result-search-scope');
+            const cancelScope = window.ResumeFolders.subscribe(() => {
+                if (filterButton) filterButton.hidden = !window.ResumeFolders.isAvailable();
+                if (scopeLabel) scopeLabel.textContent = window.ResumeFolders.summary();
+            });
+            filterButton?.addEventListener('click', () => window.ResumeFolders.openDialog());
+            const composer = document.getElementById('bottom-chat-container');
+            const workspace = document.querySelector('.candidate-search-workspace');
+            const resize = window.ResizeObserver ? new ResizeObserver(entries => {
+                if (workspace?.isConnected) workspace.style.setProperty('--search-composer-height', Math.ceil(entries[0].target.getBoundingClientRect().height) + 'px');
+            }) : null;
+            if (composer) resize?.observe(composer);
+            activePageCleanup = () => { disposeFilters(); cancelScope(); window.ResumeFolders.closeDialog(); resize?.disconnect(); };
         }
         // Ensure the bottom chat container is visible when navigating to search page normally
         const bottomChatContainer = document.getElementById('bottom-chat-container');
@@ -4314,13 +4330,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
         function loadConfigAndPopulateFields() {
             const folderInput = document.getElementById('upload-folder');
+            const bucketInput = document.getElementById('bucket-name');
+            const choices = document.getElementById('upload-folder-choices');
             let edited = false;
             folderInput.addEventListener('input', () => { edited = true; });
             fetch('/api/gcs-status')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.bucket_name) {
-                        document.getElementById('bucket-name').value = data.bucket_name;
+                    if (data.bucket_name && bucketInput.isConnected) {
+                        bucketInput.value = data.bucket_name;
                     }
                     if (!edited && folderInput.isConnected) folderInput.value = data.default_folder || 'resume';
 
@@ -4331,6 +4349,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Set fallback folder path if config fails to load
                     if (!edited && folderInput.isConnected) folderInput.value = 'resume';
                 });
+            fetch('/api/resume-folders').then(response => response.ok ? response.json() : null).then(data => {
+                if (!choices?.isConnected || !Array.isArray(data?.folders)) return;
+                choices.replaceChildren();
+                [...new Set(data.folders.map(item => item.path).filter(Boolean))].forEach(path => {
+                    const option = document.createElement('option'); option.value = path; choices.append(option);
+                });
+            }).catch(() => {});
         }
 
         function handleFiles(files) {

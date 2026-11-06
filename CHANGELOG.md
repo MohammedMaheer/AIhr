@@ -5,6 +5,58 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.06.3 - 2026-11-06
+
+### Added And Fixed
+
+- Refined the CV library with file-type icons, readable dates and sizes, explicit
+  empty/error states, accessible preview controls and direct page navigation.
+  Pending searches and stale preview responses cannot overwrite the current view.
+- Made folder, role/skill and date filters easier to scan, with folder search,
+  date presets, removable active selections and synchronized result-view filters.
+  Hidden checked folders retain their selection; an empty explicit scope never
+  silently becomes All folders. Month-end date presets are bounded correctly.
+- Moved the shared upload destination folder before the upload controls and added
+  existing-folder suggestions without overwriting a user's in-progress edit.
+- Refined administration tabs, local list search, status/limit labels and mobile
+  forms. Keyboard navigation, pending-submit feedback and stale-dialog guards
+  preserve the existing authorization and self-account protections.
+- Fixed mobile toolbar overflow and collapsed search controls. Preview and form
+  dialogs retain readable content, reachable actions and bounded scrolling.
+  The original top-left logo, backend search criteria, scoring and AI prompts
+  remain unchanged.
+
+### Verification And Deployment
+
+- 901 backend tests passed with no skips against an isolated PostgreSQL restore;
+  all 15 frontend DOM suites passed. New coverage includes filter synchronization,
+  invalid/empty scopes, pagination, date boundaries and stale asynchronous views.
+- Browser visual checks covered desktop, tablet and mobile layouts using fictional
+  local fixtures. After deployment, the authenticated live browser confirmed
+  4,191 uploaded CVs, working pagination (26-50 of 4,191), mobile administration
+  and dialog alignment, upload-folder suggestions and connected search filters.
+  Checked mobile views had no horizontal overflow; no console errors were
+  observed during these live flows. No live search or production write was sent.
+- Offline compatibility retained identical tokenization, embeddings and top-ten
+  rankings for 105 fixtures and 3,913 tenant vectors. All 102 installed runtime
+  packages passed the advisory scan; the reviewed Git tree passed the secret scan.
+- Deployed `clean-20261106t100021z`; public asset hashes, access protections,
+  deployed-handler scope/count checks and healthy startup passed. The private
+  rollback/database backup exists. Original CV contents, business records, HR
+  decisions, notes, OAuth credentials, outreach and all 20 other running VPS
+  containers were preserved. Health checks made no paid AI calls.
+
+### Remaining Limitations
+
+- This UI release does not establish new live AI accuracy, latency or provider
+  acceptance results. It made no paid AI calls, sent no email/calendar invitations
+  and did not reprocess CVs or change candidate decisions.
+- 87 older records still lack searchable vectors; historical email-received dates
+  remain unknown. Local tags are text-evidence labels, not qualification proof,
+  and upload totals count records rather than unique people.
+- GitHub-hosted CI remains blocked by the account billing lock. Offsite backup
+  and disaster-recovery readiness have not been independently verified.
+
 ## v2026.11.06.2 - 2026-11-06
 
 ### Added And Fixed

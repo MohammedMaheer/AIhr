@@ -11,7 +11,9 @@ from test_durable_search import queue_db
 
 
 @pytest.fixture
-def uploads_db(queue_db):
+def uploads_db(queue_db, monkeypatch):
+    # Quota/rollback tests isolate indexing metadata, which has its own SQL fixtures.
+    monkeypatch.setattr('services.resume_filters.record_metadata', MagicMock())
     with queue_db.get_cursor() as (cursor, _):
         cursor.execute('''
             ALTER TABLE tenant_companies ADD COLUMN max_resumes INTEGER,

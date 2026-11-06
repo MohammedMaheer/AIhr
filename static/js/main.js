@@ -24,28 +24,20 @@ async function checkAuthAndLoadUser() {
         // Store user info for later use
         window.currentUser = user;
 
-        // Show/hide admin links based on user type
-        if (user.user_type === 'super_admin' || user.user_type === 'tenant_admin') {
-            // Admin users can see dashboard
-            document.getElementById('dashboard-link').style.display = 'flex';
+        const adminLink = document.getElementById('administration-link');
+        if (adminLink) {
+            const isAdmin = ['super_admin', 'tenant_admin'].includes(user.user_type);
+            adminLink.hidden = !isAdmin;
+            adminLink.classList.toggle('hidden', !isAdmin);
+            const caption = adminLink.querySelector('[data-admin-caption]');
+            if (caption) caption.textContent = user.user_type === 'super_admin' ? 'Companies & users' : 'Team users';
         }
-
-        // If dashboard is currently loaded, reinitialize it with user data
-        setTimeout(() => {
-            const currentPage = document.getElementById('main-content').innerHTML;
-            if (currentPage.includes('admin-dashboard') || currentPage.includes('user-dashboard')) {
-                console.log('Reinitializing dashboard after user data loaded');
-                if (typeof window.initializeDashboard === 'function') {
-                    window.initializeDashboard();
-                }
-            } else if (document.getElementById('recruiter-integrations')) {
-                loadUserInfo();
-            }
-        }, 200);
+        return user;
 
     } catch (error) {
         console.error('Auth check failed:', error);
         window.location.href = '/login';
+        return null;
     }
 }
 
@@ -138,10 +130,12 @@ function setupResponsiveNavigation() {
 document.addEventListener('DOMContentLoaded', function () {
     setupResponsiveNavigation();
     // Check authentication first
-    checkAuthAndLoadUser();
+    const authReady = checkAuthAndLoadUser();
 
     const dashboardLink = document.getElementById('dashboard-link');
     const searchResumesLink = document.getElementById('search-resumes-link');
+    const resumeLibraryLink = document.getElementById('resume-library-link');
+    const administrationLink = document.getElementById('administration-link');
     const jdBuilderLink = document.getElementById('jd-builder-link');
     const vectorSearchLink = document.getElementById('vector-search-link');
     const historyLink = document.getElementById('history-link');
@@ -362,6 +356,10 @@ document.addEventListener('DOMContentLoaded', function () {
             <!-- Tenant User Dashboard -->
             <div id="user-dashboard" class="p-4 h-full overflow-y-auto bg-gray-50" style="display: none;">
                 <div class="max-w-7xl mx-auto">
+                    <div class="flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-gray-200 pb-4 mb-6">
+                        <button type="button" data-workspace-target="resumeLibrary" class="text-left hover:text-blue-700"><i class="fas fa-file-alt mr-2" aria-hidden="true"></i><strong id="activity-total-resumes">-</strong> <span class="text-sm">Uploaded CVs</span></button>
+                        <button type="button" data-workspace-target="history" class="text-left hover:text-blue-700"><i class="fas fa-history mr-2" aria-hidden="true"></i><strong id="activity-total-searches">-</strong> <span class="text-sm">Searches</span></button>
+                    </div>
                     <!-- Resource Usage Section (for tenant users) -->
                     <div id="resource-usage-section" class="hidden mb-6">
                         <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-6 text-white shadow-lg">
@@ -847,10 +845,13 @@ document.addEventListener('DOMContentLoaded', function () {
                         </div>
                     </div>
 
+                    <div class="mb-5">
+                        <label for="upload-folder" class="block text-sm font-medium text-gray-700 mb-2">CV folder</label>
+                        <input type="text" id="upload-folder" value="resume" maxlength="512" required placeholder="e.g. Network Engineers/Riyadh/November 2026" class="w-full border border-gray-300 rounded-md p-3">
+                    </div>
                     <!-- Hidden Configuration Panel -->
                     <div class="hidden">
                         <input type="text" id="bucket-name" value="">
-                        <input type="text" id="upload-folder" value="">
                         <input type="checkbox" id="auto-process" checked>
                     </div>
 
@@ -1031,6 +1032,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 </div>
             </div>
         `,
+        administration: '<section id="administration-workspace" class="max-w-7xl mx-auto"></section>',
+        resumeLibrary: '<section id="resume-library-workspace" class="max-w-7xl mx-auto"></section>',
         settings: `
             <div class="p-4 h-full overflow-y-auto bg-gray-50">
                 <div class="max-w-4xl mx-auto">
@@ -1064,25 +1067,17 @@ document.addEventListener('DOMContentLoaded', function () {
                     </section>
                     
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <!-- User Management Section (Tenant Admin Only) -->
+                        <!-- Permission-scoped administration shortcut -->
                         <div id="user-management-section" class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
                             <div class="flex items-center justify-between mb-4">
                                 <div>
-                                    <h3 class="text-lg font-semibold text-gray-900">User Management</h3>
-                                    <p class="text-sm text-gray-600">Manage users in your organization</p>
+                                    <h3 class="text-lg font-semibold text-gray-900">Team administration</h3>
                                 </div>
-                                <button id="add-user-btn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
-                                    <i class="fas fa-plus mr-2"></i>Add User
+                                <button type="button" data-manage-users class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+                                    <i class="fas fa-users-cog mr-2" aria-hidden="true"></i>Manage users
                                 </button>
                             </div>
                             
-                            <!-- Users List -->
-                            <div id="users-list" class="space-y-3">
-                                <div class="text-center text-gray-500 py-4">
-                                    <i class="fas fa-users text-2xl text-gray-300 mb-2"></i>
-                                    <p class="text-sm">Loading users...</p>
-                                </div>
-                            </div>
                         </div>
                         
                         <!-- Company Information -->
@@ -1121,15 +1116,38 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     // Make loadPage available globally
-    window.loadPage = function (page) {
+    let activePageCleanup = null;
+    window.loadPage = function (page, options = {}) {
         const mainContent = document.getElementById('main-content');
         if (!mainContent) {
             console.error('Main content element not found');
             return;
         }
+        if (!Object.prototype.hasOwnProperty.call(pages, page)) page = 'dashboard';
+        if (page === 'administration' && !window.AdminWorkspace?.allowed(window.currentUser)) {
+            page = 'dashboard'; options = {...options, fromHistory:false, replace:true};
+        }
+        if (activePageCleanup) activePageCleanup();
+        activePageCleanup = null;
+        const links = {dashboard:dashboardLink, searchResumes:searchResumesLink, resumeLibrary:resumeLibraryLink,
+            administration:administrationLink, uploadFiles:uploadFilesLink, history:historyLink,
+            jdBuilder:jdBuilderLink, settings:settingsLink};
+        if (links[page]) setActiveLink(links[page]);
+        if (!options.fromHistory) {
+            const target = new URL(window.location.href);
+            target.hash = '/' + page;
+            const method = options.replace || window.location.hash === target.hash ? 'replaceState' : 'pushState';
+            window.history[method]({workspacePage:page, section:options.section || null}, '', target.pathname + target.search + target.hash);
+        }
 
         destroyCanvasCharts(mainContent);
         mainContent.innerHTML = pages[page];
+        mainContent.dataset.workspacePage = page;
+        mainContent.dataset.workspaceSection = options.section || '';
+        mainContent.dataset.savedSearchId = options.savedSearchId || '';
+        mainContent.querySelectorAll('[data-workspace-target]').forEach(button => {
+            button.addEventListener('click', () => loadPage(button.dataset.workspaceTarget));
+        });
 
         // Update page title and description
         const titles = {
@@ -1147,8 +1165,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (page === 'searchResumes') {
             // Add small delay to ensure DOM is ready
+            const searchRoot = document.getElementById('chat-interface');
             setTimeout(() => {
-                initializeSearchPage();
+                if (searchRoot?.isConnected && document.getElementById('chat-interface') === searchRoot) initializeSearchPage();
             }, 10);
         } else if (page === 'jdBuilder') {
             initializeJDBuilderPage();
@@ -1165,10 +1184,45 @@ document.addEventListener('DOMContentLoaded', function () {
             initializeUploadPage();
         } else if (page === 'settings') {
             initializeSettingsPage();
+        } else if (page === 'administration') {
+            activePageCleanup = window.AdminWorkspace.mount(document.getElementById('administration-workspace'), options.section);
+        } else if (page === 'resumeLibrary') {
+            activePageCleanup = window.ResumeLibrary?.mount(document.getElementById('resume-library-workspace')) || null;
         }
     }
 
+    function workspaceRoute() {
+        const key = window.location.hash.replace(/^#\/?/, '').split('/')[0];
+        const aliases = {'companies':'administration', 'users':'administration', 'profile':'settings',
+            'integrations':'settings', 'jd-builder':'jdBuilder', 'uploads':'uploadFiles', 'search':'searchResumes', 'reports':'history'};
+        const page = aliases[key] || key || 'dashboard';
+        return {page:Object.prototype.hasOwnProperty.call(pages,page) ? page : 'dashboard',
+            section:['companies','users'].includes(key) ? key : window.history.state?.section,
+            savedSearchId:key === 'searchResumes' && /^[1-9]\d*$/.test(window.location.hash.split('/')[2] || '') ? Number(window.location.hash.split('/')[2]) : null};
+    }
+    function restoreWorkspaceRoute() {
+        const route = workspaceRoute();
+        const current = document.getElementById('main-content');
+        if (current?.dataset.workspacePage === route.page && (current.dataset.workspaceSection || '') === (route.section || '') &&
+            (current.dataset.savedSearchId || '') === String(route.savedSearchId || '')) return;
+        if (route.savedSearchId) window.loadSavedSearch(route.savedSearchId, '', {fromHistory:true});
+        else loadPage(route.page, {fromHistory:true, section:route.section});
+    }
+    window.addEventListener('popstate', restoreWorkspaceRoute);
+    window.addEventListener('hashchange', restoreWorkspaceRoute);
+    [[resumeLibraryLink,'resumeLibrary'],[administrationLink,'administration']].forEach(([link,page]) => {
+        link?.addEventListener('click', event => { event.preventDefault(); loadPage(page); });
+    });
+
     function initializeSearchPage() {
+        const count = document.getElementById('result-count');
+        if (count && window.ResumeFolders) {
+            const root = document.createElement('div');
+            root.id = 'resume-search-filters';
+            count.closest('.w-full')?.append(root);
+            if (!root.isConnected) count.parentElement.parentElement.parentElement.append(root);
+            activePageCleanup = window.ResumeFolders.mount(root);
+        }
         // Ensure the bottom chat container is visible when navigating to search page normally
         const bottomChatContainer = document.getElementById('bottom-chat-container');
         if (bottomChatContainer) {
@@ -1819,8 +1873,16 @@ document.addEventListener('DOMContentLoaded', function () {
     const pendingCandidateSearches = new Map();
 
     function performRealSearch(query) {
+        let folders = null, filters = {};
+        try {
+            window.ResumeFolders?.validate();
+            folders = window.ResumeFolders?.getSelection() ?? null;
+            filters = window.ResumeFolders?.getFilters() || {};
+        } catch (error) { return Promise.reject(error); }
         const formData = new FormData();
         formData.append('query', query);
+        if (folders !== null) formData.append('folders', JSON.stringify(folders));
+        if (Object.keys(filters).length) formData.append('filters', JSON.stringify(filters));
 
         // Get the result count from the number input
         const resultCountInput = document.getElementById('result-count');
@@ -1840,7 +1902,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const user = window.currentUser;
         const key = user?.id != null ? JSON.stringify([
-            user.id, user.user_type, user.company, query, resultCount, jobTitle
+            user.id, user.user_type, user.company, query, resultCount, jobTitle, folders, filters
         ]) : null;
         const copyResult = value => JSON.parse(JSON.stringify(value));
         if (key && pendingCandidateSearches.has(key)) {
@@ -1893,7 +1955,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     top_result_analysis: data.top_result_analysis || null,
                     top_scorecard: data.top_scorecard || null
                 };
-            }).then(value => ({...value, query: value.query || query, job_title: value.job_title || jobTitle})).finally(() => {
+            }).then(value => ({...value, query: value.query || query, job_title: value.job_title || jobTitle,
+                folder_filters: folders || [], resume_filters: filters})).finally(() => {
                 if (key && pendingCandidateSearches.get(key) === request) pendingCandidateSearches.delete(key);
             });
         if (key && pendingCandidateSearches.size < 16) pendingCandidateSearches.set(key, request);
@@ -3979,7 +4042,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // Make loadSavedSearch available globally for the onclick attribute in HTML
-    window.loadSavedSearch = async function (searchId, query) {
+    window.loadSavedSearch = async function (searchId, query, options = {}) {
+        if (!Number.isSafeInteger(Number(searchId)) || Number(searchId) < 1) return;
+        searchId = Number(searchId);
+        let savedRoot;
         try {
             // Get the search resumes link element
             const searchResumesLinkElement = document.getElementById('search-resumes-link');
@@ -3988,10 +4054,13 @@ document.addEventListener('DOMContentLoaded', function () {
             if (searchResumesLinkElement) {
                 setActiveLink(searchResumesLinkElement);
             }
-            loadPage('searchResumes');
+            loadPage('searchResumes', {...options, savedSearchId:searchId});
+            savedRoot = document.getElementById('results-area');
+            if (!options.fromHistory) window.history.replaceState({workspacePage:'searchResumes', savedSearchId:searchId}, '', '#/searchResumes/' + searchId);
 
             // Wait for page to load
-            setTimeout(async () => {
+            await new Promise(resolve => setTimeout(resolve, 20));
+            if (document.getElementById('results-area') !== savedRoot) return;
                 // Show loading
                 showLoadingMessage();
 
@@ -4001,6 +4070,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Fetch saved results
                 const response = await fetch(`/api/search-results/${searchId}`);
                 const data = await response.json();
+                if (document.getElementById('results-area') !== savedRoot) return;
+                query = data.search_query || query;
 
                 if (data.success && data.results) {
                     // Hide loading
@@ -4028,7 +4099,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     const resultsData = {
                         results: transformedResults,
                         total_results: data.total_results || transformedResults.length,
-                        query: query
+                        query: query,
+                        folder_filters: data.folder_filters || [],
+                        resume_filters: data.resume_filters || {}
                     };
 
                     generateEnhancedResults(resultsData);
@@ -4058,8 +4131,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         `;
                     }
                 }
-            }, 300);
         } catch (error) {
+            if (savedRoot && document.getElementById('results-area') !== savedRoot) return;
             console.error('Error loading saved search:', error);
             hideLoadingMessage();
             // Show error message
@@ -4069,7 +4142,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     <div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
                         <i class="fas fa-exclamation-triangle text-red-500 text-2xl mb-2"></i>
                         <h3 class="text-lg font-semibold text-red-800 mb-2">Error Loading Results</h3>
-                        <p class="text-red-700 text-sm">${error.message || 'An unexpected error occurred'}</p>
+                        <p class="text-red-700 text-sm">Unable to load this saved search. Please try again.</p>
                     </div>
                 `;
             }
@@ -4107,21 +4180,7 @@ document.addEventListener('DOMContentLoaded', function () {
         userDash.style.display = 'block';
         showDashboardLoadingState();
 
-        setTimeout(() => {
-            if (window.currentUser && window.currentUser.user_type) {
-                console.log('Loading dashboard for user type:', window.currentUser.user_type);
-                initializeUserDashboard();
-            } else {
-                setTimeout(() => {
-                    if (window.currentUser) {
-                        initializeUserDashboard();
-                    } else {
-                        console.log('No user data; loading dashboard with defaults');
-                        initializeUserDashboard();
-                    }
-                }, 1000);
-            }
-        }, 100);
+        initializeUserDashboard();
     }
 
     // initializeDashboardCharts: stub. Admin-only fake-data charts removed;
@@ -4166,6 +4225,13 @@ document.addEventListener('DOMContentLoaded', function () {
         const uploadQueue = document.getElementById('upload-queue');
         const startUpload = document.getElementById('start-upload');
         const clearQueue = document.getElementById('clear-queue');
+        const folderField = document.getElementById('upload-folder');
+        folderField.addEventListener('input', () => {
+            const path = folderField.value.trim().replace(/\/+$/, '');
+            const invalid = /[\\\x00-\x1f]/.test(path) || path.startsWith('/') ||
+                path.split('/').some(part => ['.', '..', ''].includes(part.trim()));
+            folderField.setCustomValidity(invalid && path ? 'Use a folder name without empty or relative path segments.' : '');
+        });
 
         let selectedFiles = [];
         let isUploading = false;
@@ -4218,6 +4284,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Start upload
         startUpload.addEventListener('click', async () => {
             if (!isUploading && selectedFiles.length > 0) {
+                if (!document.getElementById('upload-folder').reportValidity()) return;
                 isUploading = true;
                 startUpload.disabled = true;
                 clearQueue.disabled = true;
@@ -4246,25 +4313,23 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         function loadConfigAndPopulateFields() {
+            const folderInput = document.getElementById('upload-folder');
+            let edited = false;
+            folderInput.addEventListener('input', () => { edited = true; });
             fetch('/api/gcs-status')
                 .then(response => response.json())
                 .then(data => {
                     if (data.bucket_name) {
                         document.getElementById('bucket-name').value = data.bucket_name;
                     }
-                    if (data.default_folder) {
-                        document.getElementById('upload-folder').value = data.default_folder;
-                    } else {
-                        // Fallback to default if not configured
-                        document.getElementById('upload-folder').value = 'resume/';
-                    }
+                    if (!edited && folderInput.isConnected) folderInput.value = data.default_folder || 'resume';
 
                     // Configuration is handled automatically, no UI updates needed
                 })
                 .catch(error => {
                     console.error('Error loading configuration:', error);
                     // Set fallback folder path if config fails to load
-                    document.getElementById('upload-folder').value = 'resume/';
+                    if (!edited && folderInput.isConnected) folderInput.value = 'resume';
                 });
         }
 
@@ -4840,6 +4905,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const emailPassword = document.getElementById('email-password').value;
             const emailLimit = document.getElementById('email-limit').value;
             if (!document.getElementById('email-limit').reportValidity()) return;
+            if (!document.getElementById('upload-folder').reportValidity()) return;
 
             // Validate inputs
             if (!emailProvider) {
@@ -5013,9 +5079,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // Load initial page
-    setActiveLink(vectorSearchLink);
-    loadPage('vectorSearch');
+    // Initial routing waits for the authenticated user below.
 
     // Global function to show analysis modal
     window.showAnalysisModal = function (candidateName, analysisData) {
@@ -5532,16 +5596,20 @@ document.addEventListener('DOMContentLoaded', function () {
     const returnedStatus = integrationReturn.get('status');
     const isIntegrationReturn = ['microsoft', 'google'].includes(returnedProvider) &&
         ['connected', 'failed'].includes(returnedStatus);
-    setActiveLink(isIntegrationReturn ? settingsLink : dashboardLink);
-    loadPage(isIntegrationReturn ? 'settings' : 'dashboard');
-    if (isIntegrationReturn) {
-        const notice = document.querySelector('[data-connection-notice]');
-        notice.textContent = returnedStatus === 'failed' ? 'Account connection was not completed.' :
-            'Sign-in returned. Checking your saved connection...';
-        const cleanUrl = new URL(window.location.href);
-        ['integration', 'status', 'error'].forEach(key => cleanUrl.searchParams.delete(key));
-        window.history.replaceState(null, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
-    }
+    authReady.then(user => {
+        if (!user) return;
+        const route = workspaceRoute();
+        if (!isIntegrationReturn && route.savedSearchId) window.loadSavedSearch(route.savedSearchId, '', {replace:true});
+        else loadPage(isIntegrationReturn ? 'settings' : route.page, {replace:true, section:route.section});
+        if (isIntegrationReturn) {
+            const notice = document.querySelector('[data-connection-notice]');
+            if (notice) notice.textContent = returnedStatus === 'failed' ? 'Account connection was not completed.' :
+                'Sign-in returned. Checking your saved connection...';
+            const cleanUrl = new URL(window.location.href);
+            ['integration', 'status', 'error'].forEach(key => cleanUrl.searchParams.delete(key));
+            window.history.replaceState(window.history.state, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+        }
+    });
 });
 
 // Helper function to download resume
@@ -6852,8 +6920,8 @@ function initializeJDBuilderPage() {
 function initializeSettingsPage() {
     loadUserInfo();
     loadCompanyInfo();
-    loadUsers();
-    initializeUserManagement();
+    document.querySelector('[data-manage-users]')?.addEventListener('click', () =>
+        window.loadPage('administration', {section:'users'}));
     initializeRecruiterIntegrations();
 }
 
@@ -7392,17 +7460,9 @@ function initializeUserDashboard() {
         loadResourceUsageData();
     }
 
-    // Load data with a slight delay to show the loading state
-    setTimeout(() => {
-        // Load search history into the table
-        loadSearchHistoryForDashboard();
-
-        // Load candidate status counts
-        loadCandidateStatusCounts();
-
-        // Load upcoming events
-        loadUpcomingEvents();
-    }, 1500); // 1.5 second delay to show loading state
+    loadSearchHistoryForDashboard();
+    loadCandidateStatusCounts();
+    loadUpcomingEvents();
 }
 
 // Show loading state for dashboard elements

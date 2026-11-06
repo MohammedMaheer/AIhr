@@ -509,7 +509,7 @@ class DatabaseManager:
             logger.warning(f"update_resume_search_profile_from_analysis failed for {file_path}: {e}")
             return False
 
-    def save_search_history(self, query, job_title=None, result_count=0, user_id=None, company_id=None, search_method='hr-scorecard', *, cursor=None):
+    def save_search_history(self, query, job_title=None, result_count=0, user_id=None, company_id=None, search_method='hr-scorecard', *, cursor=None, folder_filters=None, resume_filters=None):
         """Save a search to history and return the search_id"""
         with (self.get_cursor() if cursor is None else nullcontext((cursor, None))) as (cursor, conn):
             # Check search limit for company if applicable
@@ -530,10 +530,10 @@ class DatabaseManager:
 
             cursor.execute("""
                 INSERT INTO search_history
-                (search_query, job_title, result_count, created_by_user_id, company_id, search_method)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                (search_query, job_title, result_count, created_by_user_id, company_id, search_method, folder_filters, resume_filters)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            """, (query, job_title, result_count, user_id, company_id, search_method))
+            """, (query, job_title, result_count, user_id, company_id, search_method, Json(folder_filters or []), Json(resume_filters or {})))
 
             search_id = cursor.fetchone()['id']
             return search_id
@@ -617,6 +617,14 @@ class DatabaseManager:
                         uploaded_by_user_id = EXCLUDED.uploaded_by_user_id
                 """, data)
 
+    def get_search_context(self, search_id, company_id=None):
+        with self.get_cursor() as (cursor, _):
+            cursor.execute('''SELECT search_query,folder_filters,resume_filters FROM search_history
+                WHERE id=%s''' + (' AND company_id=%s' if company_id is not None else ''),
+                           (search_id, company_id) if company_id is not None else (search_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else {}
+
     def get_search_history(self, user_id=None, company_id=None, limit=50, offset=0):
         """Get a page of search history for a user or company.
 
@@ -648,6 +656,8 @@ class DatabaseManager:
                     sh.result_count,
                     sh.search_timestamp,
                     sh.search_method,
+                    sh.folder_filters,
+                    sh.resume_filters,
                     sh.created_by_user_id,
                     sh.company_id,
                     COUNT(sr.id) as actual_results,
@@ -2002,6 +2012,8 @@ class DatabaseManager:
     def ensure_task_queue_schema(self):
         with self.get_cursor() as (cursor, _conn):
             cursor.execute("SELECT pg_advisory_xact_lock(724106403)")
+            cursor.execute("ALTER TABLE search_history ADD COLUMN IF NOT EXISTS folder_filters JSONB NOT NULL DEFAULT '[]'::jsonb")
+            cursor.execute("ALTER TABLE search_history ADD COLUMN IF NOT EXISTS resume_filters JSONB NOT NULL DEFAULT '{}'::jsonb")
             cursor.execute("""
                 ALTER TABLE hr_scorecard_tasks
                     ADD COLUMN IF NOT EXISTS task_payload JSONB,
@@ -2068,7 +2080,7 @@ class DatabaseManager:
 
     def get_owned_hr_task(self, task_id, token):
         with self.get_cursor() as (cursor, _conn):
-            cursor.execute("""SELECT task_id, query, job_title, result_count, user_id, company_id
+            cursor.execute("""SELECT task_id, query, job_title, result_count, user_id, company_id, task_payload
                 FROM hr_scorecard_tasks WHERE task_id=%s AND lease_token=%s
                   AND status='processing' AND lease_expires_at > NOW()""", (task_id, token))
             return cursor.fetchone()
@@ -2109,7 +2121,9 @@ class DatabaseManager:
                 if not cursor.fetchone()['owned']:
                     raise TaskLeaseLost("Search lease expired")
             search_id = self.save_search_history(task['query'], task['job_title'], len(results),
-                task['user_id'], task['company_id'], 'hr-scorecard-task', cursor=cursor)
+                task['user_id'], task['company_id'], 'hr-scorecard-task', cursor=cursor,
+                folder_filters=(task.get('task_payload') or {}).get('folder_filters', []),
+                resume_filters=(task.get('task_payload') or {}).get('resume_filters', {}))
             self.save_search_results(search_id, results, task['company_id'], task['user_id'], cursor=cursor)
             progress = dict(progress, search_id=search_id)
             cursor.execute("""UPDATE hr_scorecard_tasks SET status='completed', progress=%s,

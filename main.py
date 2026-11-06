@@ -49,7 +49,7 @@ from starlette.requests import Request as StarletteRequest
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from typing import Optional
+from typing import Optional, Annotated
 from google.cloud import storage
 from google.cloud import discoveryengine_v1
 from google import genai
@@ -102,6 +102,8 @@ from search_criteria import parse_search_criteria, apply_criteria_to_results
 from services.llm_cache import PreparationCache
 from services.search_reuse import SearchReuse
 from services.document_validation import validate_docx_archive
+from services.resume_folders import normalize_folders, source_in_folders
+from services.resume_filters import normalize_filters
 from services.deepseek_provider import enabled as using_deepseek, display_name as llm_display_name
 
 
@@ -582,6 +584,9 @@ def _compute_asset_versions() -> dict[str, str]:
     out: dict[str, str] = {"main_js": "0", "style_css": "0", "security_js": "0"}
     for key, path in (("main_js", "static/js/main.js"),
                       ("dashboard_ui_js", "static/js/dashboard-ui.js"),
+                      ("admin_workspace_js", "static/js/admin-workspace.js"),
+                      ("resume_folders_js", "static/js/resume-folders.js"),
+                      ("resume_library_js", "static/js/resume-library.js"),
                       ("notifications_js", "static/js/notifications.js"),
                       ("outreach_js", "static/js/recruiter-outreach.js"),
                       ("interview_manager_js", "static/js/interview-manager.js"),
@@ -1608,7 +1613,9 @@ def save_task_to_database(
     job_title: str,
     result_count: int,
     user_id: str,
-    company_id: int = None
+    company_id: int = None,
+    folder_filters=None,
+    resume_filters=None,
 ) -> bool:
     """
     Save task information to database
@@ -1631,6 +1638,11 @@ def save_task_to_database(
         from services.task_queue import local_queue_enabled
         task_payload = {'task_id': task_id, 'user_data': {'id': user_id},
                         'company_id': company_id} if local_queue_enabled() else None
+        if task_payload is not None:
+            if folder_filters:
+                task_payload['folder_filters'] = normalize_folders(folder_filters)
+            if resume_filters:
+                task_payload['resume_filters'] = normalize_filters(resume_filters)
         success = db.save_hr_scorecard_task(
             task_id=task_id,
             query=query,
@@ -2455,6 +2467,8 @@ def create_company_search_request(
     result_count: int = 10,
     max_value: int = MAX_SEARCH_RESULTS,
     user_context: dict = None,
+    folder_filters=None,
+    resume_filters=None,
 ) -> 'discoveryengine_v1.SearchRequest':
     """
     Create a search request using company-specific datastore for automatic tenant isolation.
@@ -2486,6 +2500,7 @@ def create_company_search_request(
         page_size=result_count,
         filter=_local_company_search_filter(user_context),
         content_search_spec=build_discovery_content_search_spec(discoveryengine_v1),
+        **_folder_request_options(folder_filters, resume_filters),
     )
 
     print(f"✅ Search will automatically be isolated to company datastore")
@@ -2532,6 +2547,8 @@ def create_universal_search_request(
     user_context: dict = None,
     result_count: int = 10,
     max_value: int = MAX_SEARCH_RESULTS,
+    folder_filters=None,
+    resume_filters=None,
 ) -> 'discoveryengine_v1.SearchRequest':
     """
     Universal search request creator that automatically uses the right datastore.
@@ -2568,11 +2585,38 @@ def create_universal_search_request(
         page_size=result_count,
         filter=_local_company_search_filter(user_context),
         content_search_spec=build_discovery_content_search_spec(discoveryengine_v1),
+        **_folder_request_options(folder_filters, resume_filters),
     )
 
     print(f"✅ Search request created with automatic datastore isolation")
 
     return request
+
+def _folder_request_options(folders, filters=None):
+    folders = normalize_folders(folders)
+    filters = normalize_filters(filters)
+    if not folders and not filters:
+        return {}
+    if os.getenv('SMARTHR_LOCAL_MODE', '').lower() not in {'1', 'true', 'yes', 'on'}:
+        raise HTTPException(422, 'Folder-scoped search is not available on this deployment.')
+    return {'folder_filters': folders, 'resume_filters': filters}
+
+
+def _parse_search_folders(value):
+    try:
+        folders = normalize_folders(value)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    _folder_request_options(folders)
+    return folders
+
+def _parse_resume_filters(value):
+    try:
+        filters = normalize_filters(value)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    _folder_request_options(None, filters)
+    return filters
 
 def extract_score_from_analysis(analysis_text: str) -> int:
     """Extract a 0-100 numerical score from LLM analysis text.
@@ -4630,7 +4674,7 @@ async def login(
     response = JSONResponse({
         "success": True,
         "user": user,
-        "redirect": "/dashboard" if user['user_type'] == 'super_admin' else "/"
+        "redirect": "/"
     })
 
     _set_session_cookie(response, session_token)
@@ -4675,10 +4719,9 @@ async def get_me(user: dict = Depends(require_auth)):
 # Admin routes
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, user: dict = Depends(require_auth)):
-    """Admin dashboard"""
-    if user['user_type'] == 'tenant_user':
-        return RedirectResponse(url="/", status_code=302)
-    return templates.TemplateResponse(request, "dashboard.html", {"user": user})
+    """Keep old bookmarks and browser history inside the recruiter workspace."""
+    query = '?' + request.url.query if request.url.query else ''
+    return RedirectResponse(url='/' + query, status_code=302)
 
 @app.get("/api/companies")
 async def get_companies(user: dict = Depends(require_super_admin)):
@@ -5047,6 +5090,7 @@ async def update_company(
     subscription_plan: Optional[str] = Form(None),
     max_users: Optional[int] = Form(None),
     max_resumes: Optional[int] = Form(None),
+    max_searches: Optional[int] = Form(None, ge=1, le=1000000000),
     is_active: Optional[bool] = Form(None),
     user: dict = Depends(require_super_admin),
 ):
@@ -5056,6 +5100,7 @@ async def update_company(
         "subscription_plan": subscription_plan,
         "max_users": max_users,
         "max_resumes": max_resumes,
+        "max_searches": max_searches,
         "is_active": is_active,
     }
     fields = {k: v for k, v in fields.items() if v is not None}
@@ -5920,7 +5965,7 @@ def _validate_resume_upload_limit(stats, count):
 
 
 def _store_resume_upload(db, *, bucket_name, blob_name, filename, content, content_type,
-                         user_id, company_id, company_code):
+                         user_id, company_id, company_code, source_received=None):
     blob = _get_storage_client().bucket(bucket_name).blob(blob_name)
     with db.resume_upload_lock(company_id) as records:
         if company_id is not None:
@@ -5928,8 +5973,15 @@ def _store_resume_upload(db, *, bucket_name, blob_name, filename, content, conte
         blob.upload_from_string(content, content_type=content_type)
         records.track_resume_upload(file_name=filename, file_path=blob_name, file_size=len(content),
                                     mime_type=content_type, user_id=user_id, company_id=company_id)
-    return upload_to_vector_datastore(file_path=blob_name, company_id=company_id,
-                                      company_code=company_code, user_id=str(user_id))
+    indexed = upload_to_vector_datastore(file_path=blob_name, company_id=company_id,
+                                         company_code=company_code, user_id=str(user_id))
+    if os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
+        from services.resume_filters import record_metadata
+        try:
+            record_metadata(db, bucket_name, blob_name, company_id, received=source_received)
+        except Exception as exc:
+            logger.warning('CV stored; search date metadata update needs recovery: %s', type(exc).__name__)
+    return indexed
 
 
 async def _run_resume_upload(db, **kwargs):
@@ -6049,7 +6101,8 @@ async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], fold
                     filename=original_filename, content=content, content_type=content_type,
                     company_id=company_id,
                     company_code=company_code,
-                    user_id=user['id']
+                    user_id=user['id'],
+                    source_received=email_data.get('date'),
                 )
 
                 upload_results.append({
@@ -6500,10 +6553,14 @@ async def search_vector(
     query: str = Form(...),
     result_count: int = Form(10),
     user: dict = Depends(require_auth),
+    folders: Annotated[Optional[str], Form()] = None,
+    filters: Annotated[Optional[str], Form()] = None,
 ):
     """Search the vector store with a query and return the requested count."""
 
     query = _sanitize_user_text(query, max_len=4000)
+    folder_filters = _parse_search_folders(folders)
+    resume_filters = _parse_resume_filters(filters)
     result_count = clamp_result_count(result_count, default=10)
     if not query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
@@ -6517,7 +6574,8 @@ async def search_vector(
         scope = _local_company_search_filter(user)
         cache_key = ("search-vector", bucket_name, datastore_id, scope,
                      str(user.get('id')), str(_get_company_id(user)),
-                     _normalize_cache_query(query), result_count)
+                     _normalize_cache_query(query), result_count,
+                     json.dumps(folder_filters, sort_keys=True), json.dumps(resume_filters, sort_keys=True))
         cached_response = _search_cache_get(cache_key)
         if cached_response is not None:
             return cached_response
@@ -6535,7 +6593,9 @@ async def search_vector(
             query=query,
             user_context=user,
             result_count=fetch_count,
-            max_value=MAX_SEARCH_FETCH_RESULTS
+            max_value=MAX_SEARCH_FETCH_RESULTS,
+            folder_filters=folder_filters,
+            resume_filters=resume_filters,
         )
         print(f"✅ Search request created with page_size={result_count}, snippets=True")
 
@@ -6546,6 +6606,8 @@ async def search_vector(
 
         results = []
         for result in response.results:
+                if folder_filters and not source_in_folders(getattr(getattr(result.document, 'content', None), 'uri', ''), folder_filters):
+                    continue
                 document_data = {
                     "id": result.id,
                     "document_name": result.document.name if result.document else "Unknown",
@@ -8553,10 +8615,14 @@ async def hr_scorecard_search(
     query: str = Form(...),
     result_count: int = Form(10),
     job_title: str = Form("Position"),
-    user: dict = Depends(require_auth)
+    user: dict = Depends(require_auth),
+    folders: Annotated[Optional[str], Form()] = None,
+    filters: Annotated[Optional[str], Form()] = None,
 ):
     """Submit HR scorecard search as a cloud task for asynchronous processing"""
     query = _sanitize_user_text(query, max_len=4000)
+    folder_filters = _parse_search_folders(folders)
+    resume_filters = _parse_resume_filters(filters)
     job_title = _sanitize_user_text(job_title, max_len=200) or "Position"
     result_count = clamp_result_count(result_count, default=10, max_value=MAX_HR_SCORECARD_RESULTS)
     print(f"\n🏢 HR SCORECARD SEARCH TASK SUBMISSION STARTED")
@@ -8600,7 +8666,9 @@ async def hr_scorecard_search(
             job_title=job_title,
             result_count=result_count,
             user_id=user['id'],
-            company_id=company_id
+            company_id=company_id,
+            folder_filters=folder_filters,
+            resume_filters=resume_filters,
         )
 
         if not success:
@@ -9112,6 +9180,8 @@ async def run_hr_scorecard_task(task_payload):
             if not user_data:
                 raise HTTPException(status_code=403, detail="Search access is no longer available")
         query, job_title = claimed['query'], claimed['job_title']
+        folder_filters = normalize_folders((claimed.get('task_payload') or {}).get('folder_filters'))
+        resume_filters = normalize_filters((claimed.get('task_payload') or {}).get('resume_filters'))
         result_count = clamp_result_count(claimed['result_count'], default=10, max_value=MAX_HR_SCORECARD_RESULTS)
 
         print(f"\n🏢 HR SCORECARD TASK PROCESSING STARTED")
@@ -9126,6 +9196,14 @@ async def run_hr_scorecard_task(task_payload):
         # Initialize token tracking and timing
         token_tracker = TokenTracker()
         start_time = time.time()
+
+        if folder_filters or resume_filters:
+            from services.resume_folders import searchable_count
+            if not await asyncio.to_thread(searchable_count, db_idem, user_data, folder_filters, resume_filters):
+                await asyncio.to_thread(db_idem.complete_hr_task, task_id, [],
+                    {'step': 'completed', 'results': 0, 'requested_results': result_count,
+                     'returned_results': 0, 'exact_match_shortfall': result_count}, lease[1] if lease else None)
+                return {'success': True, 'results': 0, 'message': 'No searchable CVs in the selected folders'}
 
         # Run both keyword-extraction LLM calls in parallel (was sequential)
         await asyncio.to_thread(update_task_status, task_id, 'running', {'step': 'extracting_keywords'})
@@ -9177,6 +9255,8 @@ async def run_hr_scorecard_task(task_payload):
             result_count=fetch_count,
             max_value=MAX_HR_SCORECARD_FETCH_RESULTS,
             user_context=user,
+            folder_filters=folder_filters,
+            resume_filters=resume_filters,
         )
 
         response = await asyncio.to_thread(client.search, request_obj)
@@ -9200,6 +9280,8 @@ async def run_hr_scorecard_task(task_payload):
                     result_count=fetch_count,
                     max_value=MAX_HR_SCORECARD_FETCH_RESULTS,
                     user_context=user,
+                    folder_filters=folder_filters,
+                    resume_filters=resume_filters,
                 )
                 fallback_resp = await asyncio.to_thread(client.search, fallback_req)
                 fb_results = list(fallback_resp.results)
@@ -9209,6 +9291,11 @@ async def run_hr_scorecard_task(task_payload):
                     found_count = len(fb_results)
             except Exception as fb_err:
                 logging.error("Raw-query fallback failed: %s", fb_err)
+
+        if folder_filters:
+            result_list = [result for result in result_list if source_in_folders(
+                getattr(getattr(result.document, 'content', None), 'uri', ''), folder_filters)]
+            found_count = len(result_list)
 
         if found_count == 0:
             await asyncio.to_thread(db_idem.complete_hr_task, task_id, [],
@@ -10849,7 +10936,10 @@ async def get_search_history(
         # For tenant users and tenant admins, only show their own searches
         # For super admins, show all searches
         if user['user_type'] in ['tenant_user', 'tenant_admin']:
-            user_filter = {"user_id": user['id']}
+            company_id = _get_company_id(user)
+            if not company_id:
+                raise HTTPException(403, 'Company context required')
+            user_filter = {"user_id": user['id'], 'company_id': company_id}
         else:  # super_admin
             user_filter = {}
 
@@ -10899,6 +10989,8 @@ async def get_saved_search_results(search_id: int, user: dict = Depends(require_
                 raise HTTPException(status_code=403, detail="Company context required")
 
         results = db.get_search_results(search_id, company_id=company_id)
+        context = db.get_search_context(search_id, company_id=company_id)
+        context = context if isinstance(context, dict) else {}
 
         # Convert datetime objects to strings
         for result in results:
@@ -10921,6 +11013,9 @@ async def get_saved_search_results(search_id: int, user: dict = Depends(require_
         return {
             "success": True,
             "search_id": search_id,
+            'search_query': context.get('search_query', ''),
+            'folder_filters': context.get('folder_filters', []),
+            'resume_filters': context.get('resume_filters', {}),
             "results": formatted_results,
             "total_results": len(formatted_results)
         }
@@ -10929,6 +11024,29 @@ async def get_saved_search_results(search_id: int, user: dict = Depends(require_
     except Exception as e:
         print(f"❌ Error fetching search results: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch search results: {str(e)}")
+
+@app.get('/api/resume-folders')
+async def get_resume_folders(user: dict = Depends(require_auth)):
+    from services.resume_folders import inventory
+    supported = os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}
+    rows = await asyncio.to_thread(inventory, get_db_manager(), user) if supported else []
+    from services.resume_filters import TAG_PATTERNS
+    return {'success': True, 'supported': supported, 'folders': rows, 'tags': list(TAG_PATTERNS)}
+
+
+@app.get('/api/resume-library')
+async def get_resume_library(limit: int = 25, offset: int = 0, query: str = '', user: dict = Depends(require_auth)):
+    from services.resume_library import list_uploads
+    bucket, _ = get_company_resources(user)
+    return await asyncio.to_thread(list_uploads, get_db_manager(), user,
+                                   limit=max(1, min(100, limit)), offset=max(0, offset), query=query, default_bucket=bucket)
+
+
+@app.get('/api/resume-library/{upload_id}')
+async def get_resume_preview(upload_id: int, user: dict = Depends(require_auth)):
+    from services.resume_library import preview_upload
+    bucket, _ = get_company_resources(user)
+    return await asyncio.to_thread(preview_upload, get_db_manager(), user, upload_id, bucket)
 
 @app.post("/api/candidate-action")
 @limiter.limit("60/minute")
@@ -11317,14 +11435,14 @@ async def get_dashboard_stats(user: dict = Depends(require_auth)):
                 elif company_id:
                     cursor.execute("""
                         SELECT
-                            (SELECT COUNT(*) FROM search_history WHERE company_id = %s) AS total_searches,
+                            (SELECT COUNT(*) FROM search_history WHERE company_id = %s AND created_by_user_id = %s) AS total_searches,
                             (SELECT COUNT(*) FROM resume_uploads WHERE company_id = %s) AS total_resumes,
                             (SELECT COUNT(*) FROM search_results sr
                                 JOIN search_history sh ON sr.search_id = sh.id
-                                WHERE sh.company_id = %s)                                AS total_candidates,
+                                WHERE sh.company_id = %s AND sh.created_by_user_id = %s)  AS total_candidates,
                             (SELECT COUNT(*) FROM user_companies WHERE company_id = %s)  AS total_users,
                             1                                                            AS total_companies
-                    """, (company_id, company_id, company_id, company_id))
+                    """, (company_id, user_id, company_id, company_id, user_id, company_id))
                 else:
                     cursor.execute("""
                         SELECT

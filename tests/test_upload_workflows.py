@@ -154,9 +154,13 @@ def test_shared_store_preserves_metadata_and_call_order(monkeypatch):
     monkeypatch.setattr(main, '_get_storage_client', lambda: storage)
     index = MagicMock(side_effect=lambda **k: calls.append('index') or False)
     monkeypatch.setattr(main, 'upload_to_vector_datastore', index)
+    metadata = MagicMock(side_effect=lambda *a, **k: calls.append('metadata'))
+    monkeypatch.setattr('services.resume_filters.record_metadata', metadata)
+    monkeypatch.setenv('SMARTHR_LOCAL_MODE', '1')
     result = main._store_resume_upload(db, bucket_name='fixture-bucket', blob_name='resume/fixture.pdf',
         filename='fixture.pdf', content=PDF, content_type='application/pdf', user_id=7, company_id=1, company_code='fixture')
-    assert result is False and calls == ['storage', 'tracking', 'index']
+    assert result is False and calls == ['storage', 'tracking', 'index', 'metadata']
+    metadata.assert_called_once_with(db, 'fixture-bucket', 'resume/fixture.pdf', 1, received=None)
     assert records.track_resume_upload.call_args.kwargs['file_path'] == 'resume/fixture.pdf'
     assert index.call_args.kwargs['user_id'] == '7'
     db.resume_upload_lock.return_value.__exit__.assert_called_once()

@@ -98,7 +98,7 @@ class SearchRequest:
     def __init__(self, *, serving_config: str = "", query: str = "",
                  page_size: int = 10, content_search_spec=None,
                  query_expansion_spec=None, spell_correction_spec=None,
-                 filter: str = "", **kwargs):
+                 filter: str = "", folder_filters=None, resume_filters=None, **kwargs):
         self.serving_config = serving_config
         self.query = query
         self.page_size = page_size
@@ -106,6 +106,10 @@ class SearchRequest:
         self.query_expansion_spec = query_expansion_spec
         self.spell_correction_spec = spell_correction_spec
         self.filter = filter
+        from services.resume_folders import normalize_folders
+        self.folder_filters = normalize_folders(folder_filters)
+        from services.resume_filters import normalize_filters
+        self.resume_filters = normalize_filters(resume_filters)
 
     class ContentSearchSpec:
         class SnippetSpec:
@@ -240,6 +244,9 @@ def _ensure_advanced_search_schema(cur) -> None:
         "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS candidate_skills TEXT[]",
         "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS profile_source TEXT",
         "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS profile_updated_at TIMESTAMP",
+        "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS search_tags TEXT[] NOT NULL DEFAULT '{}'",
+        "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS source_uploaded_at TIMESTAMP",
+        "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS source_received_at TIMESTAMPTZ",
         "CREATE INDEX IF NOT EXISTS idx_resume_emb_candidate_years ON resume_embeddings(candidate_years)",
         "CREATE INDEX IF NOT EXISTS idx_resume_emb_candidate_location ON resume_embeddings(candidate_location)",
         "CREATE INDEX IF NOT EXISTS idx_resume_emb_candidate_languages ON resume_embeddings USING gin(candidate_languages)",
@@ -537,6 +544,10 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> Ind
                     """,
                     (filename, folder, company_id, storage_bucket, path.stat().st_size, ctype),
                 )
+            from services.resume_filters import tags_from_text
+            cur.execute('''UPDATE resume_embeddings SET search_tags=%s
+                WHERE storage_bucket=%s AND folder=%s AND filename=%s AND company_id IS NOT DISTINCT FROM %s''',
+                        (tags_from_text(text), storage_bucket, folder, filename, company_id))
         conn.commit()
     except Exception:
         conn.rollback()
@@ -560,9 +571,23 @@ def _tenant_scope(filter_str: str) -> tuple[str, list]:
 
 
 def _vector_search(query: str, page_size: int = 10,
-                   filter_str: str = "") -> List[Dict[str, Any]]:
+                   filter_str: str = "", folder_filters=None, resume_filters=None) -> List[Dict[str, Any]]:
     """Run pgvector ANN search; return list of dicts shaped like Discovery results."""
     scope_sql, scope_params = _tenant_scope(filter_str)
+    from services.resume_folders import folder_sql
+    selected_sql, selected_params = folder_sql(folder_filters)
+    scope_sql = f'({scope_sql}) AND {selected_sql}'
+    scope_params.extend(selected_params)
+    from services.resume_filters import filters_sql
+    filtered_sql, filtered_params = filters_sql(resume_filters)
+    scope_sql += f' AND ({filtered_sql})'
+    scope_params.extend(filtered_params)
+    source_sql, source_params = 'resume_embeddings', []
+    if folder_filters or resume_filters:
+        # Rank the complete selected subset. An ANN index can otherwise filter
+        # after its global nearest-neighbour pool and miss eligible folder CVs.
+        source_sql = f'(SELECT * FROM resume_embeddings WHERE {scope_sql} OFFSET 0) AS scoped_resumes'
+        source_params, scope_params, scope_sql = scope_params, [], 'TRUE'
     if not query.strip():
         return []
     qvec = _embed_query(query)
@@ -578,12 +603,12 @@ def _vector_search(query: str, page_size: int = 10,
                     SELECT id, filename, folder, file_size, content_type,
                            extracted_text, text_length,
                            1 - (embedding <=> %s::vector) AS score, storage_bucket
-                      FROM resume_embeddings
+                      FROM {source_sql}
                      WHERE embedding IS NOT NULL AND {scope_sql}
                      ORDER BY embedding <=> %s::vector
                      LIMIT %s
                     """,
-                    (_vec_lit(qvec), *scope_params, _vec_lit(qvec), int(page_size or 10)),
+                    (_vec_lit(qvec), *source_params, *scope_params, _vec_lit(qvec), int(page_size or 10)),
                 )
                 rows = cur.fetchall()
                 return [
@@ -615,7 +640,7 @@ def _vector_search(query: str, page_size: int = 10,
                            1 - (embedding <=> %s::vector) AS vector_score,
                            candidate_years, candidate_location,
                            candidate_languages, candidate_skills, profile_source, storage_bucket
-                      FROM resume_embeddings
+                      FROM {source_sql}
                      WHERE embedding IS NOT NULL AND {scope_sql}
                      ORDER BY embedding <=> %s::vector
                      LIMIT %s
@@ -631,7 +656,7 @@ def _vector_search(query: str, page_size: int = 10,
                        candidate_languages, candidate_skills, profile_source, storage_bucket
                   FROM semantic
                 """,
-                (_vec_lit(qvec), *scope_params, _vec_lit(qvec), int(pool_size), query[:1000]),
+                (_vec_lit(qvec), *source_params, *scope_params, _vec_lit(qvec), int(pool_size), query[:1000]),
             )
             rows = cur.fetchall()
             if not criteria.is_empty():
@@ -648,7 +673,7 @@ def _vector_search(query: str, page_size: int = 10,
                            ) AS lexical_score,
                            candidate_years, candidate_location,
                            candidate_languages, candidate_skills, profile_source, storage_bucket
-                      FROM resume_embeddings
+                      FROM {source_sql}
                      WHERE {where_sql} AND {scope_sql}
                      ORDER BY embedding <=> %s::vector
                      LIMIT %s
@@ -656,6 +681,7 @@ def _vector_search(query: str, page_size: int = 10,
                     (
                         _vec_lit(qvec),
                         query[:1000],
+                        *source_params,
                         *where_params,
                         *scope_params,
                         _vec_lit(qvec),
@@ -712,7 +738,9 @@ class SearchServiceClient:
 
     def search(self, request: SearchRequest, **kwargs) -> _SearchResponse:
         rows = _vector_search(query=request.query, page_size=request.page_size,
-                              filter_str=getattr(request, "filter", "") or "")
+                              filter_str=getattr(request, "filter", "") or "",
+                              folder_filters=getattr(request, 'folder_filters', None),
+                              resume_filters=getattr(request, 'resume_filters', None))
         return _SearchResponse(
             results=[_row_to_result(r) for r in rows],
             total_size=len(rows),

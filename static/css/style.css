@@ -2629,3 +2629,13 @@ button, input, .glass {
     outline: 2px solid #2563eb;
     outline-offset: 2px;
 }
+#app-navigation nav {
+    max-height: calc(100dvh - 180px);
+    overflow-y: auto;
+    padding-bottom: 16px;
+}
+#resume-search-filters [data-folders], #resume-search-filters [data-tags] {
+    max-height: 12rem;
+    overflow-y: auto;
+}
+[data-library-dialog] [data-close] { flex-shrink: 0; }

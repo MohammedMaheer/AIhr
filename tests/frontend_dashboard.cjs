@@ -6,6 +6,7 @@ const dates = source.slice(source.indexOf('function localDateInputValue('),sourc
 const schedule = source.slice(source.indexOf('let upcomingEventsRequest ='),source.indexOf('async function loadResourceUsageData('));
 const general = source.slice(source.indexOf('function openGeneralScheduleModal('),source.indexOf('function closeGeneralScheduleModal('));
 const interview = source.slice(source.indexOf('function showInterviewScheduleModal('),source.indexOf('function bindScheduleDialog('));
+const countsCode = source.slice(source.indexOf('let candidateStatusRequest ='),source.indexOf('function updateActivityStatsCards('));
 const flush = () => new Promise(resolve=>setImmediate(resolve));
 
 async function run(){
@@ -73,6 +74,35 @@ async function run(){
     resolveOld({ok:true,json:async()=>({success:true,events:[]})});await detached;
     assert.equal(box().textContent,'Replacement view');
     dom.window.close();
-    console.log('Dashboard regressions passed: local date boundaries, both scheduling defaults, escaped event text, honest failures, retry and stale-response isolation.');
+
+    const counters=new JSDOM('',{url:'https://qa.invalid',runScripts:'outside-only'}),cw=counters.window,cd=cw.document;
+    const keys=['selected','rejected','shortlisted','interviewed'];
+    const markup=()=>keys.map(key=>`<h3 id="${key}-count"></h3>`).join('');
+    cd.body.innerHTML=markup();cw.console.error=()=>{};cw.eval(countsCode);
+    const payload=(selected=1)=>({success:true,candidate_stats:{selected,rejected:0,shortlisted:2,interviewed:0}});
+    const values=()=>keys.map(key=>cd.getElementById(`${key}-count`).textContent);
+    cw.fetch=async()=>({ok:true,json:async()=>payload()});
+    await cw.loadCandidateStatusCounts();assert.deepEqual(values(),['1','0','2','0']);
+    cw.fetch=async()=>{throw new Error('private-network-marker');};
+    await cw.loadCandidateStatusCounts();assert.deepEqual(values(),['-','-','-','-']);
+    assert.equal(cd.getElementById('selected-count').title,'Count unavailable');
+    for(const invalid of [{success:false}, {success:true}, {...payload(),candidate_stats:null},
+        {...payload(),candidate_stats:{...payload().candidate_stats,selected:-1}},
+        {...payload(),candidate_stats:{...payload().candidate_stats,selected:'1'}}]){
+        cw.fetch=async()=>({ok:true,json:async()=>invalid});await cw.loadCandidateStatusCounts();
+        assert.deepEqual(values(),['-','-','-','-'],'Malformed responses must not look like zero candidates');
+    }
+    cw.fetch=async()=>({ok:true,json:async()=>payload(3)});await cw.loadCandidateStatusCounts();
+    assert.deepEqual(values(),['3','0','2','0']);assert.equal(cd.getElementById('selected-count').hasAttribute('aria-label'),false);
+    let resolveCount;
+    cw.fetch=()=>new Promise(resolve=>{resolveCount=resolve;});const oldCounts=cw.loadCandidateStatusCounts();
+    cw.fetch=async()=>({ok:true,json:async()=>payload(8)});await cw.loadCandidateStatusCounts();
+    resolveCount({ok:true,json:async()=>payload(1)});await oldCounts;assert.equal(values()[0],'8');
+    cw.fetch=()=>new Promise(resolve=>{resolveCount=resolve;});const removedCounts=cw.loadCandidateStatusCounts();
+    cd.body.innerHTML=markup();cd.getElementById('selected-count').textContent='Replacement';
+    resolveCount({ok:true,json:async()=>payload(1)});await removedCounts;assert.equal(values()[0],'Replacement');
+    cd.body.innerHTML='';cw.fetch=()=>{throw new Error('Must not fetch for a different view');};
+    await cw.loadCandidateStatusCounts();counters.window.close();
+    console.log('Dashboard regressions passed: date boundaries, scheduling defaults, escaped text, honest schedule/count failures, valid zero counts, recovery and stale-response isolation.');
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

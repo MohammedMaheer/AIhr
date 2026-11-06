@@ -450,7 +450,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <h3 class="text-3xl font-extrabold text-gray-900" id="rejected-count"></h3>
                             </div>
                             <p class="text-gray-700 text-base font-semibold mb-1">Rejected</p>
-                            <p class="text-xs text-gray-500">This month</p>
+                            <p class="text-xs text-gray-500">Not proceeding</p>
                         </div>
                         <div role="button" tabindex="0" onclick="openCandidatesByStatus('shortlisted')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openCandidatesByStatus('shortlisted');}" class="cursor-pointer bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md hover:border-yellow-300 hover:-translate-y-0.5 transition-all duration-200 flex flex-col items-center justify-center min-h-[180px]">
                             <div class="flex flex-col items-center mb-3">
@@ -7540,7 +7540,14 @@ function displaySearchHistoryInTable(searches) {
     });
 }
 
+let candidateStatusRequest = 0;
 async function loadCandidateStatusCounts() {
+    const requestId = ++candidateStatusRequest;
+    const statuses = ['selected', 'rejected', 'shortlisted', 'interviewed'];
+    const elements = statuses.map(status => document.getElementById(`${status}-count`));
+    if (elements.some(element => !element)) return;
+    const isCurrent = () => requestId === candidateStatusRequest && elements.every(
+        (element, index) => document.getElementById(`${statuses[index]}-count`) === element);
     try {
         const response = await fetch('/api/dashboard-stats');
         if (!response.ok) {
@@ -7548,39 +7555,41 @@ async function loadCandidateStatusCounts() {
         }
 
         const data = await response.json();
-        if (data.success) {
-            const statusData = {
-                selected: data.candidate_stats.selected || 0,
-                rejected: data.candidate_stats.rejected || 0,
-                shortlisted: data.candidate_stats.shortlisted || 0,
-                interviewed: data.candidate_stats.interviewed || 0
-            };
+        if (data.success !== true || !data.candidate_stats || statuses.some(status =>
+            !Number.isSafeInteger(data.candidate_stats[status]) || data.candidate_stats[status] < 0)) {
+            throw new Error('Invalid dashboard counts');
+        }
+        if (!isCurrent()) return;
+        updateCandidateStatusCards(data.candidate_stats);
 
-            updateCandidateStatusCards(statusData);
+        // Activity stats (always populated, even when no actions taken)
+        if (data.activity_stats) {
+            updateActivityStatsCards(data.activity_stats);
+        }
 
-            // Activity stats (always populated, even when no actions taken)
-            if (data.activity_stats) {
-                updateActivityStatsCards(data.activity_stats);
-            }
-
-            // Also update trending skills if available
-            if (data.trending_skills && data.trending_skills.length > 0) {
-                updateTrendingSkills(data.trending_skills);
-            }
+        // Also update trending skills if available
+        if (data.trending_skills && data.trending_skills.length > 0) {
+            updateTrendingSkills(data.trending_skills);
         }
     } catch (error) {
         console.error('Error loading candidate status counts:', error);
-        // Fall back to showing zeros
-        updateCandidateStatusCards({
-            selected: 0,
-            rejected: 0,
-            shortlisted: 0,
-            interviewed: 0
+        if (!isCurrent()) return;
+        elements.forEach((element, index) => {
+            element.textContent = '-';
+            element.title = 'Count unavailable';
+            element.setAttribute('aria-label', `${statuses[index]} count unavailable`);
         });
     }
 }
 
 function updateCandidateStatusCards(data) {
+    ['selected', 'rejected', 'shortlisted', 'interviewed'].forEach(status => {
+        const element = document.getElementById(`${status}-count`);
+        if (element) {
+            element.removeAttribute('title');
+            element.removeAttribute('aria-label');
+        }
+    });
     const selectedElement = document.getElementById('selected-count');
     const rejectedElement = document.getElementById('rejected-count');
     const shortlistedElement = document.getElementById('shortlisted-count');

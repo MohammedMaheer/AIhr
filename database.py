@@ -864,7 +864,7 @@ class DatabaseManager:
                      "AND ca.action_status = true")
             params = [str(user_id), action_type.lower()]
             if company_id:
-                where += " AND sr.company_id = %s"
+                where += " AND sh.company_id = %s"
                 params.append(int(company_id))
             cursor.execute(f"""
                 SELECT
@@ -885,7 +885,7 @@ class DatabaseManager:
                     sh.search_query      AS search_query
                 FROM candidate_actions ca
                 JOIN search_results sr ON ca.search_result_id = sr.id
-                LEFT JOIN search_history sh ON sr.search_id = sh.id
+                JOIN search_history sh ON sr.search_id = sh.id
                 {where}
                 ORDER BY ca.updated_at DESC NULLS LAST, ca.created_at DESC
                 LIMIT %s
@@ -1466,26 +1466,26 @@ class DatabaseManager:
         return cursor.fetchone()
 
     def get_candidate_action_stats(self, user_id, company_id=None):
-        """Get candidate action statistics for dashboard"""
+        """Count current statuses using the same user/workspace scope as their lists."""
         with self.get_cursor() as (cursor, conn):
             # Get actions for the user's candidates - include NULL user_ids for backward compatibility
             where_clause = "WHERE (ca.user_id = %s OR ca.user_id IS NULL)"
             params = [str(user_id)]  # Ensure string type for user_id
 
             if company_id:
-                where_clause += " AND sr.company_id = %s"
+                where_clause += " AND sh.company_id = %s"
                 params.append(int(company_id))  # Ensure integer type for company_id
 
             cursor.execute(f"""
                 SELECT
-                    ca.action_type,
+                    LOWER(ca.action_type) AS action_type,
                     COUNT(*) as count
                 FROM candidate_actions ca
                 JOIN search_results sr ON ca.search_result_id = sr.id
+                JOIN search_history sh ON sh.id = sr.search_id
                 {where_clause}
                 AND ca.action_status = true
-                AND ca.created_at >= NOW() - INTERVAL '30 days'
-                GROUP BY ca.action_type
+                GROUP BY LOWER(ca.action_type)
             """, params)
 
             actions = cursor.fetchall()

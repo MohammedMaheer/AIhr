@@ -1331,16 +1331,33 @@ class DatabaseManager:
             """, (password_hash, user_id))
             return cursor.rowcount > 0
 
-    def track_resume_upload(self, file_name, file_path, file_size, mime_type, user_id, company_id):
+    @contextmanager
+    def resume_upload_lock(self, company_id):
+        """Serialize quota-check, file write and tracking across API workers."""
+        with self.get_cursor() as (cursor, _conn):
+            cursor.execute("SET LOCAL lock_timeout='20s'")
+            if company_id is not None:
+                cursor.execute('SELECT id FROM tenant_companies WHERE id=%s AND is_active=TRUE FOR UPDATE',
+                               (company_id,))
+                if cursor.fetchone() is None:
+                    raise ValueError('Upload workspace is unavailable')
+            yield SimpleNamespace(
+                get_company_stats=lambda cid: self.get_company_stats(cid, cursor=cursor),
+                track_resume_upload=lambda **data: self.track_resume_upload(cursor=cursor, **data))
+
+    def track_resume_upload(self, file_name, file_path, file_size, mime_type, user_id, company_id, *, cursor=None):
         """Track a resume upload (limit checking should be done before calling this method)"""
-        with self.get_cursor() as (cursor, conn):
-            cursor.execute("""
+        if cursor is None:
+            with self.get_cursor() as (owned_cursor, _conn):
+                return self.track_resume_upload(file_name, file_path, file_size, mime_type, user_id,
+                                                company_id, cursor=owned_cursor)
+        cursor.execute("""
                 INSERT INTO resume_uploads
                 (file_name, file_path, file_size, mime_type, uploaded_by_user_id, company_id)
                 VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id
             """, (file_name, file_path, file_size, mime_type, user_id, company_id))
-            return cursor.fetchone()['id']
+        return cursor.fetchone()['id']
 
     def get_user_uploads(self, user_id, limit=100):
         """Get uploads by a specific user"""
@@ -1431,10 +1448,12 @@ class DatabaseManager:
             """)
             return cursor.fetchone()
 
-    def get_company_stats(self, company_id):
+    def get_company_stats(self, company_id, *, cursor=None):
         """Get company-specific statistics"""
-        with self.get_cursor() as (cursor, conn):
-            cursor.execute("""
+        if cursor is None:
+            with self.get_cursor() as (owned_cursor, _conn):
+                return self.get_company_stats(company_id, cursor=owned_cursor)
+        cursor.execute("""
                 SELECT
                     (SELECT COUNT(*) FROM user_companies WHERE company_id = %s) as total_users,
                     (SELECT COUNT(*) FROM resume_uploads WHERE company_id = %s) as total_resumes,
@@ -1444,7 +1463,7 @@ class DatabaseManager:
                     (SELECT max_resumes FROM tenant_companies WHERE id = %s) as max_resumes,
                     (SELECT COALESCE(max_searches, 10000) FROM tenant_companies WHERE id = %s) as max_searches
             """, (company_id, company_id, company_id, company_id, company_id, company_id, company_id))
-            return cursor.fetchone()
+        return cursor.fetchone()
 
     def get_candidate_action_stats(self, user_id, company_id=None):
         """Get candidate action statistics for dashboard"""

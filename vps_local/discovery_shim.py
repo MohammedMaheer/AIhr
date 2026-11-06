@@ -33,6 +33,7 @@ from search_criteria import (
     parse_search_criteria,
 )
 from services import requirements_logic
+from services.document_validation import validate_docx_archive
 
 
 ADVANCED_SEARCH_ENABLED = os.environ.get("SMARTHR_ADVANCED_SEARCH", "1").lower() in (
@@ -397,6 +398,8 @@ def _extract_text_from_file(path: Path) -> str:
                 reader = PdfReader(str(path))
                 return "\n".join((p.extract_text() or "") for p in reader.pages)[:80_000]
         if ext in (".docx", ".doc"):
+            if not validate_docx_archive(path)[0]:
+                return ""
             from docx import Document as DocxDocument
             doc = DocxDocument(str(path))
             parts = [paragraph.text for paragraph in doc.paragraphs]

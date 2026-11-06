@@ -101,6 +101,7 @@ from google.protobuf import timestamp_pb2
 from search_criteria import parse_search_criteria, apply_criteria_to_results
 from services.llm_cache import PreparationCache
 from services.search_reuse import SearchReuse
+from services.document_validation import validate_docx_archive
 from services.deepseek_provider import enabled as using_deepseek, display_name as llm_display_name
 
 
@@ -289,13 +290,13 @@ def clamp_positive_int(value: Any, default: int, max_value: int, field_name: str
     return count
 
 def validate_resume_payload(filename: str, content: bytes) -> tuple[bool, str]:
-    """Lightweight magic-byte validation for supported resume formats."""
+    """Validate file signatures and bounded DOCX package metadata."""
     ext = "." + (filename or "").rsplit(".", 1)[-1].lower() if "." in (filename or "") else ""
     header = (content or b"")[:8]
     if ext == ".pdf":
         return header.startswith(b"%PDF-"), "PDF files must start with a valid PDF signature."
     if ext == ".docx":
-        return header.startswith(b"PK\x03\x04") or header.startswith(b"PK\x05\x06") or header.startswith(b"PK\x07\x08"), "DOCX files must be valid ZIP-based Office documents."
+        return validate_docx_archive(content)
     if ext == ".doc":
         return header.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"), "DOC files must be valid OLE compound documents."
     return False, "Unsupported file type."
@@ -1828,6 +1829,9 @@ def extract_text_from_pdf(file_content: bytes) -> str:
 
 def extract_text_from_docx(file_content: bytes) -> str:
     """Extract text from DOCX files with robust error handling"""
+    valid, _ = validate_docx_archive(file_content)
+    if not valid:
+        return None
     try:
         doc = Document(io.BytesIO(file_content))
 
@@ -5874,11 +5878,87 @@ def scrape_outlook_attachments(email_address: str, password: str, limit: int = 1
         print(f"❌ Outlook 365 scraping failed: {e}")
         raise
 
+_resume_upload_slots = asyncio.Semaphore(2)
+_resume_upload_tasks = set()
+
+
+async def _check_resume_upload_limit(db, company_id, count):
+    if company_id is None or count == 0:
+        return
+    try:
+        stats = await asyncio.to_thread(db.get_company_stats, company_id)
+        _validate_resume_upload_limit(stats, count)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning('Upload quota verification unavailable: %s', type(exc).__name__)
+        raise HTTPException(status_code=503, detail='Upload limits are temporarily unavailable. Please try again shortly.')
+
+
+def _validate_resume_upload_limit(stats, count):
+    try:
+        maximum = stats['max_resumes']
+        current = stats['total_resumes']
+        if isinstance(maximum, bool) or isinstance(current, bool):
+            raise ValueError('Invalid upload quota state')
+        if maximum is None or (isinstance(maximum, int) and maximum == 0):
+            maximum = 1000
+        current = current if current is not None else 0
+        if (not isinstance(maximum, int) or not isinstance(current, int)
+                or maximum < 1 or current < 0):
+            raise ValueError('Invalid upload quota state')
+    except Exception as exc:
+        logger.warning('Upload quota verification unavailable: %s', type(exc).__name__)
+        raise HTTPException(status_code=503, detail='Upload limits are temporarily unavailable. Please try again shortly.')
+    if current + count > maximum:
+        remaining = max(0, maximum - current)
+        if remaining == 0:
+            detail = f'Company has reached maximum resume storage limit ({maximum} resumes). Cannot upload any new resumes.'
+        else:
+            detail = f'Upload limit exceeded! You can only upload {remaining} more resume(s). Current: {current}/{maximum}, Attempting: {count}'
+        raise HTTPException(status_code=400, detail=detail)
+
+
+def _store_resume_upload(db, *, bucket_name, blob_name, filename, content, content_type,
+                         user_id, company_id, company_code):
+    blob = _get_storage_client().bucket(bucket_name).blob(blob_name)
+    with db.resume_upload_lock(company_id) as records:
+        if company_id is not None:
+            _validate_resume_upload_limit(records.get_company_stats(company_id), 1)
+        blob.upload_from_string(content, content_type=content_type)
+        records.track_resume_upload(file_name=filename, file_path=blob_name, file_size=len(content),
+                                    mime_type=content_type, user_id=user_id, company_id=company_id)
+    return upload_to_vector_datastore(file_path=blob_name, company_id=company_id,
+                                      company_code=company_code, user_id=str(user_id))
+
+
+async def _run_resume_upload(db, **kwargs):
+    # Bound CPU indexing and database use without blocking unrelated API requests.
+    slots = _resume_upload_slots
+    await slots.acquire()
+    try:
+        worker = asyncio.create_task(asyncio.to_thread(_store_resume_upload, db, **kwargs))
+    except BaseException:
+        slots.release()
+        raise
+    _resume_upload_tasks.add(worker)
+
+    def finished(task):
+        slots.release()
+        _resume_upload_tasks.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.warning('Upload worker failed: %s', type(task.exception()).__name__)
+
+    worker.add_done_callback(finished)
+    # A disconnected caller must not free capacity while its thread is still writing.
+    return await asyncio.shield(worker)
+
+
 async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], folder_path: str, user: dict) -> Dict[str, Any]:
     """Process scraped email attachments and upload them to GCS like regular file uploads."""
 
     # Get company-specific resources
-    bucket_name, datastore_id = get_company_resources(user)
+    bucket_name, datastore_id = await asyncio.to_thread(get_company_resources, user)
 
     if not bucket_name:
         raise HTTPException(status_code=400, detail="Google Cloud Storage bucket not configured for your company")
@@ -5899,45 +5979,12 @@ async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], fold
     print(f"📁 Using upload folder: {upload_folder}")
     print(f"🪣 Using company bucket: {bucket_name}")
 
-    db = get_db_manager()
+    db = await asyncio.to_thread(get_db_manager)
 
-    # Get company_id for limit checking
-    company_id = None
-    if user.get('company'):
-        if isinstance(user['company'], dict):
-            company_id = user['company'].get('company_id') or user['company'].get('id')
-        else:
-            company_id = getattr(user['company'], 'id', None)
+    company_id = _get_company_id(user)
 
-    # Check resume upload limit
-    if company_id:
-        try:
-            company_stats = db.get_company_stats(company_id)
-            max_resumes = company_stats['max_resumes'] or 1000
-            current_resumes = company_stats['total_resumes'] or 0
-
-            # Count total attachments to upload
-            total_attachments = sum(len(email_data['attachments']) for email_data in scraped_emails)
-
-            if current_resumes + total_attachments > max_resumes:
-                remaining_slots = max_resumes - current_resumes
-                if remaining_slots <= 0:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Company has reached maximum resume storage limit ({max_resumes} resumes). Cannot upload any new resumes."
-                    )
-                else:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Upload limit exceeded! You can only upload {remaining_slots} more resume(s). Current: {current_resumes}/{max_resumes}, Attempting: {total_attachments}"
-                    )
-        except HTTPException:
-            raise
-        except Exception as e:
-            print(f"❌ Error checking resume limits: {e}")
-
-    client = _get_storage_client()
-    bucket = client.bucket(bucket_name)
+    total_attachments = sum(len(email_data['attachments']) for email_data in scraped_emails)
+    await _check_resume_upload_limit(db, company_id, total_attachments)
 
     upload_results = []
     success_count = 0
@@ -5987,22 +6034,6 @@ async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], fold
 
                 # Upload to GCS
                 blob_name = f"{upload_folder}{safe_name}"
-                blob = bucket.blob(blob_name)
-
-                blob.upload_from_string(
-                    content,
-                    content_type=content_type
-                )
-
-                # Track upload in database
-                db.track_resume_upload(
-                    file_name=original_filename,
-                    file_path=blob_name,
-                    file_size=len(content),
-                    mime_type=content_type,
-                    user_id=user['id'],
-                    company_id=company_id
-                )
 
                 # Upload to vector datastore
                 company_code = None
@@ -6013,11 +6044,12 @@ async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], fold
                         company_code = getattr(user['company'], 'company_code', None)
 
                 print(f"🔍 Adding {original_filename} to vector datastore")
-                vector_upload_success = upload_to_vector_datastore(
-                    file_path=blob_name,
+                vector_upload_success = await _run_resume_upload(
+                    db, bucket_name=bucket_name, blob_name=blob_name,
+                    filename=original_filename, content=content, content_type=content_type,
                     company_id=company_id,
                     company_code=company_code,
-                    user_id=str(user['id'])
+                    user_id=user['id']
                 )
 
                 upload_results.append({
@@ -6036,11 +6068,11 @@ async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], fold
                 print(f"✅ Successfully processed {original_filename}")
 
             except Exception as e:
-                print(f"❌ Failed to process attachment {attachment.get('original_filename', 'unknown')}: {str(e)}")
+                logger.warning('Attachment upload failed: %s', type(e).__name__)
                 upload_results.append({
                     "filename": attachment.get('original_filename', 'unknown'),
                     "success": False,
-                    "error": f"Upload failed: {str(e)}",
+                    "error": "Upload could not be completed. Please try again shortly.",
                     "source": "email_attachment",
                     "email_id": email_id
                 })
@@ -6116,9 +6148,11 @@ async def scrape_email_attachments(
             **result
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"❌ EMAIL SCRAPING FAILED: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Email scraping failed: {str(e)}")
+        logger.warning('Email import failed: %s', type(e).__name__)
+        raise HTTPException(status_code=500, detail='Email import could not be completed. Please try again shortly.')
 
 @app.post("/api/configure-gcs")
 @limiter.limit("2/minute")
@@ -6230,9 +6264,11 @@ async def upload_files(
                 "email_stats": result["email_stats"]
             }
 
+        except HTTPException:
+            raise
         except Exception as e:
-            print(f"❌ EMAIL SCRAPING FAILED: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Email scraping failed: {str(e)}")
+            logger.warning('Email import failed: %s', type(e).__name__)
+            raise HTTPException(status_code=500, detail='Email import could not be completed. Please try again shortly.')
 
     # Regular file upload mode
     if not files:
@@ -6244,7 +6280,7 @@ async def upload_files(
     print(f"📁 Files in this batch: {len(files)}")
 
     # Calculate total batch size
-    total_batch_size = sum(file.size if hasattr(file, 'size') else 0 for file in files)
+    total_batch_size = sum(file.size or 0 for file in files)
     print(f"📦 Total batch size: {total_batch_size:,} bytes ({total_batch_size / (1024*1024):.1f}MB)")
     if total_batch_size and total_batch_size > MAX_TOTAL_UPLOAD_SIZE:
         raise HTTPException(
@@ -6253,7 +6289,7 @@ async def upload_files(
         )
 
     # Get company-specific resources
-    bucket_name, datastore_id = get_company_resources(user)
+    bucket_name, datastore_id = await asyncio.to_thread(get_company_resources, user)
 
     if not bucket_name:
         raise HTTPException(status_code=400, detail="Google Cloud Storage bucket not configured for your company")
@@ -6276,51 +6312,14 @@ async def upload_files(
 
     print(f"🪣 Using company bucket: {bucket_name}")
 
-    db = get_db_manager()
+    db = await asyncio.to_thread(get_db_manager)
 
     try:
-        # Get company_id early for limit checking
-        company_id = None
-        if user.get('company'):
-            if isinstance(user['company'], dict):
-                company_id = user['company'].get('company_id') or user['company'].get('id')
-            else:
-                company_id = getattr(user['company'], 'id', None)
+        company_id = _get_company_id(user)
 
-        # Check resume upload limit BEFORE starting any uploads
-        if company_id:
-            try:
-                # Get current resume count and limits
-                company_stats = db.get_company_stats(company_id)
-                max_resumes = company_stats['max_resumes'] or 1000
-                current_resumes = company_stats['total_resumes'] or 0
-
-                # Check if uploading these files would exceed the limit
-                files_to_upload = len([f for f in files if ('.' + f.filename.split('.')[-1].lower()) in config['upload']['allowed_extensions']])
-
-                if current_resumes + files_to_upload > max_resumes:
-                    remaining_slots = max_resumes - current_resumes
-                    if remaining_slots <= 0:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"Company has reached maximum resume storage limit ({max_resumes} resumes). Cannot upload any new resumes."
-                        )
-                    else:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"Upload limit exceeded! You can only upload {remaining_slots} more resume(s). Current: {current_resumes}/{max_resumes}, Attempting: {files_to_upload}"
-                        )
-
-            except HTTPException:
-                raise  # Re-raise HTTP exceptions
-            except Exception as e:
-                print(f"❌ ERROR checking resume limits: {e}")
-                import traceback
-                traceback.print_exc()
-                # Continue with upload if limit check fails (fallback behavior)
-
-        client = _get_storage_client()
-        bucket = client.bucket(bucket_name)
+        files_to_upload = sum(('.' + (f.filename or '').split('.')[-1].lower())
+                              in config['upload']['allowed_extensions'] for f in files)
+        await _check_resume_upload_limit(db, company_id, files_to_upload)
 
         upload_results = []
         batch_success_count = 0
@@ -6334,7 +6333,7 @@ async def upload_files(
 
             # Validate file type using config
             allowed_extensions = config['upload']['allowed_extensions']
-            file_ext = '.' + file.filename.split('.')[-1].lower()
+            file_ext = '.' + (file.filename or '').split('.')[-1].lower()
 
             if file_ext not in allowed_extensions:
                 print(f"❌ File {file.filename} rejected: unsupported type {file_ext}")
@@ -6360,7 +6359,7 @@ async def upload_files(
 
             # Read file content with size validation
             print(f"📖 Reading file content for {file.filename}")
-            content = await file.read()
+            content = await file.read(MAX_FILE_SIZE + 1)
             if len(content) > MAX_FILE_SIZE:
                 print(f"❌ File {file.filename} rejected: content too large ({len(content):,} bytes)")
                 upload_results.append({
@@ -6387,23 +6386,6 @@ async def upload_files(
                 safe_name = _sanitize_object_path(file.filename) or 'unnamed'
                 # Upload to GCS
                 blob_name = f"{upload_folder}{safe_name}"
-                blob = bucket.blob(blob_name)
-
-                print(f"☁️ Uploading {file.filename} to GCS: {blob_name}")
-                blob.upload_from_string(
-                    content,
-                    content_type=file.content_type
-                )
-
-                # Track upload in database (limit already checked above)
-                db.track_resume_upload(
-                    file_name=file.filename,
-                    file_path=blob_name,
-                    file_size=len(content),
-                    mime_type=file.content_type,
-                    user_id=user['id'],
-                    company_id=company_id
-                )
 
                 # Upload to vector datastore for immediate searchability (incremental indexing)
                 company_code = None
@@ -6414,11 +6396,12 @@ async def upload_files(
                         company_code = getattr(user['company'], 'company_code', None)
 
                 print(f"🔍 Adding {file.filename} to vector datastore")
-                vector_upload_success = upload_to_vector_datastore(
-                    file_path=blob_name,
+                vector_upload_success = await _run_resume_upload(
+                    db, bucket_name=bucket_name, blob_name=blob_name,
+                    filename=file.filename, content=content, content_type=file.content_type,
                     company_id=company_id,
                     company_code=company_code,
-                    user_id=str(user['id'])
+                    user_id=user['id']
                 )
 
                 upload_results.append({
@@ -6435,11 +6418,11 @@ async def upload_files(
                 print(f"✅ Successfully processed {file.filename}")
 
             except Exception as e:
-                print(f"❌ Failed to process {file.filename}: {str(e)}")
+                logger.warning('Resume upload failed: %s', type(e).__name__)
                 upload_results.append({
                     "filename": file.filename,
                     "success": False,
-                    "error": f"Upload failed: {str(e)}",
+                    "error": "Upload could not be completed. Please try again shortly.",
                     "batch_info": batch_info
                 })
                 batch_error_count += 1
@@ -6464,9 +6447,11 @@ async def upload_files(
             }
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"❌ BATCH UPLOAD FAILED{batch_log}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Upload process failed: {str(e)}")
+        logger.warning('Upload batch failed: %s', type(e).__name__)
+        raise HTTPException(status_code=500, detail='Upload process could not be completed. Please try again shortly.')
 
 @app.get("/api/gcs-status")
 async def get_gcs_status(user: dict = Depends(require_tenant_admin)):

@@ -5,6 +5,29 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.10.2 - 2026-11-10
+
+### Offline CV Recovery And Annual Mailbox Import
+
+- Recover and index 76 of 86 previously unindexed CVs with local extraction,
+  isolated Word conversion/OCR and a visually reviewed PDF reconstruction.
+  Preserve all originals; retain two damaged PDFs, one low-confidence CV and
+  seven supporting documents for user review, with no deletion.
+- Bind accepted full-text reuse to original-byte/text hashes, exact storage
+  identity and authorized company. Preserve normal extraction for other files;
+  add an additive provenance migration and targeted regression tests.
+- Process 4,981 received-2026 Microsoft mailbox PDF/Word attachments. Publish
+  3,842 distinct accepted CVs in `Mailbox 2026`, skip 990 file/text duplicates,
+  and retain 149 uncertain/supporting files privately for review. Preserve
+  actual received dates, derived tags, original bytes and audit history.
+- Pass 959 backend tests, 19 frontend suites, 105 model-compatibility fixtures,
+  304 original-recovery checks, 11,526 annual-import hash/company checks and
+  the 132-case deployed API scope matrix. Rehearse database writes in private
+  restores before live publication; make zero new paid AI calls.
+- Deploy `clean-20261109t202124z`; retain 20 unrelated containers unchanged.
+  No UI, prompts, scoring policy or paid model change. See
+  `docs/RESUME_RECOVERY_2026-11-10.md` for evidence and limitations.
+
 ## v2026.11.10.1 - 2026-11-10
 
 ### Folder And Import Visual Polish

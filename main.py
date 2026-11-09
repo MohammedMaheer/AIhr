@@ -2284,7 +2284,7 @@ def get_file_content_from_gcs(file_path: str, user_context: dict = None) -> str:
         print(f"✅ File downloaded successfully (size: {len(file_content)} bytes)")
 
         # Extract text based on file type
-        extracted_text = extract_text_from_file(file_content, file_path)
+        extracted_text = _extract_search_document_text(file_content, bucket_name, blob_name, user_context)
         if extracted_text:
             return extracted_text
         else:
@@ -2295,6 +2295,18 @@ def get_file_content_from_gcs(file_path: str, user_context: dict = None) -> str:
     except Exception as e:
         print(f"❌ Error getting file content: {str(e)}")
         return None
+
+def _extract_search_document_text(content, bucket, key, user_context):
+    if os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
+        try:
+            from services.recovered_text import lookup_recovered_text
+            recovered = lookup_recovered_text(get_db_manager(), user_context, bucket, key, content)
+            if recovered:
+                return recovered
+        except Exception as error:
+            logging.warning('Recovered document text unavailable: %s', type(error).__name__)
+    return extract_text_from_file(content, key)
+
 
 def get_file_content_and_bytes_from_gcs(file_path: str, user_context: dict = None) -> tuple:
     """Get both text content and raw bytes from GCS file with smart path resolution"""
@@ -2335,7 +2347,7 @@ def get_file_content_and_bytes_from_gcs(file_path: str, user_context: dict = Non
         # Extract text based on file type
         extracted_text = _search_reuse.extract(
             file_content, bucket_name, file_path, user_context,
-            lambda: extract_text_from_file(file_content, file_path),
+            lambda: _extract_search_document_text(file_content, bucket_name, blob_name, user_context),
         )
 
         return extracted_text, file_content

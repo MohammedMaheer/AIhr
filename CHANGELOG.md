@@ -5,6 +5,27 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.10.1 - 2026-11-10
+
+### Folder And Import Visual Polish
+
+- Verify folder/tag/date controls, bulk upload and email import at desktop,
+  tablet and phone widths using isolated fictional browser flows.
+- Fix selected-tab contrast and modal notification obstruction. Hide unrelated
+  file controls in email mode, preserve the file queue, shorten upload messages
+  and retain empty/failed-import settings while clearing submitted passwords.
+- Add modal/nested-form and import-flow regressions plus an explicitly opted-in
+  local ingestion fixture. Upload batching, backend criteria and AI behavior are
+  unchanged; the original recruiter logo remains intact.
+- Remove eight verified stale smoke records and quarantine one invalid placeholder
+  asset, with private backup and audit records. Preserve historical reports and
+  genuine candidate data; retain 86 unindexed CVs for repair/removal review.
+- All 942 fresh-PostgreSQL tests, 19 frontend suites and four responsive fixture
+  flows passed. Deploy `clean-20261109t195514z`; live desktop/phone controls,
+  cleaned library totals, three-attachment mailbox read and 132 scoped retrieval
+  checks passed with zero new paid AI calls and 20 unrelated containers preserved.
+- See `docs/FOLDER_IMPORT_VISUAL_REVIEW_2026-11-10.md` for evidence and limits.
+
 ## v2026.11.09.4 - 2026-11-09
 
 ### Folder, Tag And Date End-To-End Verification

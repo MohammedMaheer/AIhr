@@ -21,6 +21,12 @@
 .app-notification-warning { border-left-color: #a16207; }
 .app-notification-warning > i { color: #a16207; }
 body:has(.is-navigation-open) .app-notifications { z-index: 30; }
+body:has(.workspace-overlay:not(.hidden)) > .app-notifications { display: none; pointer-events: none; }
+.workspace-dialog .dialog-notifications {
+    position: static; flex-shrink: 0; width: auto; max-height: min(160px, 25dvh);
+    margin: 12px 16px 0; overflow-y: auto; pointer-events: auto;
+}
+.dialog-notifications .app-notification { box-shadow: none; }
 .efforts-brand-panel, .efforts-login-brand, .efforts-admin-brand { background: #171c24; color: white; }
 .efforts-brand-panel { padding: 20px 16px; }
 .efforts-brand-panel img { display: block; width: 152px; max-width: 100%; height: auto; margin-bottom: 12px; }

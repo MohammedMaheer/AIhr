@@ -25,8 +25,39 @@ const history = Array.from({length:55},(_,i)=>({id:i+1,search_query:i===0?'Netwo
 const interviews=[{id:1,candidate_name:'Fictional Candidate With A Long Name',candidate_email:'candidate@example.invalid',position:'Senior Infrastructure Engineer',interview_date:'2026-11-10',interview_time:'10:00',time_zone:'Asia/Dubai',duration_minutes:60,interview_type:'video',status:'scheduled',version:1,meeting_provider:'teams'},
     {id:2,candidate_name:'Example Candidate',position:'UI Designer',interview_date:'2026-11-06',interview_time:'11:30',time_zone:'Asia/Kolkata',status:'cancelled',version:1,meeting_provider:'none'}];
 function json(response,value,status=200){response.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});response.end(JSON.stringify(value));}
+const ingestionEnabled=process.env.UI_PREVIEW_INGESTION==='1';
+const ingestionRequests=[];
+async function previewIngestion(request,response){
+    const chunks=[];let size=0;
+    for await(const chunk of request){size+=chunk.length;if(size>4*1024*1024)return json(response,{detail:'Preview fixture batch exceeds 4 MB.'},413);chunks.push(chunk);}
+    const form=await new Response(Buffer.concat(chunks),{headers:{'Content-Type':request.headers['content-type']}}).formData();
+    const folder=String(form.get('folder_path')||'resume'),email=form.get('scrape_email')==='true';
+    const address=String(form.get('email_address')||'');
+    const files=email?[{name:'Fictional_Email_Designer_CV.pdf',size:1234}]:form.getAll('files');
+    ingestionRequests.push({kind:email?'email':'bulk',folder,files:files.map(file=>file.name)});
+    await new Promise(resolve=>setTimeout(resolve,180));
+    if(email&&address==='blocked@example.invalid')return json(response,{detail:'Microsoft connection expired. Reconnect the mailbox in Integrations.'},403);
+    const results=(email&&address==='empty@example.invalid'?[]:files).map(file=>{
+        const success=!file.name.startsWith('Invalid_'),indexed=success&&!file.name.startsWith('Scanned_');
+        if(success){
+            uploads.unshift({id:uploads.length+1,file_name:file.name,file_path:'gs://fixture-bucket/'+folder+'/'+file.name,
+                file_size:file.size,mime_type:'application/pdf',upload_timestamp:new Date().toISOString()});
+            let entry=folders.find(item=>item.path===folder);
+            if(!entry){entry={bucket:'fixture-bucket',path:folder,total:0};folders.push(entry);}entry.total++;
+        }
+        return{success,vector_indexed:indexed,filename:file.name,gcs_path:'gs://fixture-bucket/'+folder+'/'+file.name,
+            ...(success?{}:{error:'Invalid document. Choose a readable PDF or Word CV.'})};
+    });
+    const successful=results.filter(row=>row.success).length,failed=results.length-successful;
+    return json(response,{success:true,results,batch_stats:{total:results.length,successful,failed},
+        ...(email?{email_stats:{total_emails:1,total_attachments:results.length,successful_uploads:successful,failed_uploads:failed}}:{})});
+}
 const server = http.createServer((request,response)=>{
     const url = new URL(request.url,'http://127.0.0.1');
+    if(ingestionEnabled&&request.method==='POST'&&url.pathname==='/api/upload-files'){
+        previewIngestion(request,response).catch(()=>{if(!response.headersSent)json(response,{detail:'Invalid preview request.'},400);else response.end();});return;
+    }
+    if(ingestionEnabled&&url.pathname==='/__fixture/ingestion-requests')return json(response,ingestionRequests);
     if(request.method==='POST' && url.pathname==='/api/hr-scorecard-search'){
         request.resume();return json(response,{success:true,results:[],total_results:0,query:'Fictional UI review search'});
     }

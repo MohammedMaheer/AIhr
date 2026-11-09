@@ -3,14 +3,17 @@
     const timers = new WeakMap();
     function show(message, type = 'info') {
         type = ['success', 'error', 'warning', 'info'].includes(type) ? type : 'info';
-        let root = document.getElementById('app-notifications');
+        const dialog = [...document.querySelectorAll('.workspace-overlay:not(.hidden) .workspace-dialog')]
+            .filter(element => !element.closest('[hidden],[aria-hidden="true"]')).at(-1);
+        let root = dialog ? dialog.querySelector('.dialog-notifications') : document.getElementById('app-notifications');
         if (!root) {
             root = document.createElement('section');
-            root.id = 'app-notifications';
-            root.className = 'app-notifications';
+            if (!dialog) root.id = 'app-notifications';
+            root.className = 'app-notifications' + (dialog ? ' dialog-notifications' : '');
             root.setAttribute('aria-label', 'Notifications');
             root.setAttribute('data-notifications-root', '');
-            document.body.appendChild(root);
+            if (dialog) dialog.insertBefore(root, dialog.querySelector(':scope > .workspace-dialog-body, :scope > .workspace-form, :scope > footer'));
+            else document.body.appendChild(root);
         }
         const text = String(message ?? '');
         const duplicate = [...root.children].find(e => e.dataset.type === type && e.querySelector('.app-notification-message').textContent === text);

@@ -845,20 +845,6 @@ document.addEventListener('DOMContentLoaded', function () {
                         </div>
                     </div>
 
-                    <!-- Batch Configuration -->
-                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-lg font-semibold text-gray-900">
-                                <i class="fas fa-layer-group mr-2 text-blue-600"></i>
-                                Smart Batch Upload
-                            </h3>
-                        </div>
-                        
-                        <div class="text-sm text-gray-600">
-                            Files are automatically organized into batches under 32MB each for reliable upload.
-                        </div>
-                    </div>
-
                     <!-- Hidden Configuration Panel -->
                     <div class="hidden">
                         <input type="text" id="bucket-name" value="">
@@ -866,7 +852,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     </div>
 
                     <!-- Upload Queue -->
-                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                    <div id="bulk-upload-queue" class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
                         <div class="flex items-center justify-between mb-4">
                             <h3 class="text-lg font-semibold text-gray-900">Upload Queue</h3>
                             <div class="flex space-x-2">
@@ -4547,7 +4533,7 @@ document.addEventListener('DOMContentLoaded', function () {
             // Complete progress bar
             progressBar.style.width = '100%';
             progressText.textContent = '100%';
-            batchProgressText.textContent = `Completed: ${batchNumber} adaptive batches`;
+            batchProgressText.textContent = 'Upload complete';
 
             // Hide progress bar after 3 seconds
             setTimeout(() => {
@@ -4563,24 +4549,13 @@ document.addEventListener('DOMContentLoaded', function () {
             successfulUploads.textContent = parseInt(successfulUploads.textContent) + totalSuccessful;
             failedUploads.textContent = parseInt(failedUploads.textContent) + totalFailed;
 
-            // Show adaptive upload summary message
-            const finalBatchSize = currentBatchSize;
-            const usedAdaptiveStrategy = batchSizeHistory.some(size => size !== 50);
-            let strategyInfo = '';
-
-            if (usedAdaptiveStrategy) {
-                const uniqueBatchSizes = [...new Set(batchSizeHistory)].sort((a, b) => b - a);
-                strategyInfo = ` (Adaptive strategy used: ${uniqueBatchSizes.join('?')} files per batch)`;
-            } else {
-                strategyInfo = ` (Maintained optimal batch size of 50)`;
-            }
-
-            const indexWarning = totalNotIndexed ? ` ${totalNotIndexed} saved file(s) are not searchable and need attention.` : '';
-            const message = `Upload completed! ${totalSuccessful} successful, ${totalFailed} failed across ${batchNumber} batches${strategyInfo}${indexWarning}`;
+            const indexWarning = totalNotIndexed ? ` ${totalNotIndexed} saved file${totalNotIndexed === 1 ? '' : 's'} ${totalNotIndexed === 1 ? 'is' : 'are'} not searchable and need attention.` : '';
+            const message = `${totalSuccessful} file${totalSuccessful === 1 ? '' : 's'} uploaded` +
+                (totalFailed ? `; ${totalFailed} failed.` : '.') + indexWarning;
             if (totalSuccessful > 0) {
                 showLimitNotification(message, totalFailed > 0 || totalNotIndexed > 0 ? 'warning' : 'success');
             } else if (totalFailed > 0) {
-                showLimitNotification(`All uploads failed: ${message}`, 'error');
+                showLimitNotification(`No files uploaded. ${totalFailed} failed. Review the upload queue.`, 'error');
             }
         }
 
@@ -4658,26 +4633,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 `;
                 startUpload.disabled = true;
             } else {
-                // Calculate batch information for display with adaptive sizing
-                const INITIAL_BATCH_SIZE = 50; // Start with 50 files per batch
-                const MAX_BATCH_SIZE_MB = 32; // 32MB per batch
-                const estimatedBatches = Math.ceil(selectedFiles.length / INITIAL_BATCH_SIZE);
-
                 uploadQueue.innerHTML = `
-                    <div class="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                        <div class="flex items-center justify-between text-sm">
-                            <span class="text-blue-700 font-medium">
-                                <i class="fas fa-layer-group mr-2"></i>
-                                Adaptive Upload Strategy: Starting with ${INITIAL_BATCH_SIZE} files per batch
-                                (Auto-adjusts: 50→25→10→5→1 on failures)
-                            </span>
-                            <span class="text-blue-600">${selectedFiles.length} total files</span>
-                        </div>
-                        <div class="mt-2 text-xs text-blue-600">
-                            <i class="fas fa-info-circle mr-1"></i>
-                            System will automatically reduce batch size if uploads fail, then increase back to 50 after successes
-                        </div>
-                    </div>
+                    <p class="mb-4 text-sm text-gray-600" role="status">${selectedFiles.length} file${selectedFiles.length === 1 ? '' : 's'} in queue</p>
                     ${selectedFiles.map((fileItem, index) => {
                     const statusIcon = getStatusIcon(fileItem.status);
                     const statusColor = getStatusColor(fileItem.status);
@@ -4692,8 +4649,6 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <p class="text-sm font-medium text-gray-900 break-all">${escapeHtml(fileItem.file.name)}</p>
                                     <div class="flex items-center space-x-2 text-xs text-gray-500">
                                         <span>${formatFileSize(fileItem.file.size)}</span>
-                                        <span class="text-gray-300">·</span>
-                                        <span class="text-blue-600">Adaptive Batching</span>
                                         ${fileItem.batchInfo ? `<span class="text-gray-300">·</span><span class="${statusColor}">${escapeHtml(fileItem.batchInfo)}</span>` : ''}
                                     </div>
                                 </div>
@@ -4863,6 +4818,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             fileUploadSection.classList.remove('hidden');
             emailScrapeSection.classList.add('hidden');
+            document.getElementById('bulk-upload-queue').hidden = false;
         });
 
         emailScrapeTab.addEventListener('click', () => {
@@ -4876,6 +4832,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             emailScrapeSection.classList.remove('hidden');
             fileUploadSection.classList.add('hidden');
+            document.getElementById('bulk-upload-queue').hidden = true;
         });
 
         // Password visibility toggle
@@ -5027,20 +4984,22 @@ document.addEventListener('DOMContentLoaded', function () {
                         );
                     } else {
                         showLimitNotification(
-                            `Processed ${successfulCount}/${totalAttachments} attachment(s) from ${totalEmails} email(s)` +
-                                (failedCount > 0 ? ` (${failedCount} failed)` : '') +
-                                (notIndexedCount ? `. ${notIndexedCount} saved file(s) are not searchable and need attention.` : ''),
+                            `Imported ${successfulCount} of ${totalAttachments} attachment${totalAttachments === 1 ? '' : 's'} from ${totalEmails} email${totalEmails === 1 ? '' : 's'}.` +
+                                (failedCount > 0 ? ` ${failedCount} failed.` : '') +
+                                (notIndexedCount ? ` ${notIndexedCount} saved file${notIndexedCount === 1 ? '' : 's'} ${notIndexedCount === 1 ? 'is' : 'are'} not searchable and need attention.` : ''),
                             failedCount > 0 || notIndexedCount > 0 ? 'warning' : 'success'
                         );
                     }
 
-                    // Clear the form
-                    document.getElementById('email-provider').value = '';
-                    providerInput.dispatchEvent(new Event('change'));
-                    document.getElementById('email-address').value = '';
+                    // Keep an empty/failed import ready for adjustment; never retain a submitted password.
                     document.getElementById('email-password').value = '';
-                    const limitInput = document.getElementById('email-limit');
-                    limitInput.value = limitInput.defaultValue;
+                    if (successfulCount > 0) {
+                        document.getElementById('email-provider').value = '';
+                        providerInput.dispatchEvent(new Event('change'));
+                        document.getElementById('email-address').value = '';
+                        const limitInput = document.getElementById('email-limit');
+                        limitInput.value = limitInput.defaultValue;
+                    }
 
                     // Update stats
                     const totalUploaded = document.getElementById('total-uploaded');

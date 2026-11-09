@@ -2810,6 +2810,12 @@ button, input, .glass {
 .upload-folder-control { flex: 1; min-width: 0; max-width: 620px; }
 .upload-folder-toolbar { display: flex; align-items: center; gap: 8px; }
 .upload-folder-toolbar select { flex: 1; min-width: 0; width: 100%; height: 44px; border: 1px solid #d7dde5; border-radius: 6px; background: #fff; color: #344050; padding: 8px 10px; font-size: 14px; }
+#file-upload-tab, #email-scrape-tab { border-radius: 6px; }
+#file-upload-tab[aria-pressed="true"], #email-scrape-tab[aria-pressed="true"] { background: #2563eb; color: #fff; }
+#file-upload-tab[aria-pressed="true"]:hover, #email-scrape-tab[aria-pressed="true"]:hover { background: #1d4ed8; }
+#file-upload-tab[aria-pressed="false"], #email-scrape-tab[aria-pressed="false"] { background: #e5e7eb; color: #374151; }
+#file-upload-tab[aria-pressed="false"]:hover, #email-scrape-tab[aria-pressed="false"]:hover { background: #d1d5db; }
+#bulk-upload-queue > .flex { flex-wrap: wrap; gap: 12px; }
 #upload-folder-editor { margin-top: 12px; }
 #upload-folder-editor[hidden] { display: none; }
 #upload-folder-editor label { display: block; margin-bottom: 6px; font-size: 12px; }

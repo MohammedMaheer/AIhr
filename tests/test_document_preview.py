@@ -139,6 +139,32 @@ def test_inline_endpoint_auth_headers_and_no_original_overwrite(api, monkeypatch
     assert render.call_count==1
 
 
+def test_viewer_framing_is_same_origin_only_and_main_app_stays_non_embeddable(api):
+    client,_=api
+    app=client.get('/',follow_redirects=False)
+    assert app.headers['x-frame-options']=='DENY'
+    assert "frame-ancestors 'none'" in app.headers['content-security-policy']
+    assert "frame-src 'self'" in app.headers['content-security-policy']
+    viewer=client.get('/static/vendor/pdfjs-6.5.438/web/viewer.html')
+    assert viewer.status_code==200
+    assert viewer.headers['x-frame-options']=='SAMEORIGIN'
+    policy=viewer.headers['content-security-policy']
+    assert "frame-ancestors 'self'" in policy
+    assert "connect-src 'self' blob: data:" in policy
+    assert "script-src 'self' 'wasm-unsafe-eval'" in policy
+    assert 'connect-src *' not in policy
+    other=client.get('/static/js/main.js')
+    assert other.headers['x-frame-options']=='DENY'
+
+
+def test_document_viewer_runtime_assets_are_packaged():
+    root=Path(__file__).resolve().parents[1]/'static/vendor/pdfjs-6.5.438'
+    for name in ('build/pdf.mjs','build/pdf.worker.mjs','build/pdf.renderer.mjs','build/pdf.sandbox.mjs',
+                 'web/viewer.html','web/viewer.mjs','web/viewer.css','web/locale/locale.json',
+                 'web/wasm/openjpeg.wasm','LICENSE'):
+        assert (root/name).is_file(), 'Missing self-hosted viewer asset: '+name
+
+
 def test_worker_rejects_non_word_and_macro_packages_without_running_a_process():
     spec=spec_from_file_location('preview_worker',Path(__file__).resolve().parents[1]/'deploy/vps/preview/worker.py')
     worker=module_from_spec(spec);spec.loader.exec_module(worker)

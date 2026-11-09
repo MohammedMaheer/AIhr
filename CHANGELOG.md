@@ -5,6 +5,37 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.09.1 - 2026-11-09
+
+### Fixed
+
+- Corrected a real preview integration blocker: the application CSP prohibited
+  child frames and its default frame header also denied the self-hosted viewer.
+- Permit same-origin child previews only. Allow embedding only for the exact
+  PDF.js viewer page, retain application clickjacking protection, and restrict
+  viewer connections to local/blob/data resources instead of external services.
+- Add regression checks for effective application/viewer framing policy and all
+  required viewer runtime bundles, including the ignored-by-default build folder.
+
+### Verification And Deployment
+
+- 926 backend tests passed without skips on an isolated PostgreSQL restore;
+  all 17 frontend suites passed. Runtime advisory/secret checks and unchanged
+  embeddings/rankings for 105 fixtures and 3,913 tenant vectors passed.
+- Deployed `clean-20261109t072310z`. Public CSP/frame headers, viewer assets/MIME
+  types, anonymous/tenant access checks and original PDF/DOCX/DOC/TXT handlers
+  passed. The unchanged converter retained its source/image-bound rehearsal.
+- App and converter are healthy; rollback/database backup retained, existing
+  records and 20 unrelated containers preserved. Preview and health checks made
+  no paid AI calls. Refresh an already-open app page to receive the new CSP.
+
+### Remaining Limitations
+
+- Fresh browser pixel-level verification is still unavailable. The new header
+  checks verify public policy delivery, not the final rendered PDF canvas.
+- Missing original PDFs and the other documented data/operational limitations
+  from v2026.11.09.0 are unchanged.
+
 ## v2026.11.09.0 - 2026-11-09
 
 ### Added And Fixed

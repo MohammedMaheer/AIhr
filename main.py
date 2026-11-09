@@ -408,9 +408,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Adds standard security response headers to every response."""
     async def dispatch(self, request: StarletteRequest, call_next):
         response = await call_next(request)
+        path = request.url.path
+        document_viewer = path == '/static/vendor/pdfjs-6.5.438/web/viewer.html'
         # Always-on hardening headers
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN" if document_viewer else "DENY")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         # HSTS only when actually served via HTTPS (Cloud Run sets X-Forwarded-Proto)
@@ -419,8 +421,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Conservative CSP that allows the CDNs the app already uses (FontAwesome, Chart.js, Google Fonts)
         # Tailwind is now built into /static/css/tailwind.css so we can drop the runtime CDN.
         # Skip for static files & API JSON to avoid breaking downloads / image previews.
-        path = request.url.path
-        if not path.startswith("/static") and not path.startswith("/api"):
+        if document_viewer:
+            response.headers.setdefault(
+                'Content-Security-Policy',
+                "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; "
+                "worker-src 'self' blob:; style-src 'self'; img-src 'self' blob: data:; "
+                "font-src 'self' data:; connect-src 'self' blob: data:; media-src blob:; "
+                "frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
+            )
+        elif not path.startswith("/static") and not path.startswith("/api"):
             response.headers.setdefault(
                 "Content-Security-Policy",
                 "default-src 'self'; "
@@ -430,7 +439,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "img-src 'self' data: https: blob:; "
                 "connect-src 'self' https:; "
                 "object-src 'none'; "
-                "frame-src 'none'; "
+                "frame-src 'self'; "
                 "frame-ancestors 'none'; "
                 "form-action 'self'; "
                 "base-uri 'self'; "

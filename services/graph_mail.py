@@ -10,6 +10,8 @@ import requests
 
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 MAX_IMPORT_BYTES = 50 * 1024 * 1024
+# Graph requires the sort field first in $filter; retain all message dates.
+ATTACHMENT_MESSAGE_FILTER = "receivedDateTime ge 0001-01-01T00:00:00Z and hasAttachments eq true"
 
 
 def _graph_url(url):
@@ -70,7 +72,7 @@ def collect_resume_mail(token, limit, *, include_attachment, classify_context):
     with requests.Session() as session:
         session.headers.update({"Authorization": f"Bearer {token}", "Accept": "application/json"})
         messages = _pages(session, "https://graph.microsoft.com/v1.0/me/messages", params={
-            "$filter": "hasAttachments eq true", "$top": min(limit, 100),
+            "$filter": ATTACHMENT_MESSAGE_FILTER, "$top": min(limit, 100),
             "$orderby": "receivedDateTime desc", "$select": "id,subject,from,receivedDateTime,body,hasAttachments"})
         for index, message in enumerate(messages):
             if index >= limit:

@@ -42,6 +42,25 @@ def test_graph_paginates_messages_and_attachments_and_reuses_inline_bytes():
     assert emails[0]["attachments"][0]["filename"] != emails[0]["attachments"][1]["filename"]
 
 
+def test_attachment_query_keeps_all_dates_and_satisfies_graph_sort_filter_rules():
+    session = MagicMock()
+    session.__enter__.return_value = session
+
+    def get(url, **kwargs):
+        params = kwargs['params']
+        # Emulate the Graph InefficientFilter rejection observed in production.
+        valid = (params['$orderby'] == 'receivedDateTime desc'
+                 and params['$filter'].startswith('receivedDateTime ge 0001-01-01T00:00:00Z and ')
+                 and params['$filter'].endswith('hasAttachments eq true'))
+        return result({'value': []}, 200 if valid else 400)
+
+    session.get.side_effect = get
+    with patch.object(graph.requests, 'Session', return_value=session):
+        assert graph.collect_resume_mail('fake', 3, include_attachment=lambda *_: True,
+                                         classify_context=lambda *_: True) == []
+    assert session.get.call_count == 1
+
+
 @pytest.mark.parametrize("url", ["https://evil.invalid/v1.0/me", "http://graph.microsoft.com/v1.0/me",
     "https://graph.microsoft.com.evil.invalid/v1.0/me", "https://user@graph.microsoft.com/v1.0/me"])
 def test_graph_rejects_untrusted_nextlink_before_sending_tokens(url):

@@ -5,6 +5,34 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.09.4 - 2026-11-09
+
+### Folder, Tag And Date End-To-End Verification
+
+- Fix the live Outlook `InefficientFilter` rejection with a shared, date-sort-safe
+  attachment query in the connected and older credential-based Graph paths.
+- Add real HTTP-to-storage/PostgreSQL/index tests for bulk and email ingestion,
+  folder/subfolder/tenant boundaries, tags, date cutoffs, cache isolation, queued
+  fallback and persisted result scope. Paid AI and external Graph responses are
+  fixtures in these isolated write tests.
+- Exercise real frontend scope controls through search submission, distinct
+  pending requests, unchanged earlier result scopes and empty-selection guards.
+- Correct CI to provide the vector extension and run all frontend suites.
+
+### Verification And Deployment
+
+- All 942 isolated PostgreSQL backend tests and 19 frontend suites passed.
+  Deployed `clean-20261109t174922z` with rollback material, preserving business
+  data, OAuth/outreach records and all 20 unrelated containers.
+- Post-deploy live mailbox read validated three attachments without importing
+  them. Across 132 read-only deployed search checks, 1,575 returned rows stayed
+  within their selected scope. No paid AI calls were added.
+- Offline tokenization, embeddings and top-ten rankings are unchanged. Runtime
+  advisory checks covered all 102 installed packages without known findings.
+- See `docs/FOLDER_TAG_E2E_2026-11-09.md` for exact coverage and limitations,
+  including unknown historical received dates and intentionally no live imports
+  or paid-AI accuracy evaluation.
+
 ## v2026.11.09.3 - 2026-11-09
 
 ### Folder And Tag Feedback

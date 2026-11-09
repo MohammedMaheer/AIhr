@@ -5817,8 +5817,9 @@ def scrape_outlook_attachments(email_address: str, password: str, limit: int = 1
         # subject/body does not contain "resume"/"cv" exactly, so classify
         # message context locally after we fetch the body.
         messages_url = f"https://graph.microsoft.com/v1.0/me/messages"
+        from services.graph_mail import ATTACHMENT_MESSAGE_FILTER
         params = {
-            '$filter': 'hasAttachments eq true',
+            '$filter': ATTACHMENT_MESSAGE_FILTER,
             '$top': limit,
             '$orderby': 'receivedDateTime desc',
             '$select': 'id,subject,from,receivedDateTime,body,hasAttachments'

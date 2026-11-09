@@ -814,7 +814,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                         <button type="button" data-open-connection-settings><i class="fas fa-link" aria-hidden="true"></i> Microsoft connection</button>
                                     </div>
 
-                                    <div>
+                                    <div id="email-password-field">
                                         <label for="email-password" class="block text-sm font-medium text-gray-700 mb-2">Email Password</label>
                                         <div class="relative">
                                             <input type="password" id="email-password" autocomplete="new-password" placeholder="Your email password or app password" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10">
@@ -822,8 +822,8 @@ document.addEventListener('DOMContentLoaded', function () {
                                                 <i class="fas fa-eye text-gray-400 hover:text-gray-600"></i>
                                             </button>
                                         </div>
-                                        <p class="text-xs text-gray-500 mt-1">For Gmail, use an <a href="https://support.google.com/accounts/answer/185833" target="_blank" class="text-blue-600 hover:underline">App Password</a> instead of your regular password</p>
                                     </div>
+                                    <p id="email-provider-help" role="status" class="text-xs text-gray-500 mt-1">Choose your email provider to see the connection requirements.</p>
 
                                     <div>
                                         <label for="email-limit" class="block text-sm font-medium text-gray-700 mb-2">Email Limit</label>
@@ -2527,7 +2527,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 candidateEmail = safeExtractCandidateData(analysisData, 'email', 'Not available');
                 candidateLocation = safeExtractCandidateData(analysisData, 'location', 'Not specified');
                 candidateRole = safeExtractCandidateData(analysisData, 'position_applied_for', 'Position');
-                experienceYears = safeExtractCandidateData(analysisData, 'experience_years', 'Not specified');
+                experienceYears = analysisData?.candidate_overview?.experience_years === 0 ? 0
+                    : safeExtractCandidateData(analysisData, 'experience_years', 'Not specified');
             } catch (e) {
                 console.error('Error extracting candidate data:', e);
                 candidateName = `Candidate ${index + 1}`;
@@ -2605,20 +2606,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 card.setAttribute('data-search-result-id', candidate.id);
             }
 
-            // Final safety check and debug logging
-            console.log('About to create HTML template with:', {
-                finalCandidateName,
-                candidateRole,
-                candidateLocation,
-                candidateEmail,
-                candidatePhone,
-                experienceYears,
-                score,
-                matchStatus,
-                aiSummary: aiSummary ? aiSummary.substring(0, 100) + '...' : 'None',
-                resumeHighlights: resumeHighlights.length
-            });
-
             const esc = window.escapeHtml || ((value) => {
                 const div = document.createElement('div');
                 div.textContent = value == null ? '' : String(value);
@@ -2636,7 +2623,15 @@ document.addEventListener('DOMContentLoaded', function () {
             const safeEmailValue = String(candidateEmail || '').trim();
             const canEmailCandidate = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(safeEmailValue);
             const candidateFilePath = candidate.file_path || '';
+            const matchedKeywords = Array.isArray(keywordCoverage.matched_keywords) ? keywordCoverage.matched_keywords : [];
+            const missingKeywords = Array.isArray(keywordCoverage.missing_keywords) ? keywordCoverage.missing_keywords : [];
+            const hasKeywordData = matchedKeywords.length + missingKeywords.length > 0;
             card.dataset.candidateName = finalCandidateName;
+            const experienceValue = String(experienceYears ?? '').trim();
+            const experienceLabel = /^\d+(?:\.\d+)?\+?$/.test(experienceValue)
+                ? `${experienceValue} ${Number(experienceValue) === 1 ? 'year' : 'years'} of experience`
+                : !experienceValue || experienceValue === 'Not specified' ? 'Experience not specified'
+                    : `${experienceValue} experience`;
 
             try {
                 card.innerHTML = `
@@ -2651,7 +2646,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <div class="professional-candidate-role">${esc(candidateRole)}</div>
                             <div class="professional-candidate-location">
                                 <i class="fas fa-map-marker-alt"></i>
-                                ${esc(candidateLocation)} &bull; ${esc(experienceYears)} experience
+                                ${esc(candidateLocation)} &bull; ${esc(experienceLabel)}
                             </div>
                             <div class="professional-contact-info">
                                 <div class="professional-contact-item">
@@ -2863,16 +2858,16 @@ document.addEventListener('DOMContentLoaded', function () {
                             <i class="fas fa-tags"></i>
                             Keywords Analysis
                         </h2>
-                        <div class="professional-keywords-overview">
+                        ${hasKeywordData ? `<div class="professional-keywords-overview">
                             <div class="professional-keywords-chart">
                                 <canvas id="keywordChart${index}" width="150" height="150"></canvas>
                             </div>
                             <div class="professional-keywords-details">
-                                ${keywordCoverage.matched_keywords && keywordCoverage.matched_keywords.length > 0 ? `
+                                ${matchedKeywords.length > 0 ? `
                                 <div class="professional-keyword-group matched">
-                                    <h4><i class="fas fa-check-circle"></i> Matched Keywords (${keywordCoverage.matched_keywords.length})</h4>
+                                    <h4><i class="fas fa-check-circle"></i> Matched Keywords (${matchedKeywords.length})</h4>
                                     <div class="professional-keyword-tags">
-                                        ${keywordCoverage.matched_keywords.map(keyword =>
+                                        ${matchedKeywords.map(keyword =>
                             `<span class="professional-keyword-tag matched">${esc(keyword)}</span>`
                         ).join('')}
                                     </div>
@@ -2883,11 +2878,11 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <p>No keywords were matched for this candidate.</p>
                                 </div>
                                 `}
-                                ${keywordCoverage.missing_keywords && keywordCoverage.missing_keywords.length > 0 ? `
+                                ${missingKeywords.length > 0 ? `
                                 <div class="professional-keyword-group missing">
-                                    <h4><i class="fas fa-exclamation-circle"></i> Missing Keywords (${keywordCoverage.missing_keywords.length})</h4>
+                                    <h4><i class="fas fa-exclamation-circle"></i> Missing Keywords (${missingKeywords.length})</h4>
                                     <div class="professional-keyword-tags">
-                                        ${keywordCoverage.missing_keywords.map(keyword =>
+                                        ${missingKeywords.map(keyword =>
                             `<span class="professional-keyword-tag missing">${esc(keyword)}</span>`
                         ).join('')}
                                     </div>
@@ -2895,12 +2890,12 @@ document.addEventListener('DOMContentLoaded', function () {
                                 ` : `
                                 <div class="professional-keyword-group missing">
                                     <h4><i class="fas fa-info-circle"></i> No Missing Keywords</h4>
-                                    <p>All keywords were matched or none were analyzed.</p>
+                                    <p>No missing keywords were reported in this analysis.</p>
                                 </div>
                                 `}
 
                             </div>
-                        </div>
+                        </div>` : '<p class="text-sm text-gray-600">Keyword details are unavailable for this result.</p>'}
                     </div>
 
                     <!-- Separator Line -->
@@ -3035,14 +3030,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 console.log('Card HTML successfully created and appended');
 
                 // Initialize keyword chart if we have keyword data
-                if (keywordCoverage.matched_keywords || keywordCoverage.missing_keywords) {
+                if (hasKeywordData) {
                     setTimeout(() => {
                         const canvas = card.querySelector('canvas');
                         if (canvas && card.isConnected && typeof Chart !== 'undefined') {
                             Chart.getChart(canvas)?.destroy();
                             const ctx = canvas.getContext('2d');
-                            const matched = keywordCoverage.matched_keywords ? keywordCoverage.matched_keywords.length : 0;
-                            const missing = keywordCoverage.missing_keywords ? keywordCoverage.missing_keywords.length : 0;
+                            const matched = matchedKeywords.length;
+                            const missing = missingKeywords.length;
 
                             new Chart(ctx, {
                                 type: 'doughnut',
@@ -4804,6 +4799,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const emailScrapeSection = document.getElementById('email-scrape-section');
 
         fileUploadTab.addEventListener('click', () => {
+            fileUploadTab.setAttribute('aria-pressed', 'true');
+            emailScrapeTab.setAttribute('aria-pressed', 'false');
             // Switch to file upload tab
             fileUploadTab.classList.add('bg-blue-600', 'text-white');
             fileUploadTab.classList.remove('bg-gray-200', 'text-gray-700');
@@ -4815,6 +4812,8 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         emailScrapeTab.addEventListener('click', () => {
+            fileUploadTab.setAttribute('aria-pressed', 'false');
+            emailScrapeTab.setAttribute('aria-pressed', 'true');
             // Switch to email scraping tab
             emailScrapeTab.classList.add('bg-blue-600', 'text-white');
             emailScrapeTab.classList.remove('bg-gray-200', 'text-gray-700');
@@ -4828,11 +4827,28 @@ document.addEventListener('DOMContentLoaded', function () {
         // Password visibility toggle
         const providerInput = document.getElementById('email-provider');
         const outlookRow = document.getElementById('outlook-connection-row');
+        const providerHelp = document.getElementById('email-provider-help');
+        let providerSequence = 0;
+        fileUploadTab.setAttribute('aria-pressed', 'true');
+        emailScrapeTab.setAttribute('aria-pressed', 'false');
         outlookRow.querySelector('button').addEventListener('click', () => document.getElementById('settings-link').click());
         providerInput.addEventListener('change', async () => {
+            const requestId = ++providerSequence;
             outlookRow.classList.toggle('hidden', providerInput.value !== 'outlook');
             document.querySelector('label[for="email-password"]').textContent =
                 providerInput.value === 'outlook' ? 'Email Password (optional)' : 'Email Password';
+            providerHelp.textContent = providerInput.value === 'gmail'
+                ? 'Use a Gmail App Password, not your regular Google password.'
+                : providerInput.value === 'outlook'
+                    ? 'Use your connected Microsoft mailbox. A password is only needed for a separately configured mailbox.'
+                    : 'Choose your email provider to see the connection requirements.';
+            if (providerInput.value === 'gmail') {
+                const helpLink = document.createElement('a');
+                helpLink.href = 'https://support.google.com/accounts/answer/185833';
+                helpLink.target = '_blank';helpLink.rel = 'noopener noreferrer';
+                helpLink.className = 'text-blue-600 hover:underline';
+                helpLink.textContent = ' Create an App Password';providerHelp.append(helpLink);
+            }
             if (providerInput.value !== 'outlook') return;
             const state = outlookRow.querySelector('[data-outlook-account-state]');
             state.textContent = 'Checking Microsoft connection...';
@@ -4840,14 +4856,21 @@ document.addEventListener('DOMContentLoaded', function () {
                 const response = await fetch('/api/integrations/status', {credentials:'same-origin'});
                 const data = await response.json();
                 if (!response.ok || !data.success) throw new Error('Status unavailable');
-                if (!outlookRow.isConnected || providerInput.value !== 'outlook') return;
+                if (!outlookRow.isConnected || providerInput.value !== 'outlook' || requestId !== providerSequence) return;
                 const account = data.microsoft || {};
                 state.textContent = account.connected ? (account.account_email || 'Account saved') +
                     (account.reconnect_required ? ' - Reconnect required' : '') : 'Microsoft not connected';
                 const address = document.getElementById('email-address');
                 if (!address.value && account.connected && account.account_email) address.value = account.account_email;
+                if (account.connected && !account.reconnect_required) {
+                    providerHelp.textContent = 'Your connected Microsoft account is used when no password is entered.';
+                } else if (account.reconnect_required) {
+                    providerHelp.textContent = 'Reconnect Microsoft in Settings before importing from your connected mailbox.';
+                } else {
+                    providerHelp.textContent = 'Connect Microsoft in Settings, or use credentials for a separately configured mailbox.';
+                }
             } catch (_) {
-                if (outlookRow.isConnected) state.textContent = 'Microsoft connection status unavailable';
+                if (outlookRow.isConnected && providerInput.value === 'outlook' && requestId === providerSequence) state.textContent = 'Microsoft connection status unavailable';
             }
         });
         const togglePasswordBtn = document.getElementById('toggle-password');
@@ -4869,8 +4892,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const startEmailScrapeBtn = document.getElementById('start-email-scrape');
 
         startEmailScrapeBtn.addEventListener('click', async () => {
+            if (startEmailScrapeBtn.disabled) return;
             const emailProvider = document.getElementById('email-provider').value;
-            const emailAddress = document.getElementById('email-address').value;
+            const addressInput = document.getElementById('email-address');
+            const emailAddress = addressInput.value.trim();
+            addressInput.value = emailAddress;
             const emailPassword = document.getElementById('email-password').value;
             const emailLimit = document.getElementById('email-limit').value;
             if (!document.getElementById('email-limit').reportValidity()) return;
@@ -4884,11 +4910,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (!emailAddress) {
                 showLimitNotification('Please enter your email address', 'error');
+                addressInput.focus();
                 return;
             }
+            if (!addressInput.reportValidity()) return;
 
             if (!emailPassword && emailProvider !== 'outlook') {
                 showLimitNotification('Please enter your email password', 'error');
+                passwordInput.focus();
                 return;
             }
 
@@ -4921,6 +4950,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
 
                 if (response.ok) {
+                    if (!startEmailScrapeBtn.isConnected) return;
                     const batchStats = result.batch_stats || {};
                     const emailStats = result.email_stats || {};
                     const totalAttachments =
@@ -4952,19 +4982,23 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     // Clear the form
                     document.getElementById('email-provider').value = '';
+                    providerInput.dispatchEvent(new Event('change'));
                     document.getElementById('email-address').value = '';
                     document.getElementById('email-password').value = '';
-                    document.getElementById('email-limit').value = String(Math.min(100, emailScanLimit));
+                    const limitInput = document.getElementById('email-limit');
+                    limitInput.value = limitInput.defaultValue;
 
                     // Update stats
                     const totalUploaded = document.getElementById('total-uploaded');
                     const successfulUploads = document.getElementById('successful-uploads');
+                    const failedUploads = document.getElementById('failed-uploads');
                     if (totalUploaded) {
                         totalUploaded.textContent = parseInt(totalUploaded.textContent || '0') + totalAttachments;
                     }
                     if (successfulUploads) {
                         successfulUploads.textContent = parseInt(successfulUploads.textContent || '0') + successfulCount;
                     }
+                    if (failedUploads) failedUploads.textContent = parseInt(failedUploads.textContent || '0') + failedCount;
 
                 } else {
                     const msg = (result && (result.detail || result.message)) ||
@@ -8492,8 +8526,8 @@ function showInterviewScheduleModal(candidateName, candidateEmail, context = {})
     window.RecruiterOutreach?.configureSchedule(modal);
 }
 
-function bindScheduleDialog(modal, label) {
-    const previous = document.activeElement;
+function bindScheduleDialog(modal, label, returnFocus = document.activeElement) {
+    const previous = returnFocus;
     const isGeneral = !!modal.querySelector('#gs-send-email');
     const invite = modal.querySelector(isGeneral ? '#gs-send-email' : '#interview-send-email');
     const position = modal.querySelector(isGeneral ? '#gs-position' : '#interview-position');

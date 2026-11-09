@@ -49,7 +49,7 @@ const server = http.createServer((request,response)=>{
         if(!fs.existsSync(target)||!fs.statSync(target).isFile())return json(response,{detail:'Not found'},404);
         const real=fs.realpathSync(target);
         if(!real.startsWith(staticRoot+path.sep))return json(response,{detail:'Not found'},404);
-        const type={'.js':'text/javascript','.mjs':'text/javascript','.wasm':'application/wasm','.css':'text/css','.png':'image/png','.svg':'image/svg+xml','.ftl':'text/plain','.json':'application/json'}[path.extname(real)]||'application/octet-stream';
+        const type={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.wasm':'application/wasm','.css':'text/css','.png':'image/png','.svg':'image/svg+xml','.ftl':'text/plain','.json':'application/json'}[path.extname(real)]||'application/octet-stream';
         response.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store'});return response.end(fs.readFileSync(real));
     }
     if(url.pathname==='/api/me')return json(response,{success:true,user});

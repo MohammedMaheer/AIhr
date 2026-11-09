@@ -6,7 +6,9 @@ async function setup(kind='pdf',fail=false){
     const dom=new JSDOM('<div id="app-shell"><main id="root"></main></div>',{url:'https://qa.invalid/',runScripts:'outside-only'});
     const w=dom.window,d=w.document,requests=[],revoked=[];
     w.escapeAttr=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    w.escapeHtml=w.escapeAttr;w.bindScheduleDialog=modal=>modal.setAttribute('role','dialog');
+    w.escapeHtml=w.escapeAttr;
+    const main=fs.readFileSync('static/js/main.js','utf8');
+    w.eval(main.slice(main.indexOf('function bindScheduleDialog('),main.indexOf('function closeInterviewModal()')));
     w.showNotification=()=>{throw new Error('Preview failures should be inline, not a blocking toast');};
     w.URL.createObjectURL=()=> 'blob:https://qa.invalid/fictional-document';w.URL.revokeObjectURL=url=>revoked.push(url);
     const original='Original full Unicode document: '+('Fictional candidate\n'.repeat(7000));
@@ -38,6 +40,8 @@ async function setup(kind='pdf',fail=false){
     d.querySelector('[data-mode="document"]').click();await flush();
     assert.equal(value.requests.filter(([url])=>url.endsWith('/document')).length,1,'Switching views must not reconvert the document');
     d.querySelector('[data-close]').click();await flush();assert.equal(value.revoked.length,1);
+    assert.equal(d.activeElement,d.querySelector('[data-preview]'),'Closing a preview must restore the opener after its asynchronous disabled state');
+    assert.equal(d.getElementById('app-shell').inert,false);
     value.dispose();await flush();value.dom.window.close();
     value=await setup('text');({w,d}=value);
     assert.equal(d.querySelector('[data-document] pre').textContent,value.original);

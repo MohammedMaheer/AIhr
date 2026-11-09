@@ -5,6 +5,37 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.09.2 - 2026-11-09
+
+### Visual Verification And Polish
+
+- Verified all eight workspace views in Chrome, with a 24-case responsive
+  route/overflow matrix at 320, 768 and 1440 pixels. Inspected sign-in, public
+  permission review, email composer, scheduling and administration dialogs.
+- Corrected provider-specific import guidance, malformed-address validation,
+  stale connection responses, duplicate submissions, reset states and failure
+  totals. Preserve Outlook credentials support and Gmail help.
+- Restore keyboard focus after asynchronous CV preview, improve active navigation
+  contrast and phone touch targets, compact mobile results and wrap the narrow
+  administration toolbar. Original top-left recruiter branding remains unchanged.
+- Display experience units correctly, preserve zero experience and replace empty
+  keyword charts with an honest unavailable state without changing saved scores.
+- Remove one candidate-PII debug dump and fix the local viewer fixture MIME type.
+
+### Verification
+
+- All 18 frontend suites and 926 isolated PostgreSQL backend tests passed.
+- Live PDF/DOCX pages and branded email-preview HTML rendered correctly. Local
+  fictional PDF/DOCX/DOC/scanned-PDF/TXT views, page/zoom controls, field validation,
+  provider choices, errors and keyboard focus were exercised without real sends.
+- Search prompts, criteria, scoring and AI provider configuration are unchanged.
+  Full paid-AI speed/accuracy, real delivery/calendar acceptance and cross-browser
+  load testing are not newly certified by this UI release.
+- Deployed `clean-20261109t144549z`; public asset hashes, tenant access controls,
+  document handlers and live narrow-screen administration passed. App/converter
+  healthy with no restarts, business records and 20 unrelated containers preserved,
+  rollback backup retained, and health checks produced zero paid AI calls.
+
 ## v2026.11.09.1 - 2026-11-09
 
 ### Fixed

@@ -55,7 +55,7 @@
                     '<div class="cv-preview-content workspace-dialog-body"><div data-document '+(supported?'':'hidden')+'><p data-document-status role="status" class="workspace-loading">Preparing document...</p><div data-document-error hidden><p role="alert"></p><button type="button" data-retry-document class="workspace-button"><i class="fas fa-redo" aria-hidden="true"></i>Try again</button></div></div><pre class="cv-preview-text" '+(supported?'hidden':'')+'></pre></div><footer><span class="workspace-muted">'+esc(type[0])+'</span>'+
                     (data.file_path?'<a class="workspace-button is-primary" href="/api/download-resume?file_path='+encodeURIComponent(data.file_path)+'"><i class="fas fa-download" aria-hidden="true"></i>Download original</a>':'')+'</footer></section>';
                 modal.querySelector('pre').textContent=data.text||'Text preview unavailable.';
-                document.body.append(modal);window.bindScheduleDialog(modal,'CV preview');
+                document.body.append(modal);window.bindScheduleDialog(modal,'CV preview',button);
                 dialog.querySelector('[data-close]').onclick=()=>dialog.remove();
                 dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.remove();});
                 if(supported){

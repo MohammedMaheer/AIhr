@@ -30,6 +30,8 @@ async function run(){
     for(const role of ['super_admin','tenant_admin','tenant_user']){
         const {dom,w,d,calls}=await boot(role);
         assert.equal(d.getElementById('main-content').dataset.workspacePage,'dashboard');
+        assert.equal(d.getElementById('dashboard-link').getAttribute('aria-current'),'page');
+        d.getElementById('skip-content').click();assert.equal(d.activeElement.id,'main-content');
         assert.equal(d.getElementById('administration-link').hidden,role==='tenant_user');
         assert.equal(d.getElementById('selected-count').textContent,'1');
         assert.equal(d.getElementById('activity-total-resumes').textContent,'4,191');

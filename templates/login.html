@@ -90,6 +90,15 @@
             transform: translateY(-50%);
             color: #6b7280;
         }
+        #password { padding-right: 52px; }
+        #togglePassword { width: 44px; justify-content: center; padding: 0; }
+        button:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+        .app-button:disabled { opacity: .6; cursor: wait; }
+        @media (prefers-reduced-motion: reduce) {
+            .login-container { animation: none; }
+            .app-button, .input-focus { transition: none; }
+            .app-button:hover { transform: none; }
+        }
     </style>
 </head>
 
@@ -125,7 +134,7 @@
                         <div class="icon-container">
                             <i class="fas fa-envelope text-gray-400"></i>
                         </div>
-                        <input type="email" id="email" name="email" required class="app-input"
+                        <input type="email" id="email" name="email" required autocomplete="username" autocapitalize="none" spellcheck="false" class="app-input"
                             placeholder="Enter your email">
                     </div>
                 </div>
@@ -139,7 +148,7 @@
                         <div class="icon-container">
                             <i class="fas fa-lock text-gray-400"></i>
                         </div>
-                        <input type="password" id="password" name="password" required class="app-input"
+                        <input type="password" id="password" name="password" required autocomplete="current-password" class="app-input"
                             placeholder="Enter your password">
                         <button type="button" id="togglePassword" aria-label="Show password" aria-pressed="false"
                             class="absolute inset-y-0 right-0 pr-3 flex items-center">

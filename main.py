@@ -11048,6 +11048,18 @@ async def get_resume_preview(upload_id: int, user: dict = Depends(require_auth))
     bucket, _ = get_company_resources(user)
     return await asyncio.to_thread(preview_upload, get_db_manager(), user, upload_id, bucket)
 
+
+@app.get('/api/resume-library/{upload_id}/document')
+@limiter.limit('20/minute')
+async def get_resume_document(upload_id: int, request: Request, user: dict = Depends(require_auth)):
+    from services.document_preview import render_upload
+    from fastapi.responses import Response
+    content, media_type = await asyncio.to_thread(
+        render_upload, get_db_manager(), user, upload_id, GCS_BUCKET_NAME, _get_storage_client)
+    return Response(content, media_type=media_type, headers={
+        'Cache-Control':'private, no-store', 'X-Content-Type-Options':'nosniff',
+        'Content-Disposition':'inline', 'Content-Security-Policy':"default-src 'none'; sandbox"})
+
 @app.post("/api/candidate-action")
 @limiter.limit("60/minute")
 async def save_candidate_action(

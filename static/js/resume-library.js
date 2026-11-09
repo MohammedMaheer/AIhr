@@ -47,15 +47,70 @@
                 const data=await read('/api/resume-library/'+id);
                 if(disposed||!root.isConnected||requestId!==previewSequence)return;
                 modal?.remove();modal=document.createElement('div');modal.dataset.libraryDialog='true';modal.className='workspace-overlay';
-                const type=fileType(data.file_name);
+                const type=fileType(data.file_name),dialog=modal;
+                const supported=['pdf','text'].includes(data.preview_kind);
                 modal.innerHTML='<section class="workspace-dialog cv-preview-dialog"><header><span class="workspace-file-icon '+type[2]+'"><i class="fas '+type[1]+'" aria-hidden="true"></i></span><h3>'+esc(data.file_name)+'</h3>'+
                     '<button type="button" data-close class="workspace-icon-button" aria-label="Close CV preview" title="Close preview"><i class="fas fa-times" aria-hidden="true"></i></button></header>'+
-                    '<pre class="workspace-dialog-body cv-preview-text"></pre><footer><span class="workspace-muted">'+esc(type[0])+'</span>'+
+                    (supported?'<div class="cv-preview-modes" role="group" aria-label="Preview format"><button type="button" data-mode="document" aria-pressed="true">Document</button><button type="button" data-mode="text" aria-pressed="false">Text</button></div>':'')+
+                    '<div class="cv-preview-content workspace-dialog-body"><div data-document '+(supported?'':'hidden')+'><p data-document-status role="status" class="workspace-loading">Preparing document...</p><div data-document-error hidden><p role="alert"></p><button type="button" data-retry-document class="workspace-button"><i class="fas fa-redo" aria-hidden="true"></i>Try again</button></div></div><pre class="cv-preview-text" '+(supported?'hidden':'')+'></pre></div><footer><span class="workspace-muted">'+esc(type[0])+'</span>'+
                     (data.file_path?'<a class="workspace-button is-primary" href="/api/download-resume?file_path='+encodeURIComponent(data.file_path)+'"><i class="fas fa-download" aria-hidden="true"></i>Download original</a>':'')+'</footer></section>';
                 modal.querySelector('pre').textContent=data.text||'Text preview unavailable.';
                 document.body.append(modal);window.bindScheduleDialog(modal,'CV preview');
-                modal.querySelector('[data-close]').onclick=()=>modal.remove();
-                modal.addEventListener('click',event=>{if(event.target===modal)modal.remove();});
+                dialog.querySelector('[data-close]').onclick=()=>dialog.remove();
+                dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.remove();});
+                if(supported){
+                    let controller,blobUrl,frame,loaded=false,busy=false;
+                    const content=dialog.querySelector('[data-document]'),text=dialog.querySelector('pre');
+                    const configureViewer=event=>{
+                        if(!frame||event.detail?.source!==frame.contentWindow||!dialog.isConnected)return;
+                        const options=event.detail.source.PDFViewerApplicationOptions;
+                        for(const [name,value] of Object.entries({disablePreferences:true,disableHistory:true,enableScripting:false,
+                            enableAltText:false,enableGuessAltText:false,enableAltTextModelDownload:false,enableNova:false,
+                            annotationEditorMode:-1,externalLinkTarget:2}))options.set(name,value);
+                    };
+                    document.addEventListener('webviewerloaded',configureViewer);
+                    const cleanup=new MutationObserver(()=>{
+                        if(dialog.isConnected)return;
+                        cleanup.disconnect();controller?.abort();
+                        if(blobUrl)URL.revokeObjectURL(blobUrl);
+                        document.removeEventListener('webviewerloaded',configureViewer);
+                    });
+                    cleanup.observe(document.body,{childList:true});
+                    async function loadDocument(){
+                        if(busy||loaded||!dialog.isConnected)return;
+                        busy=true;controller=new AbortController();
+                        const status=content.querySelector('[data-document-status]'),error=content.querySelector('[data-document-error]');
+                        status.hidden=false;error.hidden=true;
+                        const timeout=setTimeout(()=>controller.abort(),45000);
+                        try{
+                            const response=await fetch('/api/resume-library/'+id+'/document',{signal:controller.signal,credentials:'same-origin',cache:'no-store'});
+                            if(!response.ok){const failure=await response.json().catch(()=>({}));throw new Error(typeof failure.detail==='string'?failure.detail:'Document preview is unavailable. Try the text view or download the original.');}
+                            if(data.preview_kind==='text'){
+                                const value=await response.text();if(!dialog.isConnected)return;
+                                const original=document.createElement('pre');original.className='cv-preview-text';original.textContent=value;content.append(original);
+                            }else{
+                                const blob=await response.blob();if(!dialog.isConnected)return;
+                                if(blob.size>32*1024*1024||!response.headers.get('content-type')?.startsWith('application/pdf'))throw new Error('The document could not be previewed. Try the text view or download the original.');
+                                blobUrl=URL.createObjectURL(blob);
+                                frame=document.createElement('iframe');frame.className='cv-document-frame';frame.title='Document preview: '+data.file_name;
+                                frame.setAttribute('sandbox','allow-scripts allow-same-origin allow-downloads allow-modals');frame.referrerPolicy='no-referrer';
+                                frame.src='/static/vendor/pdfjs-6.5.438/web/viewer.html?file='+encodeURIComponent(blobUrl)+'#zoom=page-width';content.append(frame);
+                            }
+                            loaded=true;status.hidden=true;
+                        }catch(failure){
+                            if(!dialog.isConnected)return;
+                            status.hidden=true;error.hidden=false;
+                            error.querySelector('p').textContent=failure.name==='AbortError'?'The preview took too long. Try again, use the text view or download the original.':failure.message;
+                        }finally{clearTimeout(timeout);busy=false;}
+                    }
+                    dialog.querySelectorAll('[data-mode]').forEach(button=>button.onclick=()=>{
+                        const documentMode=button.dataset.mode==='document';content.hidden=!documentMode;text.hidden=documentMode;
+                        dialog.querySelectorAll('[data-mode]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
+                        if(documentMode)loadDocument();
+                    });
+                    dialog.querySelector('[data-retry-document]').onclick=loadDocument;
+                    loadDocument();
+                }
             }catch(error){if(!disposed&&requestId===previewSequence)window.showNotification?.(error.message,'error');}
             finally{button.disabled=false;button.removeAttribute('aria-busy');if(icon)icon.className=originalIcon;}
         }

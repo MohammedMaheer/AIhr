@@ -1,0 +1,23 @@
+services:
+  smarthr-preview:
+    build: /opt/smarthr/preview
+    image: smarthr-preview:local
+    container_name: smarthr-preview
+    restart: unless-stopped
+    network_mode: none
+    read_only: true
+    user: "999:999"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1.0
+    mem_limit: 768m
+    pids_limit: 128
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777
+    volumes:
+      - /opt/smarthr/preview-socket:/run/preview
+  smarthr-app:
+    environment:
+      DOCUMENT_PREVIEW_SOCKET: /run/preview/renderer.sock
+    volumes:
+      - /opt/smarthr/preview-socket:/run/preview:ro

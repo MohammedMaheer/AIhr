@@ -1,0 +1,116 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const {JSDOM} = require('jsdom');
+const source = fs.readFileSync('static/js/main.js', 'utf8');
+const flush = () => new Promise(resolve => setImmediate(resolve));
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const response = data => ({ok:true, json:async () => data});
+function setup() {
+    const dom = new JSDOM('<div id="app-shell"><button id="origin">Open</button><main id="main-content" tabindex="-1"></main></div>', {url:'https://qa.invalid/', runScripts:'outside-only'});
+    const w=dom.window, d=w.document;
+    w.fetch=async()=>response({}); w.Request=globalThis.Request; w.Headers=globalThis.Headers;
+    w.eval(fs.readFileSync('static/js/security.js','utf8'));
+    w.showNotification=()=>{}; w.console.error=()=>{}; w.setActiveLink=()=>{}; w.loadPage=()=>{};
+    w.currentUser={id:7,full_name:'Fictional Recruiter',company:{company_name:'Fixture Company'}};
+    const start=source.indexOf('    const pages = {');
+    w.eval(source.slice(source.indexOf('    // Search history storage'),start)+source.slice(start,source.indexOf('\n    };',start)+7)+';window.pages=pages;');
+    w.eval(source.slice(source.indexOf('function localDateInputValue('),source.indexOf('function setupResponsiveNavigation(')));
+    w.eval(source.slice(source.indexOf('function showInterviewScheduleModal('),source.indexOf('async function saveInterviewSchedule(')));
+    return {dom,w,d,root:d.getElementById('main-content')};
+}
+async function reports() {
+    const {dom,w,d,root}=setup(); root.innerHTML=w.pages.history;
+    w.eval('const searchResumesLink=null;'+source.slice(source.indexOf('    function initializeHistoryPage()'),source.indexOf('    // Make loadSavedSearch available')));
+    assert.equal((source.match(/function renderHistoryTableRows\(historyData\)/g)||[]).length,1);
+    const malicious='<img src=x onerror=alert(1)> "quoted"';
+    const row={id:1,search_query:malicious,job_title:'<svg onload=alert(1)>',actual_results:0,result_count:9,search_timestamp:'invalid',top_results:[{name:malicious,score:'<img>'}]};
+    w.fetch=async()=>response({success:true,history:[row],total:55,page:1,page_size:25});
+    w.initializeHistoryPage(); await flush();
+    assert.equal(root.querySelectorAll('img,svg,script,[onerror],[onload]').length,0);
+    assert.equal(root.querySelector('.history-row').dataset.query,malicious);
+    assert.match(root.querySelector('.history-count').textContent,/0/);
+    assert(!root.querySelector('.history-count').textContent.includes('9'));
+    assert(root.textContent.includes('Date unavailable'));
+    assert.equal(d.getElementById('history-table-body').getAttribute('aria-busy'),'false');
+    const input=d.getElementById('history-search');input.value='<script>';
+    input.dispatchEvent(new w.Event('input'));await pause(170);
+    assert.equal(root.querySelectorAll('script').length,0);
+    assert.match(d.getElementById('history-pagination').textContent,/0 matches on this page/);
+    input.value='';input.dispatchEvent(new w.Event('input'));await pause(170);
+    const pending=[];w.fetch=()=>new Promise(resolve=>pending.push(resolve));
+    w.loadSearchHistoryFromDB(1,25); w.loadSearchHistoryFromDB(2,25);
+    assert.equal(d.getElementById('history-next-page').disabled,true);
+    pending[1](response({success:true,history:[{...row,id:2,search_query:'Newest'}],total:55,page:2,page_size:25}));await flush();
+    pending[0](response({success:true,history:[row],total:55,page:1,page_size:25}));await flush();
+    assert.equal(root.querySelector('.history-row').dataset.query,'Newest');
+    const requested=[];w.fetch=async url=>{requested.push(url);return response({success:true,history:[row],total:25,page:url.includes('page=2&')?2:1,page_size:25});};
+    await w.loadSearchHistoryFromDB(2,25);
+    assert.equal(requested.length,2,'Deleting the final page must request the last valid page');
+    assert.equal(w.__historyPageState.page,1);
+    w.fetch=async()=>response({success:false,history:[]});await w.loadSearchHistoryFromDB(1,25);
+    assert(root.textContent.includes('Failed to load search history'));
+    assert(root.querySelector('[data-history-retry]'));
+    assert(!root.textContent.includes('No search history yet'));
+    w.fetch=async()=>response({success:true,history:[row],total:1,page:1,page_size:25});await w.loadSearchHistoryFromDB(1,25);
+    let deletes=0;w.fetch=async(url,options={})=>{if(options.method==='DELETE'){deletes++;return response({success:true,deleted:1});}return response({success:true,history:[],total:0});};
+    d.getElementById('clear-history').click();await flush();
+    assert(d.querySelector('[data-history-confirm]'));
+    assert.equal(deletes,0);d.querySelector('[data-history-confirm] [data-keep]').click();await flush();
+    assert.equal(deletes,0);assert.equal(d.getElementById('app-shell').inert,false);
+    d.getElementById('clear-history').click();await flush();d.querySelector('[data-history-confirm] [data-delete]').click();await flush();
+    assert.equal(deletes,1);assert.equal(w.__historyPageState.total,0);
+    assert(d.getElementById('history-pagination').classList.contains('hidden'));
+    let complete;w.fetch=()=>new Promise(resolve=>{complete=resolve;});w.loadSearchHistoryFromDB(1,25);
+    root.innerHTML=w.pages.history;const replacement=d.getElementById('history-table-body');replacement.textContent='Replacement view';
+    complete(response({success:true,history:[row],total:1}));await flush();
+    assert.equal(replacement.textContent,'Replacement view');
+    dom.window.close();
+}
+async function jobBuilder() {
+    const {dom,w,d,root}=setup();root.innerHTML=w.pages.jdBuilder;
+    let calls=0;w.fetch=async()=>{calls++;return response({});};
+    const errors=[];w.addEventListener('error',event=>errors.push(event.error));
+    w.eval(source.slice(source.indexOf('function initializeJDBuilderPage()'),source.indexOf('// Settings Page Initialization'))+';initializeJDBuilderPage();');
+    const skill=d.getElementById('jd-skill-input');skill.value='Python "advanced"';skill.dispatchEvent(new w.KeyboardEvent('keypress',{key:'Enter',bubbles:true}));
+    assert.equal(errors.length,0,'Removed statistics widgets must not break adding skills');
+    const remove=d.querySelector('.js-remove-skill');assert.equal(remove.getAttribute('aria-label'),'Remove Python "advanced" skill');
+    remove.click();assert.equal(d.querySelector('.js-remove-skill'),null);assert.equal(d.activeElement,skill);
+    d.getElementById('jd-job-title').value='   ';d.getElementById('jd-generate-btn').click();await flush();
+    assert.equal(calls,0,'Whitespace-only titles must not call AI');assert.equal(d.activeElement.id,'jd-job-title');
+    root.innerHTML=w.pages.settings;
+    assert.equal(d.getElementById('display-name').labels.length,1);
+    assert.equal(d.getElementById('email-address').labels.length,1);
+    dom.window.close();
+}
+async function scheduling() {
+    const {dom,w,d}=setup();
+    w.eval(source.slice(source.indexOf('async function submitGeneralScheduleForm('),source.indexOf('function showInterviewScheduleModal(')));
+    w.eval(source.slice(source.indexOf('async function saveInterviewSchedule('),source.indexOf('// GLOBAL HANDLER SAFETY NET')));
+    w.eval(source.slice(source.indexOf('function openGeneralScheduleModal('),source.indexOf('async function submitGeneralScheduleForm(')));
+    w.openGeneralScheduleModal('Fictional Candidate','candidate@example.invalid');
+    let form=d.getElementById('general-schedule-form');assert(form.querySelector('.schedule-form-body'));
+    assert(form.querySelector('.schedule-dialog-footer button[type="submit"]'));
+    form.dataset.submitting='true';w.closeGeneralScheduleModal();assert(form.isConnected);
+    form.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert(form.isConnected);
+    delete form.dataset.submitting;w.closeGeneralScheduleModal();await flush();assert(!form.isConnected);
+    w.showInterviewScheduleModal('Fictional Candidate','candidate@example.invalid',{});
+    form=d.getElementById('interview-form');w.showInterviewScheduleModal('Duplicate','other@example.invalid',{});
+    assert.equal(d.querySelectorAll('#interview-form').length,1);
+    form.dataset.submitting='true';w.closeInterviewModal();assert(form.isConnected);
+    delete form.dataset.submitting;w.closeInterviewModal();await flush();assert(!form.isConnected);
+    assert.equal(d.getElementById('app-shell').inert,false);
+    for(const kind of ['general','candidate']) {
+        if(kind==='general')w.openGeneralScheduleModal('Fictional Candidate','candidate@example.invalid');
+        else w.showInterviewScheduleModal('Fictional Candidate','candidate@example.invalid',{position:'Fictional Engineer'});
+        form=d.getElementById(kind==='general'?'general-schedule-form':'interview-form');
+        let complete;w.fetch=()=>new Promise(resolve=>{complete=resolve;});
+        const event={preventDefault(){},target:form};
+        const pending=kind==='general'?w.submitGeneralScheduleForm(event):w.saveInterviewSchedule(event,'Fictional Candidate','candidate@example.invalid');
+        assert.equal(form.dataset.submitting,'true');
+        form.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert(form.isConnected);
+        complete(response({success:true}));await pending;await flush();
+        assert(!form.isConnected,'A confirmed schedule must close after releasing the pending guard');
+    }
+    assert.equal(d.getElementById('app-shell').inert,false);dom.window.close();
+}
+(async()=>{await reports();await jobBuilder();await scheduling();console.log('UI audit passed: escaped report text, honest filters/errors, request races, page recovery, confirmed deletion, JD skills/blank titles, guarded schedule dialogs and focus restoration.');})().catch(error=>{console.error(error);process.exitCode=1;});

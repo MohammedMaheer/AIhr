@@ -5,6 +5,51 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.09.0 - 2026-11-09
+
+### Added And Fixed
+
+- Format-aware CV previews: original PDFs/scans, privately converted DOC/DOCX and
+  complete original TXT content, with a separate extracted-text fallback.
+- Self-hosted, lazy PDF.js viewer with page/zoom/search controls and document
+  scripting/AI model downloads disabled. Isolated, network-disabled Word renderer
+  uses bounded resources, deadlines and a short authorization-checked memory cache.
+- Escaped report rendering, stale-response protection, honest filter/error states,
+  valid-page recovery and accessible destructive-action confirmation.
+- Compact mobile dashboard/reports/upload metrics, reachable scheduling actions,
+  notification/navigation layering and cleaner settings/outreach layouts.
+- Fixed JD skill-input exceptions and whitespace-only submissions; improved
+  control labels, keyboard navigation, sign-in fields and reduced-motion support.
+- Preserved the original recruiter logo, CVs, recruitment records and search scoring.
+
+### Verification And Deployment
+
+- 924 backend tests passed with no skips in an isolated PostgreSQL restore; all
+  17 frontend DOM suites passed. Eight workspace views passed the responsive
+  route/overflow matrix at 390, 768 and 1440 pixels before the preview extension.
+- Real isolated DOC/DOCX conversion retained two-page fictional documents and
+  original hashes; scanned PDF retained both pages. After deployment, read-only
+  handlers with injected identities returned available PDF/DOCX/DOC/TXT previews.
+  Anonymous access and cross-tenant access were rejected. Public viewer asset
+  hashes and JavaScript/WASM MIME types passed.
+- 102 runtime packages passed advisory scanning; the proposed Git tree passed the
+  secret scan. Offline embeddings/top-ten rankings remained identical for 105
+  fixtures and 3,913 tenant vectors. No paid AI calls or CV reindexing were performed.
+- Deployed app `clean-20261109t012232z` plus the isolated preview worker. Both are
+  healthy with zero restarts. Rollback/database backup exists; business records,
+  saved credentials, outreach and all 20 unrelated VPS containers were preserved.
+  Health checks still skip AI probes and added no AI calls.
+
+### Remaining Limitations
+
+- Final format-aware preview browser visuals were not verified because browser
+  control was disabled; the user explicitly requested deployment anyway.
+- Eight sampled older PDF records have missing originals. Text fallback cannot
+  reconstruct original page layout; formatted previews need source restoration.
+- Damaged/encrypted Word documents and substituted fonts can limit conversion.
+  Existing missing vectors, historical-date gaps, hosted-CI billing restrictions
+  and unverified offsite recovery remain. See `docs/UI_AUDIT_2026-11-09.md`.
+
 ## v2026.11.06.3 - 2026-11-06
 
 ### Added And Fixed

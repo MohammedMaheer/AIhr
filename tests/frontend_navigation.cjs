@@ -59,7 +59,7 @@ assert.equal(backdrop.hidden, true);
 assert(source.includes('for="email-address"'));
 assert(source.includes('for="jd-job-title"'));
 assert(source.includes('aria-label="Number of candidates"'));
-assert(source.includes('aria-label="Search reports"'));
+assert(source.includes('aria-label="Filter reports on this page"'));
 assert(source.includes('autocomplete="new-password"'));
 const css = fs.readFileSync('static/css/style.css', 'utf8');
 assert(css.includes('#results-area.opacity-0, #bottom-chat-container.opacity-0 { visibility: hidden; }'));

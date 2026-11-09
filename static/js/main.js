@@ -129,6 +129,7 @@ function setupResponsiveNavigation() {
 
 document.addEventListener('DOMContentLoaded', function () {
     setupResponsiveNavigation();
+    document.getElementById('skip-content')?.addEventListener('click', () => document.getElementById('main-content')?.focus());
     // Check authentication first
     const authReady = checkAuthAndLoadUser();
 
@@ -413,7 +414,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     
                     <!-- Header Section -->
                     <div class="mb-6">
-                        <div class="flex items-center justify-between">
+                        <div class="dashboard-heading flex items-center justify-between">
                             <div>
                                 <h2 class="text-2xl font-bold text-gray-900">My Recruitment Dashboard</h2>
                                 <p class="mt-1 text-gray-600 text-sm">Track candidates and manage your recruitment pipeline</p>
@@ -428,7 +429,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     </div>
 
                     <!-- Candidate Status Cards -->
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                    <div class="dashboard-status-grid grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                         <!-- Card Example (repeat for each status) -->
                         <div role="button" tabindex="0" onclick="openCandidatesByStatus('selected')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openCandidatesByStatus('selected');}" class="cursor-pointer bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md hover:border-emerald-300 hover:-translate-y-0.5 transition-all duration-200 flex flex-col items-center justify-center min-h-[180px]">
                             <div class="flex flex-col items-center mb-3">
@@ -517,9 +518,9 @@ document.addEventListener('DOMContentLoaded', function () {
                         <!-- Calendar & Schedule -->
                         <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
                             <div class="flex items-center justify-between mb-6">
-                                <h3 class="text-lg font-semibold text-gray-900">📅 Schedule</h3>
+                                <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-calendar-alt mr-2" aria-hidden="true"></i>Schedule</h3>
                                 <div class="flex items-center gap-2"><button type="button" onclick="InterviewManager.list()" aria-label="View schedule history" title="View schedule history" class="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"><i class="fas fa-list" aria-hidden="true"></i></button>
-                                <button type="button" onclick="openGeneralScheduleModal()" title="Add a new scheduled item" class="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:text-white hover:bg-blue-600 transition-colors">
+                                <button type="button" onclick="openGeneralScheduleModal()" aria-label="Add to schedule" title="Add to schedule" class="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:text-white hover:bg-blue-600 transition-colors">
                                     <i class="fas fa-plus"></i>
                                 </button></div>
                             </div>
@@ -666,7 +667,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             </div>
                             <div class="flex items-center space-x-3">
                                 <div class="relative">
-                                    <input type="text" id="history-search" aria-label="Search reports" placeholder="Search history..."
+                                    <input type="search" id="history-search" aria-label="Filter reports on this page" placeholder="Filter this page..."
                                            class="w-64 px-3 py-2 pl-10 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                                     <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
                                 </div>
@@ -679,7 +680,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     
                     <div class="history-table-scroll bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" role="region" aria-label="Search reports table" tabindex="0">
                         <!-- Table Header -->
-                        <div class="bg-gray-50 border-b border-gray-200 px-6 py-3">
+                        <div class="history-column-headings bg-gray-50 border-b border-gray-200 px-6 py-3" aria-hidden="true">
                             <div class="grid grid-cols-12 gap-4 items-center text-xs font-medium text-gray-600 uppercase tracking-wide">
                                 <div class="col-span-4">Job Description</div>
                                 <div class="col-span-2">Date & Time</div>
@@ -690,7 +691,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         </div>
                         
                         <!-- Table Body -->
-                        <div id="history-table-body" class="divide-y divide-gray-200">
+                        <div id="history-table-body" class="divide-y divide-gray-200" aria-busy="true">
                         </div>
                         <!-- Pagination Footer -->
                         <div id="history-pagination" class="hidden px-6 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between text-sm text-gray-600">
@@ -709,7 +710,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     </div>
 
                     <!-- Upload Stats -->
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div class="upload-stats-grid grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                         <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
                             <div class="flex items-center">
                                 <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
@@ -896,6 +897,7 @@ document.addEventListener('DOMContentLoaded', function () {
         `,
         jdBuilder: `
             <div id="jd-builder-page" class="p-4 h-full overflow-y-auto bg-gray-50">
+                <h2 class="text-2xl font-bold text-gray-900 mb-6">Job Description Builder</h2>
                 <div class="max-w-7xl mx-auto">
                     <!-- Main Content -->
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1040,8 +1042,8 @@ document.addEventListener('DOMContentLoaded', function () {
             <div class="p-4 h-full overflow-y-auto bg-gray-50">
                 <div class="max-w-4xl mx-auto">
                     <div class="mb-6">
-                        <h2 class="text-2xl font-bold text-gray-900">Settings & User Management</h2>
-                        <p class="mt-1 text-gray-600 text-sm">Manage your preferences and users</p>
+                        <h2 class="text-2xl font-bold text-gray-900">Settings</h2>
+                        <p class="mt-1 text-gray-600 text-sm">Manage connected accounts and company details</p>
                     </div>
 
                     <section id="recruiter-integrations" class="recruiter-integrations" aria-labelledby="connections-title">
@@ -1068,7 +1070,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         <a href="/microsoft-approval" target="_blank" rel="noopener noreferrer">Microsoft administrator review</a>
                     </section>
                     
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="settings-content-grid grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <!-- Permission-scoped administration shortcut -->
                         <div id="user-management-section" class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
                             <div class="flex items-center justify-between mb-4">
@@ -1098,11 +1100,11 @@ document.addEventListener('DOMContentLoaded', function () {
                             <h3 class="text-lg font-semibold text-gray-900 mb-4">Account Settings</h3>
                             <div class="space-y-4">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Display Name</label>
+                                    <label for="display-name" class="block text-sm font-medium text-gray-700 mb-2">Display Name</label>
                                     <input type="text" id="display-name" class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700" placeholder="Your display name" readonly>
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                                    <label for="email-address" class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
                                     <input type="email" id="email-address" class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700" placeholder="your.email@company.com" readonly>
                                 </div>
                                 <p class="text-xs text-gray-500">
@@ -1155,6 +1157,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const titles = {
             dashboard: { title: 'Dashboard', desc: 'Overview & Analytics' },
             searchResumes: { title: 'Search Resumes', desc: 'Find the perfect candidates with AI assistance' },
+            resumeLibrary: { title: 'CV Library' },
+            administration: { title: 'Administration' },
             jdBuilder: { title: 'JD Builder', desc: 'Create professional job descriptions with AI assistance' },
             vectorSearch: { title: 'Vector Search Test', desc: 'Test the Google Cloud vector store directly' },
             history: { title: 'Search History', desc: 'Review and re-run your previous searches' },
@@ -1162,8 +1166,7 @@ document.addEventListener('DOMContentLoaded', function () {
             settings: { title: 'Settings', desc: 'Customize your preferences' }
         };
 
-        // document.getElementById('page-title').innerText = titles[page].title;
-        // document.querySelector('#page-title + p').innerText = titles[page].desc;
+        document.title = (titles[page]?.title || 'Workspace') + ' | AI Agent Recruiter';
 
         if (page === 'searchResumes') {
             // Add small delay to ensure DOM is ready
@@ -3547,9 +3550,18 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     async function loadSearchHistoryFromDB(page, pageSize) {
+        const root = document.getElementById('history-table-body');
+        if (!root) return;
         const state = window.__historyPageState = window.__historyPageState || { page: 1, pageSize: 25, total: 0 };
+        const request = state.request = (state.request || 0) + 1;
         if (typeof page === 'number' && page >= 1) state.page = page;
         if (typeof pageSize === 'number' && pageSize >= 1) state.pageSize = pageSize;
+        const current = () => root.isConnected && document.getElementById('history-table-body') === root
+            && window.__historyPageState === state && state.request === request;
+        root.setAttribute('aria-busy', 'true');
+        const clear = document.getElementById('clear-history');
+        if (clear) clear.disabled = true;
+        document.querySelectorAll('#history-pagination button,#history-pagination select').forEach(field => field.disabled = true);
         try {
             const qs = `?page=${encodeURIComponent(state.page)}&page_size=${encodeURIComponent(state.pageSize)}`;
             const response = await fetch(`/api/search-history${qs}`, {
@@ -3566,21 +3578,20 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             const data = await response.json();
-
+            if (!current()) return;
             if (data.success && Array.isArray(data.history)) {
                 state.total = Number.isFinite(data.total) ? data.total : data.history.length;
                 state.page = data.page || state.page;
                 state.pageSize = data.page_size || state.pageSize;
+                const lastPage = Math.max(1, Math.ceil(state.total / state.pageSize));
+                if (state.page > lastPage) return loadSearchHistoryFromDB(lastPage, state.pageSize);
                 displaySearchHistory(data.history);
                 renderHistoryPagination();
             } else {
-                console.error('Search history response indicates failure:', data);
-                // Show empty state
-                state.total = 0;
-                displaySearchHistory([]);
-                renderHistoryPagination();
+                throw new Error('Invalid search history response');
             }
         } catch (error) {
+            if (!current()) return;
             console.error('Error loading search history:', error);
             // Show empty state with error message
             const historyTableBody = document.getElementById('history-table-body');
@@ -3591,13 +3602,20 @@ document.addEventListener('DOMContentLoaded', function () {
                             <i class="fas fa-exclamation-triangle text-red-500 text-lg"></i>
                         </div>
                         <h3 class="text-lg font-medium text-gray-900 mb-2">Failed to load search history</h3>
-                        <p class="text-gray-600 text-sm mb-4">There was an error loading your search history. Please try refreshing the page.</p>
-                        <button onclick="location.reload()" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+                        <p class="text-gray-600 text-sm mb-4">Your saved reports are temporarily unavailable.</p>
+                        <button type="button" data-history-retry class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
                             <i class="fas fa-redo mr-2"></i>
-                            Refresh Page
+                            Retry
                         </button>
                     </div>
                 `;
+                root.querySelector('[data-history-retry]').addEventListener('click', () => loadSearchHistoryFromDB(state.page, state.pageSize));
+                document.getElementById('history-pagination')?.classList.add('hidden');
+            }
+        } finally {
+            if (current()) {
+                root.setAttribute('aria-busy', 'false');
+                if (clear) clear.disabled = !state.total;
             }
         }
     }
@@ -3610,119 +3628,12 @@ document.addEventListener('DOMContentLoaded', function () {
         window.originalHistoryData = historyData;
 
         // Render the table rows
-        renderHistoryTableRows(historyData);
+        filterHistoryData(document.getElementById('history-search')?.value.trim().toLowerCase() || '');
 
         // Initialize search functionality (only once)
         initializeHistorySearch();
     }
 
-    function renderHistoryTableRows(historyData) {
-        const historyTableBody = document.getElementById('history-table-body');
-        if (!historyTableBody) return;
-
-        if (historyData.length === 0) {
-            historyTableBody.innerHTML = `
-                <div class="col-span-12 text-center py-12">
-                    <div class="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <i class="fas fa-history text-gray-400 text-lg"></i>
-                    </div>
-                    <h3 class="text-lg font-medium text-gray-900 mb-2">No search history yet</h3>
-                    <p class="text-gray-600 text-sm mb-4">Start searching for candidates to build your search history</p>
-                    <button id="start-searching" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
-                        <i class="fas fa-search mr-2"></i>
-                        Start Searching
-                    </button>
-                </div>
-            `;
-
-            // Re-add event listener for start searching button
-            const startSearchingBtn = document.getElementById('start-searching');
-            if (startSearchingBtn) {
-                startSearchingBtn.addEventListener('click', () => {
-                    setActiveLink(searchResumesLink);
-                    loadPage('searchResumes');
-                });
-            }
-        } else {
-            historyTableBody.innerHTML = historyData.map((search, index) => {
-                const searchDate = new Date(search.search_timestamp || search.timestamp);
-                const truncatedQuery = truncateText(search.search_query || search.query, 60);
-                const candidatesCount = search.actual_results || search.result_count || 0;
-
-                return `
-                    <div class="px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer history-row" data-search-id="${search.id}" data-query="${search.search_query || search.query}">
-                        <div class="grid grid-cols-12 gap-4 items-center">
-                            <!-- Job Description -->
-                            <div class="col-span-4">
-                                <div class="text-sm font-medium text-gray-900" title="${search.search_query || search.query}">
-                                    ${truncatedQuery}
-                                </div>
-                                ${search.job_title ? `<div class="text-xs text-gray-500 mt-1">${search.job_title}</div>` : ''}
-                            </div>
-                            
-                            <!-- Date & Time -->
-                            <div class="col-span-2">
-                                <div class="text-sm text-gray-900">${formatDate(searchDate)}</div>
-                                <div class="text-xs text-gray-500">${formatTime(searchDate)}</div>
-                            </div>
-                            
-                            <!-- Candidates Count -->
-                            <div class="col-span-2">
-                                <div class="flex items-center">
-                                    <span class="text-sm font-medium text-gray-900">${candidatesCount}</span>
-                                    <span class="text-xs text-gray-500 ml-1">${candidatesCount === 1 ? 'candidate' : 'candidates'} found</span>
-                                </div>
-                            </div>
-                            
-                            <!-- Top Results Preview -->
-                            <div class="col-span-3">
-                                <div class="space-y-1">
-                                    ${search.top_results && search.top_results.length > 0 ?
-                        search.top_results.slice(0, 3).map(result => `
-                                            <div class="flex items-center justify-between bg-gray-50 rounded px-2 py-1">
-                                                <div class="flex items-center space-x-2">
-                                                    <div class="w-4 h-4 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                                                        <span class="text-white font-bold text-xs">${result.name ? result.name.charAt(0).toUpperCase() : '?'}</span>
-                                                    </div>
-                                                    <span class="text-xs font-medium text-gray-700 truncate max-w-[80px]" title="${result.name || 'Unknown'}">
-                                                        ${truncateText(result.name || 'Unknown', 12)}
-                                                    </span>
-                                                </div>
-                                                <span class="text-xs font-bold text-green-600">${result.score || 0}%</span>
-                                            </div>
-                                        `).join('') :
-                        '<span class="text-xs text-gray-400">No preview available</span>'
-                    }
-                                    ${search.top_results && search.top_results.length > 3 ?
-                        `<div class="text-xs text-gray-500 text-center">+${search.top_results.length - 3} more candidates</div>` : ''
-                    }
-                                </div>
-                            </div>
-                            
-                            <!-- Actions -->
-                            <div class="col-span-1 text-center">
-                                <div class="flex items-center justify-center space-x-1">
-                                    <button class="view-search p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" 
-                                            data-search-id="${search.id}" data-query="${search.search_query || search.query}"
-                                            title="View Results" aria-label="View Results">
-                                        <i class="fas fa-eye text-xs"></i>
-                                    </button>
-                                    <button class="delete-search p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" 
-                                            data-search-id="${search.id}"
-                                            title="Delete Search" aria-label="Delete Search">
-                                        <i class="fas fa-trash text-xs"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            // Re-attach event listeners after rendering
-            attachHistoryEventListeners();
-        }
-    }
 
     function renderHistoryPagination() {
         const container = document.getElementById('history-pagination');
@@ -3748,10 +3659,10 @@ document.addEventListener('DOMContentLoaded', function () {
         const btnDisabled = 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed';
 
         container.classList.remove('hidden');
+        const filtering = !!document.getElementById('history-search')?.value.trim();
         container.innerHTML = `
-            <div>
-                Showing <span class="font-semibold text-gray-900">${from}</span>-<span class="font-semibold text-gray-900">${to}</span>
-                of <span class="font-semibold text-gray-900">${total}</span>
+            <div role="status">
+                ${filtering ? `${document.querySelectorAll('#history-table-body .history-row').length} matches on this page` : `Showing <strong>${from}-${to}</strong> of <strong>${total}</strong>`}
             </div>
             <div class="flex items-center space-x-2">
                 <label class="text-xs text-gray-500 mr-2">
@@ -3760,12 +3671,12 @@ document.addEventListener('DOMContentLoaded', function () {
                         ${[10, 25, 50, 100].map(s => `<option value="${s}" ${s === pageSize ? 'selected' : ''}>${s}</option>`).join('')}
                     </select>
                 </label>
-                <button id="history-prev-page" class="${btnBase} ${prevDisabled ? btnDisabled : btnEnabled}" ${prevDisabled ? 'disabled' : ''}>
-                    <i class="fas fa-chevron-left mr-1 text-[10px]"></i> Prev
+                <button id="history-prev-page" aria-label="Previous reports page" title="Previous page" class="${btnBase} ${prevDisabled ? btnDisabled : btnEnabled}" ${prevDisabled ? 'disabled' : ''}>
+                    <i class="fas fa-chevron-left" aria-hidden="true"></i>
                 </button>
                 <span class="text-xs text-gray-600">Page <span class="font-semibold text-gray-900">${page}</span> / ${totalPages}</span>
-                <button id="history-next-page" class="${btnBase} ${nextDisabled ? btnDisabled : btnEnabled}" ${nextDisabled ? 'disabled' : ''}>
-                    Next <i class="fas fa-chevron-right ml-1 text-[10px]"></i>
+                <button id="history-next-page" aria-label="Next reports page" title="Next page" class="${btnBase} ${nextDisabled ? btnDisabled : btnEnabled}" ${nextDisabled ? 'disabled' : ''}>
+                    <i class="fas fa-chevron-right" aria-hidden="true"></i>
                 </button>
             </div>
         `;
@@ -3803,9 +3714,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 e.stopPropagation();
                 const searchId = button.getAttribute('data-search-id');
 
-                if (confirm('Are you sure you want to delete this search from history?')) {
+                if (await confirmHistoryRemoval('Delete this saved search and its report? This cannot be undone.')) {
+                    if (!button.isConnected) return;
+                    const pageRoot = document.getElementById('history-page');
+                    button.disabled = true;
                     try {
-                        const response = await fetch(`/api/search-history/${searchId}`, {
+                        const response = await fetch(`/api/search-history/${encodeURIComponent(searchId)}`, {
                             method: 'DELETE',
                             credentials: 'same-origin',
                             headers: {
@@ -3816,7 +3730,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         if (response.ok) {
                             // Reload current page (clamp later if it becomes empty).
                             const st = window.__historyPageState || { page: 1, pageSize: 25 };
-                            loadSearchHistoryFromDB(st.page, st.pageSize);
+                            if (pageRoot?.isConnected) loadSearchHistoryFromDB(st.page, st.pageSize);
                             showNotification('Search deleted successfully', 'success');
                         } else {
                             showNotification('Failed to delete search', 'error');
@@ -3824,6 +3738,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     } catch (error) {
                         console.error('Error deleting search:', error);
                         showNotification('Error deleting search', 'error');
+                    } finally {
+                        button.disabled = false;
                     }
                 }
             });
@@ -3842,25 +3758,45 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    function confirmHistoryRemoval(message) {
+        if (document.querySelector('[data-history-confirm]')) return Promise.resolve(false);
+        return new Promise(resolve => {
+            const modal = document.createElement('div');
+            modal.className = 'outreach-overlay';
+            modal.dataset.historyConfirm = '';
+            modal.innerHTML = `<div class="outreach-dialog history-confirm-dialog"><header class="outreach-header"><h2>Delete saved reports?</h2><button type="button" data-keep aria-label="Close confirmation" title="Close confirmation"><i class="fas fa-times" aria-hidden="true"></i></button></header><div class="outreach-body"><p>${window.escapeHtml(message)}</p></div><footer class="outreach-footer"><button type="button" data-keep>Keep reports</button><button type="button" data-delete class="workspace-button is-danger"><i class="fas fa-trash" aria-hidden="true"></i>Delete</button></footer></div>`;
+            document.body.append(modal);
+            bindScheduleDialog(modal, 'Delete saved reports');
+            const observer = new MutationObserver(() => {
+                if (!modal.isConnected) { observer.disconnect(); resolve(false); }
+            });
+            observer.observe(document.body, {childList:true});
+            modal.querySelectorAll('[data-keep]').forEach(button => button.addEventListener('click', () => modal.remove()));
+            modal.querySelector('[data-delete]').addEventListener('click', () => { resolve(true); modal.remove(); });
+        });
+    }
+
     // Helper functions for formatting
     function truncateText(text, maxLength) {
+        text = String(text ?? '');
         if (text.length <= maxLength) return text;
         return text.substring(0, maxLength) + '...';
     }
 
     function formatDate(date) {
+        if (!Number.isFinite(date.getTime())) return 'Date unavailable';
         return date.toLocaleDateString('en-US', {
-            month: 'numeric',
+            month: 'short',
             day: 'numeric',
             year: 'numeric'
         });
     }
 
     function formatTime(date) {
+        if (!Number.isFinite(date.getTime())) return '';
         return date.toLocaleTimeString('en-US', {
             hour: 'numeric',
             minute: '2-digit',
-            second: '2-digit',
             hour12: true
         });
     }
@@ -3876,14 +3812,14 @@ document.addEventListener('DOMContentLoaded', function () {
             // Add debouncing to prevent too many filter calls
             let searchTimeout;
             searchInput.addEventListener('input', (e) => {
-                const searchTerm = e.target.value.toLowerCase();
+                const searchTerm = e.target.value.trim().toLowerCase();
 
                 // Clear previous timeout
                 clearTimeout(searchTimeout);
 
                 // Set new timeout for debounced search
                 searchTimeout = setTimeout(() => {
-                    filterHistoryData(searchTerm);
+                    if (searchInput.isConnected) filterHistoryData(searchTerm);
                 }, 150); // 150ms delay
             });
         }
@@ -3891,7 +3827,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (clearButton && !clearButton.hasAttribute('data-initialized')) {
             clearButton.setAttribute('data-initialized', 'true');
             clearButton.addEventListener('click', async () => {
-                if (!confirm('Are you sure you want to clear all search history? This action cannot be undone.')) return;
+                if (!await confirmHistoryRemoval('Delete all saved searches and their reports? This cannot be undone.')) return;
+                if (!clearButton.isConnected) return;
                 clearButton.disabled = true;
                 const originalLabel = clearButton.innerHTML;
                 clearButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Clearing...';
@@ -3899,14 +3836,16 @@ document.addEventListener('DOMContentLoaded', function () {
                     const resp = await fetch('/api/search-history', { method: 'DELETE', credentials: 'same-origin' });
                     if (!resp.ok) throw new Error('HTTP ' + resp.status);
                     const data = await resp.json();
+                    if (data.success !== true) throw new Error('Deletion was not confirmed');
+                    if (!clearButton.isConnected) return;
                     window.originalHistoryData = [];
+                    window.__historyPageState = {page:1, pageSize:25, total:0};
+                    renderHistoryPagination();
+                    const input = document.getElementById('history-search');
+                    if (input) input.value = '';
                     const tableBody = document.getElementById('history-table-body');
                     if (tableBody) {
-                        tableBody.innerHTML = `
-                            <div class="col-span-12 text-center py-12">
-                                <i class="fas fa-inbox text-gray-300 text-3xl mb-3"></i>
-                                <p class="text-gray-500">No search history yet</p>
-                            </div>`;
+                        renderHistoryTableRows([]);
                     }
                     if (typeof showNotification === 'function') {
                         showNotification(`Cleared ${data.deleted || 0} search${(data.deleted||0)===1?'':'es'}`, 'success');
@@ -3919,7 +3858,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         showNotification('Failed to clear history: ' + err.message, 'error');
                     }
                 } finally {
-                    clearButton.disabled = false;
+                    clearButton.disabled = !window.__historyPageState?.total;
                     clearButton.innerHTML = originalLabel;
                 }
             });
@@ -3930,28 +3869,31 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!window.originalHistoryData) return;
 
         const filteredData = window.originalHistoryData.filter(search => {
-            const query = (search.search_query || search.query || '').toLowerCase();
-            const jobTitle = (search.job_title || '').toLowerCase();
+            const query = String(search.search_query || search.query || '').toLowerCase();
+            const jobTitle = String(search.job_title || '').toLowerCase();
             return query.includes(searchTerm) || jobTitle.includes(searchTerm);
         });
 
         const historyTableBody = document.getElementById('history-table-body');
+        if (!historyTableBody) return;
         if (filteredData.length === 0 && searchTerm) {
             historyTableBody.innerHTML = `
                 <div class="col-span-12 text-center py-8">
                     <i class="fas fa-search text-gray-300 text-2xl mb-2"></i>
-                    <p class="text-gray-500 text-sm">No search history found matching "${searchTerm}"</p>
+                    <p class="text-gray-500 text-sm">No reports on this page match "${window.escapeHtml(searchTerm)}".</p>
                 </div>
             `;
         } else {
             // Only update the table body content, don't reinitialize search
             renderHistoryTableRows(filteredData);
         }
+        renderHistoryPagination();
     }
 
     function renderHistoryTableRows(historyData) {
         const historyTableBody = document.getElementById('history-table-body');
         if (!historyTableBody) return;
+        const esc = window.escapeAttr;
 
         if (historyData.length === 0) {
             historyTableBody.innerHTML = `
@@ -3979,28 +3921,30 @@ document.addEventListener('DOMContentLoaded', function () {
         } else {
             historyTableBody.innerHTML = historyData.map((search, index) => {
                 const searchDate = new Date(search.search_timestamp || search.timestamp);
-                const truncatedQuery = truncateText(search.search_query || search.query, 60);
-                const candidatesCount = search.actual_results || search.result_count || 0;
+                const query = String(search.search_query || search.query || 'Untitled search');
+                const truncatedQuery = truncateText(query, 100);
+                const candidatesCount = window.safeNumber(search.actual_results ?? search.result_count, 0, 0, 1000000);
+                const previews = Array.isArray(search.top_results) ? search.top_results.filter(result => result && typeof result === 'object') : [];
 
                 return `
-                    <div class="px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer history-row" data-search-id="${search.id}" data-query="${search.search_query || search.query}">
+                    <div class="px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer history-row" role="group" aria-label="Saved search: ${esc(query)}" data-search-id="${esc(search.id)}" data-query="${esc(query)}">
                         <div class="grid grid-cols-12 gap-4 items-center">
                             <!-- Job Description -->
-                            <div class="col-span-4">
-                                <div class="text-sm font-medium text-gray-900" title="${search.search_query || search.query}">
-                                    ${truncatedQuery}
+                            <div class="history-query col-span-4">
+                                <div class="text-sm font-medium text-gray-900" title="${esc(query)}">
+                                    ${esc(truncatedQuery)}
                                 </div>
-                                ${search.job_title ? `<div class="text-xs text-gray-500 mt-1">${search.job_title}</div>` : ''}
+                                ${search.job_title ? `<div class="text-xs text-gray-500 mt-1">${esc(search.job_title)}</div>` : ''}
                             </div>
                             
                             <!-- Date & Time -->
-                            <div class="col-span-2">
+                            <div class="history-date col-span-2"><span class="history-field-label">Date & time</span>
                                 <div class="text-sm text-gray-900">${formatDate(searchDate)}</div>
                                 <div class="text-xs text-gray-500">${formatTime(searchDate)}</div>
                             </div>
                             
                             <!-- Candidates Count -->
-                            <div class="col-span-2">
+                            <div class="history-count col-span-2">
                                 <div class="flex items-center">
                                     <span class="text-sm font-medium text-gray-900">${candidatesCount}</span>
                                     <span class="text-xs text-gray-500 ml-1">${candidatesCount === 1 ? 'candidate' : 'candidates'} found</span>
@@ -4008,41 +3952,41 @@ document.addEventListener('DOMContentLoaded', function () {
                             </div>
                             
                             <!-- Top Results Preview -->
-                            <div class="col-span-3">
+                            <div class="history-preview col-span-3"><span class="history-field-label">Top results</span>
                                 <div class="space-y-1">
-                                    ${search.top_results && search.top_results.length > 0 ?
-                        search.top_results.slice(0, 3).map(result => `
+                                    ${previews.length > 0 ?
+                        previews.slice(0, 3).map(result => `
                                             <div class="flex items-center justify-between bg-gray-50 rounded px-2 py-1">
                                                 <div class="flex items-center space-x-2">
-                                                    <div class="w-4 h-4 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                                                        <span class="text-white font-bold text-xs">${result.name ? result.name.charAt(0).toUpperCase() : '?'}</span>
+                                                    <div class="w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center" aria-hidden="true">
+                                                        <span class="text-white font-bold text-xs">${esc(String(result.name || '?').charAt(0).toUpperCase())}</span>
                                                     </div>
-                                                    <span class="text-xs font-medium text-gray-700 truncate max-w-[80px]" title="${result.name || 'Unknown'}">
-                                                        ${truncateText(result.name || 'Unknown', 12)}
+                                                    <span class="text-xs font-medium text-gray-700 truncate max-w-[80px]" title="${esc(result.name || 'Unknown')}">
+                                                        ${esc(result.name || 'Unknown')}
                                                     </span>
                                                 </div>
-                                                <span class="text-xs font-bold text-green-600">${result.score || 0}%</span>
+                                                <span class="text-xs font-bold text-green-600">${window.safeNumber(result.score)}%</span>
                                             </div>
                                         `).join('') :
                         '<span class="text-xs text-gray-400">No preview available</span>'
                     }
-                                    ${search.top_results && search.top_results.length > 3 ?
-                        `<div class="text-xs text-gray-500 text-center">+${search.top_results.length - 3} more candidates</div>` : ''
+                                    ${previews.length > 3 ?
+                        `<div class="text-xs text-gray-500 text-center">+${previews.length - 3} more candidates</div>` : ''
                     }
                                 </div>
                             </div>
                             
                             <!-- Actions -->
-                            <div class="col-span-1 text-center">
+                            <div class="history-actions col-span-1 text-center">
                                 <div class="flex items-center justify-center space-x-1">
                                     <button class="view-search p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" 
-                                            data-search-id="${search.id}" data-query="${search.search_query || search.query}"
-                                            title="View Results" aria-label="View Results">
+                                            data-search-id="${esc(search.id)}" data-query="${esc(query)}"
+                                            title="View results" aria-label="View results for ${esc(query)}">
                                         <i class="fas fa-eye text-xs"></i>
                                     </button>
                                     <button class="delete-search p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" 
-                                            data-search-id="${search.id}"
-                                            title="Delete Search" aria-label="Delete Search">
+                                            data-search-id="${esc(search.id)}"
+                                            title="Delete search" aria-label="Delete search for ${esc(query)}">
                                         <i class="fas fa-trash text-xs"></i>
                                     </button>
                                 </div>
@@ -5095,12 +5039,14 @@ document.addEventListener('DOMContentLoaded', function () {
         navLinks.forEach(link => {
             if (link) {
                 link.classList.remove('active');
+                link.removeAttribute('aria-current');
             }
         });
 
         // Add active class to the selected link
         if (activeLink) {
             activeLink.classList.add('active');
+            activeLink.setAttribute('aria-current', 'page');
         }
     }
 
@@ -6651,6 +6597,7 @@ function initializeJDBuilderPage() {
         selectedSkills = selectedSkills.filter(s => s !== skill);
         updateSkillsDisplay();
         updateStats();
+        skillInput?.focus();
     }
 
     function updateSkillsDisplay() {
@@ -6665,8 +6612,8 @@ function initializeJDBuilderPage() {
             skillsList.innerHTML = selectedSkills.map((skill, skillIndex) => `
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800">
                     ${esc(skill)}
-                    <button type="button" data-skill-index="${skillIndex}" class="ml-2 text-blue-600 hover:text-blue-800 js-remove-skill">
-                        <i class="fas fa-times text-xs"></i>
+                    <button type="button" data-skill-index="${skillIndex}" aria-label="Remove ${window.escapeAttr(skill)} skill" title="Remove skill" class="ml-2 text-blue-600 hover:text-blue-800 js-remove-skill">
+                        <i class="fas fa-times text-xs" aria-hidden="true"></i>
                     </button>
                 </span>
             `).join('');
@@ -6689,8 +6636,9 @@ function initializeJDBuilderPage() {
         const wordCount = content.trim() ? content.split(/\s+/).length : 0;
         const skillCount = selectedSkills.length;
 
-        document.getElementById('jd-word-count').textContent = wordCount;
-        document.getElementById('jd-skill-count').textContent = skillCount;
+        const setStat = (id, value) => { const field = document.getElementById(id); if (field) field.textContent = value; };
+        setStat('jd-word-count', wordCount);
+        setStat('jd-skill-count', skillCount);
 
         // Simple completeness calculation
         const jobTitle = document.getElementById('jd-job-title').value;
@@ -6702,13 +6650,13 @@ function initializeJDBuilderPage() {
         if (skillCount > 0) completeness += 25;
         if (wordCount > 100) completeness += 25;
 
-        document.getElementById('jd-completeness').textContent = completeness + '%';
+        setStat('jd-completeness', completeness + '%');
 
         // Simple readability score (inverse of average word length)
         if (wordCount > 0) {
             const avgWordLength = content.length / wordCount;
             const readability = Math.max(1, Math.min(10, Math.round(15 - avgWordLength)));
-            document.getElementById('jd-readability').textContent = readability + '/10';
+            setStat('jd-readability', readability + '/10');
         }
     }
 
@@ -6761,7 +6709,8 @@ function initializeJDBuilderPage() {
         if (generating) return;
         const companyName = document.getElementById('jd-company-name').value;
         const companyDetails = document.getElementById('jd-company-details').value;
-        const jobTitle = document.getElementById('jd-job-title').value;
+        const titleInput = document.getElementById('jd-job-title');
+        const jobTitle = titleInput.value.trim();
         const department = document.getElementById('jd-department').value;
         const location = document.getElementById('jd-location').value;
         const experienceLevel = document.getElementById('jd-experience-level').value;
@@ -6770,6 +6719,7 @@ function initializeJDBuilderPage() {
 
         if (!jobTitle) {
             showNotification('Please enter a job title', 'error');
+            titleInput.focus();
             return;
         }
 
@@ -7578,14 +7528,15 @@ function displaySearchHistoryInTable(searches) {
 
     tableBody.innerHTML = searches.map(search => {
         const date = new Date(search.search_timestamp);
-        const resultBadgeClass = search.result_count > 10 ? 'bg-green-100 text-green-800' :
-            search.result_count > 5 ? 'bg-yellow-100 text-yellow-800' :
+        const count = search.result_count ?? search.actual_results;
+        const resultCount = count != null && Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : null;
+        const resultBadgeClass = resultCount == null ? 'bg-gray-100 text-gray-700' : resultCount > 10 ? 'bg-green-100 text-green-800' :
+            resultCount > 5 ? 'bg-yellow-100 text-yellow-800' :
                 'bg-red-100 text-red-800';
 
         // Truncate long search queries for dashboard display
-        const truncatedQuery = search.search_query.length > 60 ?
-            search.search_query.substring(0, 60) + '...' :
-            search.search_query;
+        const query = String(search.search_query || 'Untitled search');
+        const truncatedQuery = query.length > 60 ? query.substring(0, 60) + '...' : query;
 
         return `
             <tr>
@@ -7598,12 +7549,12 @@ function displaySearchHistoryInTable(searches) {
                 </td>
                 <td class="py-3 px-2">
                     <span class="${resultBadgeClass} px-2 py-1 rounded-full text-xs font-medium">
-                        ${search.result_count} matches
+                        ${resultCount == null ? 'Unavailable' : resultCount + (resultCount === 1 ? ' match' : ' matches')}
                     </span>
                 </td>
                 <td class="py-3 px-2">
-                    <span class="text-sm text-gray-600">${date.toLocaleDateString()}</span>
-                    <p class="text-xs text-gray-400">${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    <span class="text-sm text-gray-600">${Number.isFinite(date.getTime()) ? date.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : 'Date unavailable'}</span>
+                    <p class="text-xs text-gray-500">${Number.isFinite(date.getTime()) ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</p>
                 </td>
                 <td class="py-3 px-2">
                     <button type="button" data-search-id="${search.id}"
@@ -8166,8 +8117,8 @@ function openGeneralScheduleModal(prefillName, prefillEmail) {
     modal.setAttribute('data-modal', 'general-schedule');
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
     modal.innerHTML = `
-        <div class="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+        <div class="schedule-dialog bg-white rounded-xl w-full max-w-md shadow-2xl">
+            <div class="schedule-dialog-header flex items-center justify-between">
                 <div>
                     <h3 class="text-lg font-semibold text-gray-900">Add to Schedule</h3>
                     <p class="text-sm text-gray-600 mt-1">Create a new interview or meeting</p>
@@ -8178,6 +8129,7 @@ function openGeneralScheduleModal(prefillName, prefillEmail) {
             </div>
 
             <form id="general-schedule-form">
+                <div class="schedule-form-body">
                 <div class="mb-4"><label for="gs-position" class="block text-sm font-medium text-gray-700 mb-2">Job title</label><input id="gs-position" maxlength="500" class="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="e.g. Backend Engineer"></div>
                 <div class="mb-4"><label for="gs-company" class="block text-sm font-medium text-gray-700 mb-2">Company</label><input id="gs-company" maxlength="255" class="w-full px-3 py-2 border border-gray-300 rounded-lg" value="${attrFn(window.currentUser?.company?.company_name || 'Efforts Solutions')}"></div>
                 <div class="mb-4"><label for="gs-time-zone" class="block text-sm font-medium text-gray-700 mb-2">Time zone</label><select id="gs-time-zone" class="w-full px-3 py-2 border border-gray-300 rounded-lg">${scheduleZoneOptions()}</select></div>
@@ -8270,7 +8222,8 @@ function openGeneralScheduleModal(prefillName, prefillEmail) {
                               placeholder="Agenda, special instructions..."></textarea>
                 </div>
 
-                <div class="flex space-x-3">
+                </div>
+                <div class="schedule-dialog-footer flex space-x-3">
                     <button type="button" onclick="closeGeneralScheduleModal()"
                             class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
                     <button type="submit"
@@ -8299,6 +8252,7 @@ function openGeneralScheduleModal(prefillName, prefillEmail) {
 }
 
 function closeGeneralScheduleModal() {
+    if (document.getElementById('general-schedule-form')?.dataset.submitting === 'true') return;
     document.querySelectorAll('[data-modal="general-schedule"]').forEach((m) => m.remove());
 }
 
@@ -8351,6 +8305,7 @@ async function submitGeneralScheduleForm(event) {
         if (!resp.ok || data.success !== true) {
             throw new Error(data.detail || `HTTP ${resp.status}`);
         }
+        delete form.dataset.submitting;
         closeGeneralScheduleModal();
         if (typeof showNotification === 'function') {
             showNotification(`Added: ${payload.interview_type} with ${candidate_name} on ${payload.interview_date} ${payload.interview_time}`, 'success');
@@ -8387,9 +8342,11 @@ async function submitGeneralScheduleForm(event) {
 }
 
 function showInterviewScheduleModal(candidateName, candidateEmail, context = {}) {
+    if (document.getElementById('interview-form')) return;
     context = window.RecruiterOutreach?.context(context) || context;
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+    modal.setAttribute('data-modal', 'interview-schedule');
     const esc = window.escapeHtml || ((value) => {
         const div = document.createElement('div');
         div.textContent = value == null ? '' : String(value);
@@ -8398,8 +8355,8 @@ function showInterviewScheduleModal(candidateName, candidateEmail, context = {})
     const attr = window.escapeAttr || esc;
     const interviewerName = context.recruiter || (window.currentUser ? window.currentUser.full_name : '');
     modal.innerHTML = `
-        <div class="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+        <div class="schedule-dialog bg-white rounded-xl w-full max-w-md shadow-2xl">
+            <div class="schedule-dialog-header flex items-center justify-between">
                 <div>
                     <h3 class="text-lg font-semibold text-gray-900">Schedule Interview</h3>
                     <p class="text-sm text-gray-600 mt-1">with ${esc(candidateName)}</p>
@@ -8411,6 +8368,7 @@ function showInterviewScheduleModal(candidateName, candidateEmail, context = {})
             </div>
             
             <form id="interview-form">
+                <div class="schedule-form-body">
                 <div class="mb-4"><label for="interview-position" class="block text-sm font-medium text-gray-700 mb-2">Job title</label><input id="interview-position" maxlength="500" class="w-full px-3 py-2 border border-gray-300 rounded-lg" value="${attr(context.position || '')}" placeholder="e.g. Backend Engineer"></div>
                 <div class="mb-4"><label for="interview-company" class="block text-sm font-medium text-gray-700 mb-2">Company</label><input id="interview-company" maxlength="255" class="w-full px-3 py-2 border border-gray-300 rounded-lg" value="${attr(window.currentUser?.company?.company_name || 'Efforts Solutions')}"></div>
                 <div class="mb-4"><label for="interview-time-zone" class="block text-sm font-medium text-gray-700 mb-2">Time zone</label><select id="interview-time-zone" class="w-full px-3 py-2 border border-gray-300 rounded-lg">${scheduleZoneOptions()}</select></div>
@@ -8499,7 +8457,8 @@ function showInterviewScheduleModal(candidateName, candidateEmail, context = {})
                 </div>
                 
                 <!-- Action Buttons -->
-                <div class="flex space-x-3">
+                </div>
+                <div class="schedule-dialog-footer flex space-x-3">
                     <button type="button" onclick="closeInterviewModal()" 
                             class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
                         Cancel
@@ -8559,11 +8518,15 @@ function bindScheduleDialog(modal, label) {
     if (shell) shell.inert = true;
     items()[0]?.focus();
     modal.addEventListener('keydown', event => {
-        if (event.key === 'Escape') { event.preventDefault(); modal.remove(); return; }
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            if (!modal.querySelector('form[data-submitting="true"]')) modal.remove();
+            return;
+        }
         if (event.key !== 'Tab') return;
         const controls = items(), first = controls[0], last = controls[controls.length - 1];
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) { event.preventDefault(); first?.focus(); }
     });
     const observer = new MutationObserver(() => {
         if (modal.isConnected) return;
@@ -8575,7 +8538,8 @@ function bindScheduleDialog(modal, label) {
 }
 
 function closeInterviewModal() {
-    const modal = document.querySelector('.fixed.inset-0.bg-black');
+    if (document.getElementById('interview-form')?.dataset.submitting === 'true') return;
+    const modal = document.querySelector('[data-modal="interview-schedule"]');
     if (modal) {
         modal.remove();
     }
@@ -8630,6 +8594,7 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
             if (result.success !== true) throw new Error('Interview was not confirmed');
 
             // Close modal
+            delete form.dataset.submitting;
             closeInterviewModal();
 
             // Show success notification

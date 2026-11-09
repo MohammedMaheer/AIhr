@@ -55,14 +55,15 @@ const server = http.createServer((request,response)=>{
     if(url.pathname==='/api/me')return json(response,{success:true,user});
     if(url.pathname==='/api/companies')return json(response,{success:true,companies});
     if(url.pathname==='/api/users')return json(response,{success:true,users});
-    if(url.pathname==='/api/resume-folders')return json(response,{success:true,supported:true,folders,tags});
+    if(url.pathname==='/api/resume-folders')return json(response,{success:true,supported:true,folders,tags,
+        tag_counts:Object.fromEntries(tags.map((tag,i)=>[tag,{total:63-i,searchable:59-i}]))});
     if(url.pathname==='/api/resume-library'){
         const query=(url.searchParams.get('query')||'').toLowerCase(),offset=Math.max(0,Number(url.searchParams.get('offset'))||0),limit=Math.max(1,Math.min(100,Number(url.searchParams.get('limit'))||25));
         const filtered=uploads.filter(row=>row.file_name.toLowerCase().includes(query));
         return json(response,{success:true,total:filtered.length,uploads:filtered.slice(offset,offset+limit),limit,offset});
     }
     const preview=url.pathname.match(/^\/api\/resume-library\/(\d+)$/);
-    if(preview){const row=uploads.find(row=>row.id===Number(preview[1]));return row?json(response,{success:true,...row,preview_kind:row.file_name.endsWith('.txt')?'text':'pdf',text:'FICTIONAL CV - UI REVIEW ONLY\n\nProfessional profile\nExample candidate with experience in network operations and infrastructure support.\n\nExperience\nAll details in this preview are fictional.\n\nSkills\nNetwork monitoring, troubleshooting, documentation.'}):json(response,{detail:'CV not found'},404);}
+    if(preview){const row=uploads.find(row=>row.id===Number(preview[1]));return row?json(response,{success:true,...row,tags:['IT infrastructure','Management'],preview_kind:row.file_name.endsWith('.txt')?'text':'pdf',text:'FICTIONAL CV - UI REVIEW ONLY\n\nProfessional profile\nExample candidate with experience in network operations and infrastructure support.\n\nExperience\nAll details in this preview are fictional.\n\nSkills\nNetwork monitoring, troubleshooting, documentation.'}):json(response,{detail:'CV not found'},404);}
     const document=url.pathname.match(/^\/api\/resume-library\/(\d+)\/document$/);
     if(document){
         const row=uploads.find(row=>row.id===Number(document[1]));if(!row)return json(response,{detail:'CV not found'},404);

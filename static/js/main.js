@@ -747,9 +747,16 @@ document.addEventListener('DOMContentLoaded', function () {
                     </div>
 
                     <div class="recruiter-upload-folder">
-                        <label for="upload-folder"><i class="fas fa-folder-open" aria-hidden="true"></i>Destination folder</label>
-                        <input type="text" id="upload-folder" value="resume" maxlength="512" required list="upload-folder-choices" placeholder="e.g. Network Engineers/Riyadh/November 2026" autocomplete="off">
-                        <datalist id="upload-folder-choices"></datalist>
+                        <label for="upload-folder-choice"><i class="fas fa-folder-open" aria-hidden="true"></i>Destination folder</label>
+                        <div class="upload-folder-control">
+                            <div class="upload-folder-toolbar">
+                                <select id="upload-folder-choice" aria-describedby="upload-folder-status"><option value="">New folder</option></select>
+                                <button type="button" id="upload-folder-add" class="workspace-icon-button" aria-label="Add new folder" title="Add new folder"><i class="fas fa-folder-plus" aria-hidden="true"></i></button>
+                                <button type="button" id="upload-folder-refresh" class="workspace-icon-button" aria-label="Refresh destination folders" title="Refresh folders"><i class="fas fa-sync-alt" aria-hidden="true"></i></button>
+                            </div>
+                            <div id="upload-folder-editor"><label for="upload-folder">Folder name</label><input type="text" id="upload-folder" value="resume" maxlength="512" required placeholder="e.g. Network Engineers/Riyadh/November 2026" autocomplete="off"></div>
+                            <p id="upload-folder-status" class="workspace-muted" role="status">Loading folders...</p>
+                        </div>
                     </div>
                     <!-- Upload Options -->
                     <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-6">
@@ -4185,14 +4192,14 @@ document.addEventListener('DOMContentLoaded', function () {
             const path = folderField.value.trim().replace(/\/+$/, '');
             const invalid = /[\\\x00-\x1f]/.test(path) || path.startsWith('/') ||
                 path.split('/').some(part => ['.', '..', ''].includes(part.trim()));
-            folderField.setCustomValidity(invalid && path ? 'Use a folder name without empty or relative path segments.' : '');
+            folderField.setCustomValidity(!path ? 'Enter a folder name.' : invalid ? 'Use a folder name without empty or relative path segments.' : '');
         });
 
         let selectedFiles = [];
         let isUploading = false;
 
         // Load configuration and pre-populate fields
-        loadConfigAndPopulateFields();
+        const refreshUploadFolders = loadConfigAndPopulateFields();
 
         // File input handling
         browseFiles.addEventListener('click', (e) => {
@@ -4263,6 +4270,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         isUploading = false;
                         clearQueue.disabled = false;
                         updateUploadQueue();
+                        refreshUploadFolders(uploadFolder);
                     });
             }
         });
@@ -4270,16 +4278,47 @@ document.addEventListener('DOMContentLoaded', function () {
         function loadConfigAndPopulateFields() {
             const folderInput = document.getElementById('upload-folder');
             const bucketInput = document.getElementById('bucket-name');
-            const choices = document.getElementById('upload-folder-choices');
-            let edited = false;
+            const choice = document.getElementById('upload-folder-choice');
+            const editor = document.getElementById('upload-folder-editor');
+            const status = document.getElementById('upload-folder-status');
+            const refresh = document.getElementById('upload-folder-refresh');
+            let edited = false, draft = folderInput.value, bucket = '', rows = [], sequence = 0;
+            function renderChoices() {
+                if (!choice.isConnected) return;
+                const previous = choice.value, current = folderInput.value;
+                const paths = [...new Set(rows.filter(row => !bucket || row.bucket === bucket).map(row => row.path).filter(Boolean))]
+                    .sort((a,b) => a.localeCompare(b));
+                choice.replaceChildren(new Option('New folder', ''));
+                paths.forEach(path => choice.add(new Option(path.replace(/^email_attachments\//, 'Email imports / '), path)));
+                if ((!edited || previous) && paths.includes(current)) choice.value = current;
+                else if (previous) {
+                    choice.add(new Option(current.replace(/^email_attachments\//, 'Email imports / '), current));
+                    choice.value = current;
+                }
+                editor.hidden = !!choice.value;
+            }
+            choice.addEventListener('change', () => {
+                if (!editor.hidden) draft = folderInput.value;
+                folderInput.value = choice.value || draft;
+                editor.hidden = !!choice.value;
+                folderInput.dispatchEvent(new Event('input'));
+                if (!choice.value) folderInput.focus();
+            });
+            document.getElementById('upload-folder-add').addEventListener('click', () => {
+                choice.value = '';draft = '';folderInput.value = '';editor.hidden = false;
+                folderInput.dispatchEvent(new Event('input'));folderInput.focus();
+            });
             folderInput.addEventListener('input', () => { edited = true; });
             fetch('/api/gcs-status')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.bucket_name && bucketInput.isConnected) {
+                    if (data.bucket_name && bucketInput?.isConnected) {
                         bucketInput.value = data.bucket_name;
                     }
-                    if (!edited && folderInput.isConnected) folderInput.value = data.default_folder || 'resume';
+                    bucket = typeof data.bucket_name === 'string' ? data.bucket_name : '';
+                    if (!edited && folderInput.isConnected) folderInput.value = (data.default_folder || 'resume').replace(/\/+$/, '');
+                    if (!edited) draft = folderInput.value;
+                    renderChoices();
 
                     // Configuration is handled automatically, no UI updates needed
                 })
@@ -4288,13 +4327,28 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Set fallback folder path if config fails to load
                     if (!edited && folderInput.isConnected) folderInput.value = 'resume';
                 });
-            fetch('/api/resume-folders').then(response => response.ok ? response.json() : null).then(data => {
-                if (!choices?.isConnected || !Array.isArray(data?.folders)) return;
-                choices.replaceChildren();
-                [...new Set(data.folders.map(item => item.path).filter(Boolean))].forEach(path => {
-                    const option = document.createElement('option'); option.value = path; choices.append(option);
-                });
-            }).catch(() => {});
+            async function loadFolders(uploadedPath) {
+                const request = ++sequence;
+                refresh.disabled = true;status.textContent = 'Loading folders...';
+                try {
+                    const response = await fetch('/api/resume-folders');
+                    const data = await response.json();
+                    if (!response.ok || data.success !== true || !Array.isArray(data.folders)) throw new Error();
+                    if (!choice.isConnected || request !== sequence) return;
+                    rows = data.folders;renderChoices();
+                    if (typeof uploadedPath === 'string' && folderInput.value === uploadedPath && [...choice.options].some(option => option.value === uploadedPath)) {
+                        choice.value = uploadedPath;editor.hidden = true;
+                    }
+                    const count = choice.options.length - 1;
+                    status.textContent = count.toLocaleString() + ' existing folder' + (count === 1 ? '' : 's');
+                } catch (_) {
+                    if (choice.isConnected && request === sequence) status.textContent = 'Folder list unavailable. Retry or enter a new folder name.';
+                } finally {
+                    if (choice.isConnected && request === sequence) refresh.disabled = false;
+                }
+            }
+            refresh.addEventListener('click', loadFolders);
+            loadFolders();return loadFolders;
         }
 
         function handleFiles(files) {
@@ -4999,6 +5053,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         successfulUploads.textContent = parseInt(successfulUploads.textContent || '0') + successfulCount;
                     }
                     if (failedUploads) failedUploads.textContent = parseInt(failedUploads.textContent || '0') + failedCount;
+                    refreshUploadFolders(uploadFolder);
 
                 } else {
                     const msg = (result && (result.detail || result.message)) ||

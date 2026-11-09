@@ -51,16 +51,18 @@ def preview_upload(db, user, upload_id, default_bucket=None):
     row = upload_record(db, user, upload_id)
     bucket, key = source_location(row['file_path'], row['gcs_bucket_name'] or default_bucket or os.getenv('GCS_BUCKET_NAME', ''))
     text = ''
+    tags = []
     if bucket and key:
         with db.get_cursor() as (cur, _):
             folder, _, filename = key.rpartition('/')
-            cur.execute('''SELECT left(extracted_text,80000) AS text FROM resume_embeddings
+            cur.execute('''SELECT left(extracted_text,80000) AS text, search_tags FROM resume_embeddings
                 WHERE storage_bucket=%s AND folder=%s AND filename=%s AND company_id IS NOT DISTINCT FROM %s
                 LIMIT 1''', (bucket, folder, filename, row['company_id']))
             extracted = cur.fetchone()
             text = extracted['text'] or '' if extracted else ''
+            tags = extracted.get('search_tags') or [] if extracted else []
     extension = (key or row['file_name'] or '').rsplit('.', 1)[-1].lower()
     kind = 'text' if extension == 'txt' else 'pdf' if extension in ('pdf', 'doc', 'docx') else None
     return dict(success=True, id=row['id'], file_name=row['file_name'],
                 file_path=f'gs://{bucket}/{key}' if bucket and key else row['file_path'], text=text,
-                preview_kind=kind, preview_url=f'/api/resume-library/{upload_id}/document' if kind else None)
+                preview_kind=kind, preview_url=f'/api/resume-library/{upload_id}/document' if kind else None, tags=tags)

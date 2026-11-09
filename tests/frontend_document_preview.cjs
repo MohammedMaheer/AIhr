@@ -15,7 +15,7 @@ async function setup(kind='pdf',fail=false){
     w.fetch=async(url,options={})=>{
         requests.push([url,options]);assert(!options.method||options.method==='GET');
         if(url.startsWith('/api/resume-library?'))return{ok:true,json:async()=>({success:true,total:1,uploads:[{id:7,file_name:'Fictional CV.'+(kind==='text'?'txt':'docx'),file_path:'gs://fixture/cv.docx'}]})};
-        if(url==='/api/resume-library/7')return{ok:true,json:async()=>({success:true,id:7,file_name:'Fictional CV',file_path:'gs://fixture/cv.docx',text:'Cached text excerpt',preview_kind:kind})};
+        if(url==='/api/resume-library/7')return{ok:true,json:async()=>({success:true,id:7,file_name:'Fictional CV',file_path:'gs://fixture/cv.docx',text:'Cached text excerpt',preview_kind:kind,tags:['UI design','<img src=x onerror=bad()>']})};
         assert.equal(url,'/api/resume-library/7/document');
         return{ok:!fail,json:async()=>({detail:'<img src=x> Document unavailable'}),headers:{get:()=>kind==='text'?'text/plain':'application/pdf'},
             blob:async()=>new w.Blob(['%PDF-1.7\nfixture'],{type:'application/pdf'}),text:async()=>original};
@@ -28,6 +28,8 @@ async function setup(kind='pdf',fail=false){
 (async()=>{
     let value=await setup();let {w,d}=value;
     const frame=d.querySelector('iframe');assert(frame);
+    assert.equal(d.querySelector('.cv-preview-tags').textContent,'UI design<img src=x onerror=bad()>');
+    assert.equal(d.querySelectorAll('.cv-preview-tags img').length,0);
     assert(frame.src.startsWith('https://qa.invalid/static/vendor/pdfjs-6.5.438/web/viewer.html?file=blob%3A'));
     assert(!frame.src.includes('officeapps.live.com')&&!frame.src.includes('docs.google'));
     const options=[];frame.contentWindow.PDFViewerApplicationOptions={set:(...args)=>options.push(args)};

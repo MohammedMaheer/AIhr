@@ -2802,10 +2802,27 @@ button, input, .glass {
 .dashboard-library-metrics button strong { color: #26374e; font-size: 17px; font-variant-numeric: tabular-nums; }
 .dashboard-library-metrics button i { margin: 0; color: #4e82b8; }
 .dashboard-library-metrics button:hover strong { color: #2563eb; }
-.recruiter-upload-folder { display: flex; align-items: center; gap: 18px; padding: 18px 0; margin-bottom: 14px; border-top: 1px solid #e3e7ed; border-bottom: 1px solid #e3e7ed; }
+.recruiter-upload-folder { display: flex; align-items: flex-start; gap: 18px; padding: 18px 0; margin-bottom: 14px; border-top: 1px solid #e3e7ed; border-bottom: 1px solid #e3e7ed; }
+.recruiter-upload-folder > label { padding-top: 12px; }
 .recruiter-upload-folder label { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; color: #495567; font-size: 13px; font-weight: 600; }
 .recruiter-upload-folder label i { color: #c49a45; }
 .recruiter-upload-folder input { width: 100%; max-width: 620px; min-width: 0; height: 42px; padding: 9px 12px; border: 1px solid #d7dde5; border-radius: 6px; background: #fff; color: #344050; font-size: 13px; }
+.upload-folder-control { flex: 1; min-width: 0; max-width: 620px; }
+.upload-folder-toolbar { display: flex; align-items: center; gap: 8px; }
+.upload-folder-toolbar select { flex: 1; min-width: 0; width: 100%; height: 44px; border: 1px solid #d7dde5; border-radius: 6px; background: #fff; color: #344050; padding: 8px 10px; font-size: 14px; }
+#upload-folder-editor { margin-top: 12px; }
+#upload-folder-editor[hidden] { display: none; }
+#upload-folder-editor label { display: block; margin-bottom: 6px; font-size: 12px; }
+#upload-folder-status { margin: 8px 0 0; }
+.cv-tag-search { width: 100%; margin-bottom: 8px; }
+.cv-tag-option small { margin-left: auto; color: #667181; font-size: 11px; font-variant-numeric: tabular-nums; }
+.cv-preview-metadata { min-width: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-right: auto; }
+.cv-preview-tags { display: flex; gap: 5px; flex-wrap: wrap; }
+.cv-preview-tags span { display: inline-block; padding: 3px 6px; border-radius: 4px; background: #eaf2fd; color: #28588a; font-size: 11px; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+    .upload-folder-toolbar select { font-size: 16px; }
+    .cv-preview-dialog footer { flex-wrap: wrap; }
+}
 .recruiter-workspace [hidden], .cv-filter-view [hidden], .workspace-overlay [hidden] { display: none !important; }
 @media (max-width: 900px) {
     .workspace-table th, .workspace-table td { padding: 12px; }
@@ -2864,6 +2881,7 @@ button, input, .glass {
     .cv-date-fields select, .cv-date-fields input { height: 42px; }
     .cv-folder-option, .cv-tag-option, .cv-folder-all { min-height: 42px; }
     .recruiter-upload-folder { flex-direction: column; align-items: stretch; gap: 10px; }
+    .recruiter-upload-folder > label { padding-top: 0; }
     .recruiter-upload-folder input { font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {

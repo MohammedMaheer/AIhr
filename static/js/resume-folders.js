@@ -63,12 +63,16 @@
             const folders=[...data.folders];
             for(const item of selected||[])if(!folders.some(f=>f.bucket===item.bucket&&f.path===item.path))folders.push({...item,total:0});
             const folderRows=folders.map((item,index)=>'<label class="cv-folder-option" title="'+esc(folderName(item))+'"><input type="checkbox" data-folder="'+index+'"><i class="fas fa-folder" aria-hidden="true"></i><span>'+esc(folderName(item))+'</span><small>'+Number(item.total||0).toLocaleString()+'</small></label>').join('');
-            const tagRows=(data.tags||[]).map(tag=>'<label class="cv-tag-option"><input type="checkbox" data-tag="'+esc(tag)+'"><span>'+esc(tag)+'</span></label>').join('');
+            const tagRows=(data.tags||[]).map(tag=>{
+                const count=data.tag_counts?.[tag]?.searchable;
+                return '<label class="cv-tag-option"><input type="checkbox" data-tag="'+esc(tag)+'"><span>'+esc(tag)+'</span>'+
+                    (Number.isSafeInteger(count)&&count>=0?'<small title="Searchable CVs in this workspace">'+count.toLocaleString()+'</small>':'')+'</label>';
+            }).join('');
             const controls='<div class="cv-filter-columns"><fieldset><legend>Folders</legend>'+
                 '<label class="cv-folder-all"><input type="checkbox" data-all><i class="fas fa-folder-open" aria-hidden="true"></i><span>All folders</span></label>'+
                 '<label class="workspace-search cv-folder-search"><i class="fas fa-search" aria-hidden="true"></i><input type="search" data-folder-query aria-label="Find a folder" placeholder="Find a folder" autocomplete="off"></label>'+
                 '<div class="cv-folder-list" data-folders>'+folderRows+'</div><p data-folder-empty class="workspace-muted" hidden>No matching folders</p></fieldset>'+
-                '<fieldset><legend>Role and skill tags</legend><div class="cv-tag-list" data-tags>'+tagRows+'</div></fieldset></div>'+
+                '<fieldset><legend>Role and skill tags</legend><label class="workspace-search cv-tag-search"><i class="fas fa-search" aria-hidden="true"></i><input type="search" data-tag-query aria-label="Find a tag" placeholder="Find a tag" autocomplete="off"></label><div class="cv-tag-list" data-tags>'+tagRows+'</div><p data-tag-empty class="workspace-muted" hidden>No matching tags</p></fieldset></div>'+
                 '<fieldset class="cv-date-fields"><legend>Date range</legend><label>Date type<select data-basis aria-label="Date type"><option value="uploaded">Uploaded</option><option value="received">Email received</option></select></label>'+
                 '<label>Period<select data-range aria-label="Period"><option value="any">Any time</option><option value="30">Last 30 days</option><option value="3">Last 3 months</option><option value="6">Last 6 months</option><option value="custom">Custom range</option></select></label>'+
                 '<label>From<input data-from type="date" aria-label="From"></label><label>To<input data-to type="date" aria-label="To"></label></fieldset>';
@@ -123,6 +127,14 @@
                     if(!label.hidden)count++;
                 });
                 root.querySelector('[data-folder-empty]').hidden=count>0;
+            };
+            root.querySelector('[data-tag-query]').oninput=event=>{
+                const query=event.target.value.trim().toLocaleLowerCase();let count=0;
+                root.querySelectorAll('[data-tag]').forEach(input=>{
+                    const label=input.closest('label');label.hidden=!input.dataset.tag.toLocaleLowerCase().includes(query);
+                    if(!label.hidden)count++;
+                });
+                root.querySelector('[data-tag-empty]').hidden=count>0;
             };
             function readFilters(){
                 filters={tags:[...root.querySelectorAll('[data-tag]:checked')].map(input=>input.dataset.tag).sort(),

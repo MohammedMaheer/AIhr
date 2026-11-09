@@ -87,3 +87,14 @@ def searchable_count(db, user, folders, filters=None):
         cur.execute(f'SELECT count(*) AS count FROM resume_embeddings WHERE embedding IS NOT NULL AND {scope} AND {selected} AND {filtered}',
                     [*params, *selected_params, *filtered_params])
         return cur.fetchone()['count']
+
+
+def tag_inventory(db, user):
+    scope, params = workspace_scope(user)
+    with db.get_cursor() as (cur, _):
+        cur.execute(f'''SELECT label, count(*) AS total,
+                count(embedding) AS searchable
+            FROM resume_embeddings CROSS JOIN LATERAL unnest(search_tags) AS tags(label)
+            WHERE {scope} GROUP BY label ORDER BY label''', params)
+        return {row['label']: {'total': row['total'], 'searchable': row['searchable']}
+                for row in cur.fetchall()}

@@ -18,13 +18,17 @@ async function filters(){
     w.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[2027,7,31,12]));}};
     let calls=0;
     w.fetch=async()=>{calls++;return{ok:true,json:async()=>({success:true,supported:true,
-        folders:[{bucket:'fixture',path:'Design/New',total:10},{bucket:'fixture',path:'Network/New',total:20}],tags:['UI design','Management']})};};
+        folders:[{bucket:'fixture',path:'Design/New',total:10},{bucket:'fixture',path:'Network/New',total:20}],tags:['UI design','Management'],tag_counts:{'UI design':{total:10,searchable:8}}})};};
     let dispose=w.ResumeFolders.mount(root);await flush();
     assert.equal(root.querySelector('[data-range]').getAttribute('aria-label'),'Period');
     root.querySelector('[data-range]').value='6';root.querySelector('[data-range]').dispatchEvent(new w.Event('change'));
     assert.equal(w.ResumeFolders.getFilters().date_from,'2027-02-28','Month-end presets must clamp to a valid date');
     assert.equal(w.ResumeFolders.getFilters().date_to,'2027-08-31');
     root.querySelector('[data-folder="0"]').click();root.querySelector('[data-tag="UI design"]').click();
+    assert.equal(root.querySelector('[data-tag="UI design"]').closest('label').querySelector('small').textContent,'8');
+    root.querySelector('[data-tag-query]').value='Management';root.querySelector('[data-tag-query]').dispatchEvent(new w.Event('input'));
+    assert(root.querySelector('[data-tag="UI design"]').closest('label').hidden);
+    assert.equal(w.ResumeFolders.getFilters().tags[0],'UI design','Filtering tag choices must retain the selected tag');
     root.querySelector('[data-folder-query]').value='network';root.querySelector('[data-folder-query]').dispatchEvent(new w.Event('input'));
     assert.equal(root.querySelector('[data-folder="0"]').closest('label').hidden,true);
     assert.equal(w.ResumeFolders.getSelection()[0].path,'Design/New','Filtering visible folders must retain checked hidden selections');

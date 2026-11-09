@@ -40,6 +40,7 @@ async function run(){
  let uploadCalls=0,completeUpload;
  w.fetch=async url=>{
   if(url==='/api/gcs-status') return {ok:true,json:async()=>({configured:true})};
+  if(url==='/api/resume-folders') return {ok:true,json:async()=>({success:true,folders:[]})};
   assert.equal(url,'/api/upload-files');uploadCalls++;
   return new Promise(resolve=>{completeUpload=resolve;});
  };
@@ -74,7 +75,7 @@ async function run(){
  states[1]({ok:true,json:async()=>({success:true,microsoft:{connected:true,reconnect_required:true,account_email:'hr@example.invalid'}})});await flush();
  assert.match(help.textContent,/Reconnect Microsoft/);assert(!help.textContent.includes('Gmail'));
  const emailStart=d.getElementById('start-email-scrape');let emailCalls=0,completeEmail;
- w.fetch=async()=>{emailCalls++;return new Promise(resolve=>{completeEmail=resolve;});};
+ w.fetch=async url=>{if(url==='/api/resume-folders')return {ok:true,json:async()=>({success:true,folders:[]})};emailCalls++;return new Promise(resolve=>{completeEmail=resolve;});};
  d.getElementById('email-address').value='not-an-email';emailStart.click();await flush();
  assert.equal(emailCalls,0,'Malformed addresses must never reach the import API');
  d.getElementById('email-address').value=' hr@example.invalid ';

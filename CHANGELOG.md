@@ -5,6 +5,36 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.09.3 - 2026-11-09
+
+### Folder And Tag Feedback
+
+- Reviewed all three supplied voice notes locally without uploading audio or
+  making paid transcription/AI calls; kept recordings/transcripts out of Git.
+- Replace upload-folder suggestions with an explicit existing-folder dropdown,
+  new-folder action, validated name entry and refresh. Preserve drafts and late
+  responses; refresh a newly uploaded indexed destination into the dropdown.
+- Email imports honor an explicit destination exactly, including existing email
+  folders, instead of adding a second prefix. The unspecified default is unchanged;
+  existing files and candidate ownership are not modified.
+- Add searchable tag choices, workspace-scoped searchable counts and stored tags
+  in CV previews. Retain strict multi-folder/tag/date filtering, provider-received
+  dates, role permissions, original branding and AI matching behavior.
+- Add UI, PostgreSQL scope and both email-entrypoint contract regressions. See
+  `docs/FOLDER_TAG_ACCEPTANCE_2026-11-09.md` for acceptance and limitations.
+
+### Verification And Deployment
+
+- All 935 isolated PostgreSQL backend tests and 19 frontend suites passed.
+  Nine changed-view responsive cases passed at 320/768/1440 pixels; live folder
+  selection, multiple tags/dates and database-parity checks passed.
+- Deployed `clean-20261109t165952z`, retaining rollback/backup data and preserving
+  existing business records, connected accounts and 20 unrelated containers.
+  App/converter health, asset/access/document checks and zero-paid-AI health
+  checks passed. Original prompts, scoring and offline vector rankings are unchanged.
+- Historical received dates remain unknown; no live mailbox import, paid-AI
+  accuracy/load evaluation or cross-browser certification is claimed.
+
 ## v2026.11.09.2 - 2026-11-09
 
 ### Visual Verification And Polish

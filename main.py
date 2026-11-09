@@ -6033,7 +6033,7 @@ async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], fold
         if not safe_folder:
             raise HTTPException(status_code=400, detail="Invalid folder path")
         normalized_folder = safe_folder.rstrip('/') + '/'
-        upload_folder = f"email_attachments/{normalized_folder}"
+        upload_folder = normalized_folder
     else:
         upload_folder = "email_attachments/"
 
@@ -11036,11 +11036,13 @@ async def get_saved_search_results(search_id: int, user: dict = Depends(require_
 
 @app.get('/api/resume-folders')
 async def get_resume_folders(user: dict = Depends(require_auth)):
-    from services.resume_folders import inventory
+    from services.resume_folders import inventory, tag_inventory
     supported = os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}
-    rows = await asyncio.to_thread(inventory, get_db_manager(), user) if supported else []
+    db = get_db_manager() if supported else None
+    rows = await asyncio.to_thread(inventory, db, user) if supported else []
+    counts = await asyncio.to_thread(tag_inventory, db, user) if supported else {}
     from services.resume_filters import TAG_PATTERNS
-    return {'success': True, 'supported': supported, 'folders': rows, 'tags': list(TAG_PATTERNS)}
+    return {'success': True, 'supported': supported, 'folders': rows, 'tags': list(TAG_PATTERNS), 'tag_counts': counts}
 
 
 @app.get('/api/resume-library')

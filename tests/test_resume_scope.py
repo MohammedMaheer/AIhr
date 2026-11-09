@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 import main
-from services.resume_folders import normalize_folders, folder_sql, source_in_folders, inventory, searchable_count
+from services.resume_folders import normalize_folders, folder_sql, source_in_folders, inventory, searchable_count, tag_inventory
 from services.resume_filters import normalize_filters, filters_sql, received_date, tags_from_text, refresh_existing_metadata
 from services.resume_library import list_uploads, preview_upload
 from test_durable_search import queue_db
@@ -97,6 +97,7 @@ def test_library_pagination_scope_preview_and_metadata_no_vectors_changed(librar
     assert list_uploads(library_db,USER,query='5-cv')['total']==0
     assert list_uploads(library_db,USER,query="%' OR TRUE --")['total']==0
     assert preview_upload(library_db,USER,1)['text']=='Figma UI designer'
+    assert preview_upload(library_db,USER,1)['tags']==['UI design']
     with pytest.raises(HTTPException) as denied: preview_upload(library_db,USER,5)
     assert denied.value.status_code==404
     with library_db.get_cursor() as (cur,_):
@@ -108,6 +109,29 @@ def test_library_pagination_scope_preview_and_metadata_no_vectors_changed(librar
         assert cur.fetchone()['vectors']==before
     assert refresh_existing_metadata(library_db)=={'tagged_records_updated':0,'upload_dates_updated':0}
     assert all(row['total'] <= 2 for row in inventory(library_db,USER))
+
+
+def test_tag_inventory_counts_only_workspace_records_and_distinguishes_searchable(library_db):
+    with library_db.get_cursor() as (cur,_):
+        cur.execute('UPDATE resume_embeddings SET embedding=NULL WHERE id=3')
+    tags=tag_inventory(library_db,USER)
+    assert tags=={'UI design':{'total':3,'searchable':2},'Web design':{'total':1,'searchable':1}}
+    assert tag_inventory(library_db,{'user_type':'super_admin'})['UI design']['total']==4
+    with pytest.raises(HTTPException): tag_inventory(library_db,{'user_type':'tenant_user'})
+
+
+@pytest.mark.parametrize('advanced', [True,False])
+def test_multiple_tags_and_folders_never_expand_beyond_selected_scope(library_db,monkeypatch,advanced):
+    monkeypatch.setattr(search,'_get_pool',lambda:library_db.pool)
+    monkeypatch.setattr(search,'_embed_query',lambda query:[1,0,0])
+    monkeypatch.setattr(search,'_advanced_schema_ensured',True)
+    monkeypatch.setattr(search,'ADVANCED_SEARCH_ENABLED',advanced)
+    folders=[*FOLDERS,{'bucket':'fixture-bucket','path':'No CVs here'}]
+    rows=search._vector_search('Required skills: Figma',100,'company_id: ANY("1")',folders,
+                              {'tags':['UI design','Web design']})
+    assert len(rows)==2
+    assert {row['folder'] for row in rows}=={'Networking/Nov 2026','Networking/Nov 2026/sub'}
+    assert {row['id'] for row in rows}=={'1','2'}
 
 
 def test_super_admin_library_qualifies_legacy_paths_with_the_record_company(library_db):

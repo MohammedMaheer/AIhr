@@ -131,6 +131,21 @@ def test_email_attachment_contract_survives_worker_offload(upload_api, monkeypat
     assert store.call_args.kwargs['content'] == PDF
 
 
+@pytest.mark.parametrize('endpoint',['/api/scrape-email-attachments','/api/upload-files'])
+@pytest.mark.parametrize('folder',['Networking/Nov 2026','email_attachments/Design',None])
+def test_mail_import_honors_exact_destination_and_original_received_date(upload_api,monkeypatch,endpoint,folder):
+    client,db,store=upload_api
+    messages=attachments();messages[0]['date']='2026-04-30T23:59:59Z'
+    monkeypatch.setattr(main,'scrape_outlook_attachments',lambda *args:messages)
+    data={'email_provider':'outlook','email_address':'fixture@example.invalid','limit':1,'email_limit':1}
+    if endpoint.endswith('upload-files'): data['scrape_email']='true'
+    if folder is not None: data['folder_path']=folder
+    response=client.post(endpoint,data=data)
+    assert response.status_code==200
+    assert store.call_args.kwargs['blob_name']==(folder or 'email_attachments')+'/fixture.pdf'
+    assert store.call_args.kwargs['source_received']=='2026-04-30T23:59:59Z'
+
+
 def test_unknown_file_size_is_read_with_a_hard_bound(upload_api, monkeypatch):
     client, db, store = upload_api
     monkeypatch.setattr(main, 'MAX_FILE_SIZE', 32)

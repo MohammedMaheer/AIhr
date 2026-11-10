@@ -1528,15 +1528,20 @@ class DatabaseManager:
                 params.append(company_id)
 
             cursor.execute(f"""
+                WITH scoped_searches AS (
+                    SELECT sh.id, sh.search_timestamp, sh.result_count
+                    FROM search_history sh
+                    {where_clause}
+                )
                 SELECT
                     COUNT(*) as total_searches,
                     COUNT(CASE WHEN sh.search_timestamp >= NOW() - INTERVAL '7 days' THEN 1 END) as searches_this_week,
                     COUNT(CASE WHEN sh.search_timestamp >= NOW() - INTERVAL '30 days' THEN 1 END) as searches_this_month,
                     AVG(sh.result_count) as avg_results_per_search,
-                    AVG(sr.match_score) as avg_match_score
-                FROM search_history sh
-                LEFT JOIN search_results sr ON sh.id = sr.search_id
-                {where_clause}
+                    (SELECT AVG(sr.match_score)
+                     FROM search_results sr
+                     JOIN scoped_searches scoped ON scoped.id = sr.search_id) as avg_match_score
+                FROM scoped_searches sh
             """, params)
 
             return cursor.fetchone()

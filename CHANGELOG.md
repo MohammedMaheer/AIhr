@@ -5,6 +5,26 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.10.3 - 2026-11-10
+
+### Search Statistics And Local Tag Repair
+
+- Correct secondary dashboard search counts and per-search averages by
+  aggregating search histories before candidate results. Preserve user/company
+  boundaries, response fields, date cutoffs and candidate-weighted match scores.
+- Normalize document whitespace before the existing local tag rules run.
+  Refresh only 48 verified affected records: restore 49 tag memberships,
+  including 24 previously untagged CVs. No paid AI calls, new tag categories,
+  original-file edits, CV text/vector changes or date/ownership updates.
+- Pass all 1,026 backend tests and 19 frontend suites. Verify 132 deployed
+  folder/tag/date API cases and 98 additional repaired-membership cases against
+  real production data using read-only, injected test identities. No out-of-scope
+  results; all three active accounts' statistics match independent SQL totals.
+- Deploy `clean-20261110t024406z` after database restore/repair rehearsals.
+  Preserve all 434 checked UI files, existing integrations and 20 unrelated
+  containers. Health checks skip paid AI; no schema or dependency changes.
+- See `docs/TAG_STATISTICS_REPAIR_2026-11-10.md` for evidence and limitations.
+
 ## v2026.11.10.2 - 2026-11-10
 
 ### Offline CV Recovery And Annual Mailbox Import

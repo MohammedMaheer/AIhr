@@ -51,6 +51,29 @@ def test_tags_are_local_evidence_and_received_dates_are_not_invented():
     assert params == [['UI design'],'2026-04-01','2026-04-30']
 
 
+@pytest.mark.parametrize('phrase,tag', [
+    ('network engineer', 'IT infrastructure'),
+    ('graphic designer', 'Graphic design'),
+    ('user interface design', 'UI design'),
+    ('web designer', 'Web design'),
+    ('software developer', 'Software development'),
+    ('data scientist', 'Data and AI'),
+    ('project manager', 'Management'),
+    ('accounts payable', 'Finance and accounting'),
+    ('human resources', 'HR and recruitment'),
+    ('sales executive', 'Sales and marketing'),
+])
+@pytest.mark.parametrize('separator', ['\n', '\r\n', '\t', '   ', '\u00a0'])
+def test_tag_phrases_match_across_document_whitespace(phrase, tag, separator):
+    assert tags_from_text(separator.join(phrase.upper().split())) == [tag]
+
+
+@pytest.mark.parametrize('text', [None, '', '\n\t ', 'fictional generic CV',
+    'network engineering', 'graphicdesigner', 'data science', 'chef with culinary experience'])
+def test_whitespace_normalization_does_not_invent_categories(text):
+    assert tags_from_text(text) == []
+
+
 @pytest.fixture
 def library_db(queue_db):
     with queue_db.get_cursor() as (cur, _):
@@ -89,6 +112,29 @@ def test_real_sql_folder_bucket_company_and_date_filters_precede_retrieval(libra
     assert len(rows)==1 and rows[0]['storage_bucket']=='fixture-bucket' and rows[0]['folder']=='Networking/Nov 2026'
     assert searchable_count(library_db, USER, FOLDERS)==2
     assert searchable_count(library_db, USER, FOLDERS, {'date_basis':'received','date_from':'2026-04-01','date_to':'2026-04-30'})==1
+
+
+@pytest.mark.parametrize('advanced', [True, False])
+def test_normalized_tags_feed_scoped_sql_without_changing_resume_content(library_db, monkeypatch, advanced):
+    text = 'Graphic\r\ndesigner with Adobe\tPhotoshop experience'
+    with library_db.get_cursor() as (cursor, _):
+        cursor.execute('UPDATE resume_embeddings SET extracted_text=%s,text_length=%s,search_tags=%s WHERE id=1',
+                       (text, len(text), []))
+        cursor.execute("SELECT to_jsonb(e)-'search_tags' AS original FROM resume_embeddings e WHERE id=1")
+        original = cursor.fetchone()['original']
+        cursor.execute('UPDATE resume_embeddings SET search_tags=%s WHERE id=1', (tags_from_text(text),))
+        cursor.execute("SELECT to_jsonb(e)-'search_tags' AS original FROM resume_embeddings e WHERE id=1")
+        assert cursor.fetchone()['original'] == original
+    monkeypatch.setattr(search, '_get_pool', lambda: library_db.pool)
+    monkeypatch.setattr(search, '_embed_query', lambda query: [1, 0, 0])
+    monkeypatch.setattr(search, '_advanced_schema_ensured', True)
+    monkeypatch.setattr(search, 'ADVANCED_SEARCH_ENABLED', advanced)
+
+    rows = search._vector_search('candidate profiles', 100, 'company_id: ANY("1")', FOLDERS,
+        {'tags': ['Graphic design'], 'date_basis': 'received', 'date_from': '2026-04-01', 'date_to': '2026-04-30'})
+
+    assert [row['id'] for row in rows] == ['1']
+    assert searchable_count(library_db, USER, FOLDERS, {'tags': ['Graphic design']}) == 1
 
 
 def test_library_pagination_scope_preview_and_metadata_no_vectors_changed(library_db):

@@ -19,7 +19,8 @@ TAG_PATTERNS = {
 
 
 def tags_from_text(text):
-    return [name for name, pattern in TAG_PATTERNS.items() if re.search(pattern, text or '', re.I)]
+    normalized = ' '.join((text or '').split())
+    return [name for name, pattern in TAG_PATTERNS.items() if re.search(pattern, normalized, re.I)]
 
 
 def normalize_filters(value):

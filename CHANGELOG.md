@@ -23,6 +23,8 @@ CVs and private audit receipts are excluded from Git.
 - Deploy `clean-20261110t024406z` after database restore/repair rehearsals.
   Preserve all 434 checked UI files, existing integrations and 20 unrelated
   containers. Health checks skip paid AI; no schema or dependency changes.
+- GitHub-hosted CI could not start because of an account billing lock. The
+  results above are independent local/VPS checks, not successful Actions runs.
 - See `docs/TAG_STATISTICS_REPAIR_2026-11-10.md` for evidence and limitations.
 
 ## v2026.11.10.2 - 2026-11-10

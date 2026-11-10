@@ -94,6 +94,13 @@ browser/login test.
 
 ## Remaining Limits
 
+After publication, GitHub Actions runs `42746912173` and `42746912541` could not
+start either job because GitHub reported an account billing lock. No workflow
+steps executed. The successful suites in this report ran independently on the
+local/VPS test infrastructure; they are not hosted-CI passes. The GitHub account
+owner must resolve the billing restriction and rerun Actions. No CI safeguards
+were disabled, and the annotated release tag was not rewritten.
+
 The rules intentionally cover ten categories, not every profession. An untagged
 CV is not necessarily damaged or irrelevant, and no categories were invented
 to raise coverage. Existing unavailable historical email dates remain unknown.

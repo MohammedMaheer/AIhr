@@ -3,6 +3,9 @@ const fs = require('node:fs');
 const { JSDOM } = require('jsdom');
 
 const source = fs.readFileSync('static/js/job-applications.js', 'utf8');
+const styles = fs.readFileSync('static/css/style.css', 'utf8');
+assert.match(styles, /\.job-page-dialog > form\s*\{[^}]*display:flex[^}]*min-height:0/s);
+assert.match(styles, /\.job-page-dialog \.job-page-form\s*\{[^}]*flex:1[^}]*overflow-y:auto/s);
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'

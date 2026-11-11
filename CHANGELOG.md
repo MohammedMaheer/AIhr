@@ -5,6 +5,21 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.11.6 - 2026-11-11
+
+### Keep The Job Page Form Scrollable
+
+- Constrain the create/edit job-page form to the modal’s available height and
+  scroll its content independently, keeping the save/cancel actions visible on
+  desktop and mobile. Add a frontend regression check for the layout contract.
+- Pass 965 backend tests in each provider mode (125 skipped), 41 PostgreSQL
+  application-flow tests and 1,090 queue/recovery tests. Search rankings remain
+  unchanged across 105 fixtures and 7,851 stored vectors; zero AI calls.
+- Deploy `clean-20261111t103729z`; the CSS asset matches the tested hash, SmartHR
+  and document preview are healthy, no unrelated containers changed, and
+  business data and resume fingerprints were preserved. Screenshot-based visual
+  verification remains unavailable while browser control is disabled.
+
 ## v2026.11.11.5 - 2026-11-11
 
 ### Build Custom Candidate Application Pages

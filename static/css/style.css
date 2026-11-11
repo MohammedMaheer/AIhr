@@ -3010,6 +3010,8 @@ button, input, .glass {
 .job-pages-table .workspace-row-actions { white-space:nowrap; }
 .job-page-count { min-width:36px; min-height:32px; border:1px solid #d3dbe4; border-radius:5px; background:white; color:#1d4ed8; font-weight:600; }
 .job-page-dialog { width:min(680px,calc(100vw - 28px)); }
+.job-page-dialog > form { display:flex; flex:1; flex-direction:column; min-height:0; overflow:hidden; }
+.job-page-dialog .job-page-form { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
 .job-question-preview { width:min(760px,calc(100vw - 28px)); }
 .job-page-form { display:grid; gap:16px; }
 .job-page-form label { display:grid; gap:6px; font-size:14px; font-weight:600; }

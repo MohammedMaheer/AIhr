@@ -598,7 +598,9 @@ def _vector_search(query: str, page_size: int = 10,
     conn = pool.getconn()
     try:
         with conn.cursor() as cur:
-            if not ADVANCED_SEARCH_ENABLED:
+            # Keep the lightweight path for semantic-only searches, but hard
+            # criteria require profile evaluation even when hybrid ranking is off.
+            if not ADVANCED_SEARCH_ENABLED and criteria.is_empty():
                 cur.execute(
                     f"""
                     SELECT id, filename, folder, file_size, content_type,

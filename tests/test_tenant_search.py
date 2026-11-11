@@ -8,6 +8,7 @@ import main
 from vps_local import discovery_shim as discovery
 from search_criteria import SearchCriteria, evaluate_criteria, parse_search_criteria
 from test_durable_search import queue_db
+from test_integration_workflows import api
 from vps_local.profile_extractor import profile_from_analysis
 
 
@@ -24,7 +25,7 @@ def test_all_vector_queries_include_parameterized_tenant_scope(advanced):
         assert discovery._vector_search("Python developer in Dubai with 5+ years", 10,
                                          'company_id: ANY("27")') == []
     searches = [call for call in cursor.execute.call_args_list if "FROM resume_embeddings" in call.args[0]]
-    assert len(searches) == (2 if advanced else 1)
+    assert len(searches) == 2, "Hard criteria always use structured verification, even when hybrid ranking is disabled"
     for call in searches:
         sql, params = call.args
         assert "company_id = %s" in sql
@@ -33,6 +34,21 @@ def test_all_vector_queries_include_parameterized_tenant_scope(advanced):
         assert sql.count("%s") == len(params)
     conn.rollback.assert_called()
     pool.putconn.assert_called_once_with(conn)
+
+
+def test_semantic_only_search_keeps_lightweight_path_when_advanced_search_is_disabled():
+    conn, cursor, pool = MagicMock(), MagicMock(), MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cursor
+    cursor.fetchall.return_value = []
+    pool.getconn.return_value = conn
+    with patch.object(discovery, "_get_pool", return_value=pool), \
+         patch.object(discovery, "_embed_query", return_value=[0.1] * 384), \
+         patch.object(discovery, "ADVANCED_SEARCH_ENABLED", False):
+        assert discovery._vector_search("Python engineer", 10, 'company_id: ANY("27")') == []
+
+    searches = [call for call in cursor.execute.call_args_list if "FROM resume_embeddings" in call.args[0]]
+    assert len(searches) == 1
+    assert "candidate_skills" not in searches[0].args[0]
 
 
 @pytest.mark.parametrize("invalid", ['company_id = 7 OR TRUE', 'company_id: ANY("0")', 'unknown = 7'])
@@ -86,6 +102,67 @@ def test_vector_response_cache_does_not_cross_shared_resource_tenants(monkeypatc
     assert {call.args[0].filter for call in client.search.call_args_list} == {
         'company_id: ANY("27")', 'company_id: ANY("28")'}
     main._search_cache_clear()
+
+
+def test_vector_api_fails_closed_when_hard_criteria_are_not_verifiable(api, monkeypatch):
+    client, _db = api
+    monkeypatch.setenv('SMARTHR_LOCAL_MODE', '1')
+    monkeypatch.setattr(main, 'get_company_resources', lambda _user: ('fixture-bucket', 'fixture-store'))
+    exact = SimpleNamespace(
+        id='exact',
+        document=SimpleNamespace(name='exact', struct_data={'criteria_profile_status': 'exact'},
+                                 content=SimpleNamespace(uri='gs://fixture-bucket/resumes/exact.pdf'),
+                                 derived_struct_data={}),
+        relevance_score=0.9,
+    )
+    unverified = SimpleNamespace(
+        id='unverified',
+        document=SimpleNamespace(name='unverified', struct_data={'filename': 'unverified.pdf'},
+                                 content=SimpleNamespace(uri='gs://fixture-bucket/resumes/unverified.pdf'),
+                                 derived_struct_data={}),
+        relevance_score=0.8,
+    )
+    search_client = SimpleNamespace(search=lambda _request: SimpleNamespace(results=[exact, unverified]))
+    main._search_cache_clear()
+    monkeypatch.setattr(main, 'get_search_client', lambda: search_client)
+
+    response = client.post('/api/search-vector', data={
+        'query': 'Required skills: Python', 'result_count': '3',
+        'folders': '[{"bucket":"fixture-bucket","path":"resumes"}]', 'filters': '{}'
+    })
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert [row['id'] for row in payload['results']] == ['exact']
+    assert payload['exact_match_shortfall'] == 2
+    assert payload['criteria_verification'] == 'unavailable'
+
+
+def test_vector_api_reports_incomplete_profile_evidence_without_returning_candidates(api, monkeypatch):
+    client, _db = api
+    monkeypatch.setenv('SMARTHR_LOCAL_MODE', '1')
+    monkeypatch.setattr(main, 'get_company_resources', lambda _user: ('fixture-bucket', 'fixture-store'))
+    unknown = SimpleNamespace(
+        id='unknown',
+        document=SimpleNamespace(name='unknown', struct_data={'criteria_profile_status': 'unknown'},
+                                 content=SimpleNamespace(uri='gs://fixture-bucket/resumes/unknown.pdf'),
+                                 derived_struct_data={}),
+        relevance_score=0.9,
+    )
+    main._search_cache_clear()
+    monkeypatch.setattr(main, 'get_search_client', lambda: SimpleNamespace(
+        search=lambda _request: SimpleNamespace(results=[unknown])))
+
+    response = client.post('/api/search-vector', data={
+        'query': 'Required skills: Python', 'result_count': '2',
+        'folders': '[{"bucket":"fixture-bucket","path":"resumes"}]', 'filters': '{}'
+    })
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload['results'] == []
+    assert payload['exact_match_shortfall'] == 2
+    assert payload['criteria_verification'] == 'incomplete'
 
 
 @pytest.mark.parametrize('wanted', ['Java', 'SQL', 'C', 'C++', 'C#', '.NET', 'R'])

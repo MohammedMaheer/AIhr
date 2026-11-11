@@ -3200,6 +3200,12 @@ document.addEventListener('DOMContentLoaded', function () {
         clearResultsBtn.addEventListener('click', () => {
             vectorSearchResults.classList.add('hidden');
             noResults.classList.add('hidden');
+            const noResultsTitle = noResults.querySelector('h3');
+            const noResultsMessage = noResults.querySelector('p');
+            const noResultsSamples = noResults.querySelector('button');
+            if (noResultsTitle) noResultsTitle.textContent = 'No Results Found';
+            if (noResultsMessage) noResultsMessage.textContent = 'Try adjusting your search query or using different keywords.';
+            if (noResultsSamples) noResultsSamples.hidden = false;
             vectorQuery.value = '';
         });
 
@@ -3219,6 +3225,12 @@ document.addEventListener('DOMContentLoaded', function () {
             // Hide previous results
             vectorSearchResults.classList.add('hidden');
             noResults.classList.add('hidden');
+            const noResultsTitle = noResults.querySelector('h3');
+            const noResultsMessage = noResults.querySelector('p');
+            const noResultsSamples = noResults.querySelector('button');
+            if (noResultsTitle) noResultsTitle.textContent = 'No Results Found';
+            if (noResultsMessage) noResultsMessage.textContent = 'Try adjusting your search query or using different keywords.';
+            if (noResultsSamples) noResultsSamples.hidden = false;
 
             // Get selected search method and result count
             const searchMethod = document.querySelector('input[name="searchMethod"]:checked').value;
@@ -3299,6 +3311,17 @@ document.addEventListener('DOMContentLoaded', function () {
                             displayVectorResults(data, searchTime);
                         }
                     } else {
+                        if (data.criteria_verification === 'unavailable') {
+                            if (noResultsTitle) noResultsTitle.textContent = 'Criteria Could Not Be Verified';
+                            if (noResultsMessage) noResultsMessage.textContent = 'The search index did not provide candidate profile evidence for strict criteria matching. No unverified candidates were shown.';
+                            if (noResultsSamples) noResultsSamples.hidden = true;
+                        } else if (data.criteria_verification === 'incomplete') {
+                            if (noResultsTitle) noResultsTitle.textContent = 'More Resume Evidence Needed';
+                            if (noResultsMessage) noResultsMessage.textContent = 'Some candidate profiles do not contain enough extracted detail to verify every requirement. No uncertain matches were shown; re-index resumes or broaden the criteria.';
+                        } else if (data.criteria_verification === 'verified' && data.search_criteria) {
+                            if (noResultsTitle) noResultsTitle.textContent = 'No Exact Matches';
+                            if (noResultsMessage) noResultsMessage.textContent = 'No candidate profiles met every required criterion. Try broadening the requirements or selecting a larger resume folder.';
+                        }
                         noResults.classList.remove('hidden');
                     }
                 })

@@ -314,6 +314,32 @@ def test_postgres_claim_is_exclusive_and_global_concurrency_is_bounded(queue_db)
     assert not queue_db.claim_hr_scorecard_task(claimed[0]['task_id'])
 
 
+def test_search_quota_is_atomic_under_concurrent_history_writes(queue_db):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+
+    with queue_db.get_cursor() as (cursor, _):
+        cursor.execute("INSERT INTO tenant_companies(id, max_searches) VALUES (1, 1)")
+
+    start = threading.Barrier(2)
+
+    def save_search():
+        start.wait()
+        try:
+            queue_db.save_search_history('Fictional role', 'QA', 0, 7, company_id=1)
+            return 'saved'
+        except Exception as exc:
+            return str(exc)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _: save_search(), range(2)))
+
+    assert outcomes.count('saved') == 1
+    with queue_db.get_cursor() as (cursor, _):
+        cursor.execute('SELECT COUNT(*) AS count FROM search_history WHERE company_id=1')
+        assert cursor.fetchone()['count'] == 1
+
+
 def test_postgres_crash_recovery_fences_the_old_attempt(queue_db):
     enqueue(queue_db)
     first = queue_db.claim_next_hr_task()

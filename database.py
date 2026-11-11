@@ -514,6 +514,8 @@ class DatabaseManager:
         with (self.get_cursor() if cursor is None else nullcontext((cursor, None))) as (cursor, conn):
             # Check search limit for company if applicable
             if company_id:
+                # Serialize each tenant's quota check and insert in this transaction.
+                cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", (726341, int(company_id)))
                 cursor.execute("""
                     SELECT COALESCE(max_searches, 10000) as max_searches,
                            (SELECT COUNT(*) FROM search_history WHERE company_id = %s AND search_timestamp >= DATE_TRUNC('month', CURRENT_DATE)) as current_searches

@@ -5,6 +5,32 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.11.4 - 2026-11-11
+
+### Improve Application Questions
+
+- Replace the free-form question textarea with an optional, editable list capped
+  at six questions. Validate blank, duplicate, oversized and non-text values in
+  the UI and API; validate candidate answers before accepting CV uploads.
+- Add explicit AI question drafting using the selected company name, current
+  role details and up to four same-company role examples. Drafts are limited to
+  500 output tokens, screened for sensitive personal questions and shown in an
+  editable review dialog. Recruiters can add to existing questions or explicitly
+  replace them; nothing is saved until the job page is saved.
+- Preserve system instructions through the OpenAI fallback path so the same
+  prompt-injection and sensitive-topic safeguards apply during provider failover.
+- Pass 963 backend tests per provider mode (109 skipped), 25 isolated PostgreSQL
+  application API tests, 1,072 isolated reliability/workflow tests and all 20
+  frontend DOM suites. No paid AI calls. Check 105 ranking fixtures against
+  7,851 tenant vectors: identical embeddings and zero top-10 mismatches. Scan
+  102 runtime packages: zero known vulnerabilities.
+- Desktop/mobile browser screenshots were not available; the question editor,
+  AI review, duplicate validation and save payload are covered by DOM tests.
+- Deploy `clean-20261111t094957z`; SmartHR is healthy, no unrelated containers
+  changed, and business records, resume fingerprints, OAuth credentials and
+  recruiter outreach data were preserved. The deployed application-question
+  asset matches the tested source hash; 48 health probes added zero AI calls.
+
 ## v2026.11.11.3 - 2026-11-11
 
 ### Show Job Applications To Super Admins

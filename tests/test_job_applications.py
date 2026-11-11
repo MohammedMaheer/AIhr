@@ -164,6 +164,112 @@ def test_page_edit_publish_pause_close_and_audit_use_optimistic_versions(job_app
     assert actions.count('DELETE_EMPTY_JOB_APPLICATION_PAGE') == 1
 
 
+@pytest.mark.parametrize('questions', [
+    ['What is your notice period?', ' what   is your NOTICE period? '],
+    ['x' * 181],
+    ['A valid question?', ''],
+    ['A valid question?', 7],
+    ['Question'] * 7,
+])
+def test_job_page_rejects_invalid_custom_questions(job_app_flow, questions):
+    response = job_app_flow.client.post('/api/job-application-pages',
+        json=page_payload(custom_questions=questions))
+    assert response.status_code == 422
+
+
+def test_ai_application_questions_are_company_scoped_and_review_ready(job_app_flow, monkeypatch):
+    flow = job_app_flow
+    related = flow.client.post('/api/job-application-pages', json=page_payload(
+        title='Cloud Platform Engineer', description='Build and operate secure cloud services.'))
+    assert related.status_code == 200
+    flow.actor['user'] = {'id':8,'email':'other@example.invalid','user_type':'tenant_admin',
+                          'company':{'company_id':2,'company_code':'jobs-two'}}
+    isolated = flow.client.post('/api/job-application-pages', json=page_payload(
+        title='Confidential Other Tenant Role', description='Other company data must stay private.'))
+    assert isolated.status_code == 200
+    flow.actor['user'] = {'id':7,'email':'manager@example.invalid','user_type':'tenant_admin',
+                          'company':{'company_id':1,'company_code':'jobs-one'}}
+    calls = []
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(text=json.dumps({'questions':[
+                'Describe a production incident you resolved.',
+                'Which infrastructure tools have you used in production?',
+            ]}))
+
+    monkeypatch.setattr(main, 'gemini_client', lambda: SimpleNamespace(models=FakeModels()))
+    response = flow.client.post('/api/job-application-pages/generate-questions', json={
+        'title':'Senior Platform Engineer',
+        'description':'Design and run reliable infrastructure for our product team.',
+        'location':'Remote', 'employment_type':'Full-time',
+    })
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data['company_name'] == 'Fictional Hiring Co'
+    assert len(data['questions']) == 2
+    assert calls and calls[0]['config'].max_output_tokens == 500
+    prompt = calls[0]['contents']
+    assert 'Fictional Hiring Co' in prompt and 'Cloud Platform Engineer' in prompt
+    assert 'Confidential Other Tenant Role' not in prompt
+    assert 'untrusted reference data' in calls[0]['config'].system_instruction
+    assert 'candidate@example.invalid' not in prompt
+    assert calls[0]['config'].response_mime_type == 'application/json'
+
+    flow.actor['user'] = {'id':8,'email':'other@example.invalid','user_type':'tenant_admin',
+                          'company':{'company_id':2,'company_code':'jobs-two'}}
+    forbidden = flow.client.post('/api/job-application-pages/generate-questions', json={
+        'company_id':1, 'title':'Other role', 'description':'A detailed role description for testing.'})
+    assert forbidden.status_code == 403
+    assert len(calls) == 1
+
+
+def test_ai_application_question_output_is_rejected_when_invalid(job_app_flow, monkeypatch):
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            return SimpleNamespace(text=json.dumps({'questions':['What is your age?']}))
+
+    monkeypatch.setattr(main, 'gemini_client', lambda: SimpleNamespace(models=FakeModels()))
+    response = job_app_flow.client.post('/api/job-application-pages/generate-questions', json={
+        'title':'Platform Engineer', 'description':'Build reliable services for the product team.'})
+    assert response.status_code == 502
+
+
+def test_ai_application_question_provider_failure_is_distinct_from_bad_output(job_app_flow, monkeypatch):
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            raise TimeoutError('synthetic provider timeout')
+
+    monkeypatch.setattr(main, 'gemini_client', lambda: SimpleNamespace(models=FakeModels()))
+    response = job_app_flow.client.post('/api/job-application-pages/generate-questions', json={
+        'title':'Platform Engineer', 'description':'Build reliable services for the product team.'})
+    assert response.status_code == 503
+
+
+def test_ai_application_question_allows_technical_race_condition_language(job_app_flow, monkeypatch):
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            return SimpleNamespace(text=json.dumps({'questions':[
+                'How do you detect and resolve race conditions in concurrent services?'
+            ]}))
+
+    monkeypatch.setattr(main, 'gemini_client', lambda: SimpleNamespace(models=FakeModels()))
+    response = job_app_flow.client.post('/api/job-application-pages/generate-questions', json={
+        'title':'Platform Engineer', 'description':'Build reliable services for the product team.'})
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.parametrize('answer', [['not text'], 'x' * 1001])
+def test_application_answer_rejects_non_text_or_oversized_values(job_app_flow, answer):
+    page = publish(job_app_flow)
+    token = page['public_url'].rsplit('/', 1)[1]
+    response = submit(job_app_flow, '/api/public/application-pages/' + token + '/applications',
+                      answers=json.dumps({'0':answer}))
+    assert response.status_code == 422
+    job_app_flow.upload.assert_not_awaited()
+
+
 @pytest.mark.parametrize('changes,expected', [
     ({'consent':'false'}, 422),
     ({'email':'invalid'}, 422),

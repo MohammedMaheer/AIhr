@@ -74,7 +74,11 @@ async function run() {
         answers: {}, status: 'received', version: 1, vector_indexed: true, resume_upload_id: 42,
         created_at: '2026-11-11T00:00:00Z', interview_id: null }];
     manager.fetch = async url => {
-        const payload = String(url).includes('/applications?')
+        const payload = String(url).includes('/generate-questions')
+            ? {success:true,company_name:'Fictional Hiring Co',questions:[
+                'Describe a relevant project you delivered.', 'How do you approach production incidents?'
+            ]}
+            : String(url).includes('/applications?')
             ? { success: true, applications, total: 1 }
             : { success: true, pages: [{ id: 11, title: 'Platform Engineer', location: 'Remote',
                 employment_type: 'Full-time', status: 'published', version: 1, public_url: '/apply/' + 'b'.repeat(42),
@@ -109,6 +113,10 @@ async function run() {
         adminCalls.push({url:String(url), options});
         const data = String(url) === '/api/companies'
             ? {companies:[{id:1,company_name:'Fictional One',is_active:true},{id:2,company_name:'Fictional Two',is_active:true}]}
+            : String(url).startsWith('/api/job-application-pages/generate-questions')
+                ? {success:true,company_name:'Fictional Two',questions:[
+                    'Describe a role-relevant project.', 'How do you troubleshoot a service issue?'
+                ]}
             : {success:true,pages:[]};
         return {ok:true,headers:{get:()=> 'application/json'},json:async()=>data};
     };
@@ -129,11 +137,34 @@ async function run() {
     const pageForm = admin.document.querySelector('[data-job-page-dialog] form');
     pageForm.elements.title.value = 'Fictional Role';
     pageForm.elements.description.value = 'A sufficiently detailed fictional role description.';
+    admin.document.querySelector('[data-generate-questions]').click();
+    await flush();
+    const preview = admin.document.querySelector('[data-question-preview]');
+    assert(preview);
+    assert.match(preview.querySelector('[data-preview-company]').textContent,/Fictional Two/);
+    const draftInputs = preview.querySelectorAll('textarea');
+    assert.equal(draftInputs.length,2);
+    draftInputs[0].value = 'Edited after human review.';
+    draftInputs[0].dispatchEvent(new admin.Event('input',{bubbles:true}));
+    preview.querySelector('[data-use-questions]').click();
+    assert.equal(admin.document.querySelectorAll('[data-job-page-dialog] [data-question-index]').length,2);
+    assert.equal(admin.document.querySelector('[data-job-page-dialog] [data-question-index]').value,'Edited after human review.');
+    const questionFields = admin.document.querySelectorAll('[data-job-page-dialog] [data-question-index]');
+    questionFields[1].value = questionFields[0].value;
+    questionFields[1].dispatchEvent(new admin.Event('input',{bubbles:true}));
     pageForm.dispatchEvent(new admin.Event('submit', {bubbles:true,cancelable:true}));
     await flush();
-    const createCall = adminCalls.find(call => call.options.method === 'POST');
+    assert.equal(adminCalls.some(call => call.url.startsWith('/api/job-application-pages?company_id=2') && call.options.method === 'POST'),false);
+    questionFields[1].value = 'How do you troubleshoot a service issue?';
+    questionFields[1].dispatchEvent(new admin.Event('input',{bubbles:true}));
+    pageForm.dispatchEvent(new admin.Event('submit', {bubbles:true,cancelable:true}));
+    await flush();
+    const createCall = adminCalls.find(call => call.url.startsWith('/api/job-application-pages?company_id=2') && call.options.method === 'POST');
     assert(createCall);
     assert.equal(JSON.parse(createCall.options.body).company_id,2);
+    assert.deepEqual(JSON.parse(createCall.options.body).custom_questions,[
+        'Edited after human review.','How do you troubleshoot a service issue?'
+    ]);
     adminDom.window.close();
     console.log('Application flows passed: public validation, safe rendering, linked recruiter email/interview actions and accessible success state.');
 }

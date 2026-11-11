@@ -143,19 +143,200 @@
                 '<form><div class="workspace-dialog-body job-page-form"><label>Job title<input name="title" maxlength="180" required value="' + esc(page?.title || '') + '"></label>' +
                 '<div class="job-page-form-grid"><label>Location<input name="location" maxlength="180" placeholder="e.g. Abu Dhabi or Remote" value="' + esc(page?.location || '') + '"></label><label>Employment type<input name="employment_type" maxlength="80" value="' + esc(page?.employment_type || 'Full-time') + '"></label></div>' +
                 '<label>Role description<textarea name="description" rows="8" minlength="20" maxlength="12000" required placeholder="Describe the role, responsibilities and essential qualifications.">' + esc(page?.description || '') + '</textarea></label>' +
-                '<label>Optional application questions <span class="workspace-muted">One question per line, up to six</span><textarea name="questions" rows="4" maxlength="1100" placeholder="What is your notice period?\nWhat salary range are you seeking?">' + esc((page?.custom_questions || []).join('\n')) + '</textarea></label>' +
+                '<section class="job-question-editor" aria-describedby="job-question-help"><div class="job-question-toolbar"><div><strong>Application questions</strong><span class="workspace-muted">Optional · up to six</span></div><button type="button" data-generate-questions class="workspace-button"><i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i>Draft with AI</button></div>' +
+                '<p id="job-question-help" class="workspace-muted">Questions stay optional for candidates. AI drafts use this role and your company’s other job pages; review them before use.</p><div data-question-list class="job-question-list"></div>' +
+                '<div class="job-question-footer"><button type="button" data-add-question class="workspace-button"><i class="fas fa-plus" aria-hidden="true"></i>Add question</button><span data-question-count class="workspace-muted" aria-live="polite">0 of 6</span></div></section>' +
                 '<p class="workspace-muted">Applicants provide their contact details and CV. Applications are not automatically scored.</p><p data-error role="alert" class="workspace-inline-error hidden"></p></div>' +
                 '<footer><button type="button" data-close class="workspace-button">Cancel</button><button type="submit" class="workspace-button is-primary"><i class="fas fa-check" aria-hidden="true"></i>' + (editing ? 'Save changes' : 'Save draft') + '</button></footer></form></section>';
             document.body.append(modal);
             window.bindScheduleDialog?.(modal, editing ? 'Edit job page' : 'Create job page');
-            modal.querySelectorAll('[data-close]').forEach(button => button.onclick = () => modal.remove());
             const form = modal.querySelector('form');
+            const questionList = modal.querySelector('[data-question-list]');
+            const addQuestion = modal.querySelector('[data-add-question]');
+            const questionCount = modal.querySelector('[data-question-count]');
+            let questionValues = Array.isArray(page?.custom_questions) ? page.custom_questions.slice() : [];
+            form.elements.title.addEventListener('input', () => form.elements.title.setCustomValidity(''));
+            form.elements.description.addEventListener('input', () => form.elements.description.setCustomValidity(''));
+
+            function renderQuestionFields(focusIndex = null) {
+                questionList.innerHTML = questionValues.map((question, index) => '<div class="job-question-row"><label for="job-question-' + index + '"><span>Question ' + (index + 1) + '</span><input id="job-question-' + index + '" type="text" maxlength="180" required value="' + esc(question) + '" data-question-index="' + index + '"><span class="job-question-length" data-question-length="' + index + '">' + esc(String(question).length) + '/180</span></label><button type="button" data-remove-question="' + index + '" class="workspace-icon-button is-danger" aria-label="Remove question ' + (index + 1) + '" title="Remove question"><i class="fas fa-trash" aria-hidden="true"></i></button></div>').join('');
+                questionCount.textContent = questionValues.length + ' of 6';
+                addQuestion.disabled = questionValues.length >= 6;
+                if (focusIndex !== null) questionList.querySelector('[data-question-index="' + focusIndex + '"]')?.focus();
+            }
+
+            function validateQuestionFields() {
+                const inputs = [...questionList.querySelectorAll('[data-question-index]')];
+                const seen = new Set();
+                let valid = true;
+                inputs.forEach(input => {
+                    input.setCustomValidity('');
+                    const normalized = input.value.trim().replace(/\s+/g, ' ').toLowerCase();
+                    if (!normalized) input.setCustomValidity('Enter a question or remove this row.');
+                    else if (seen.has(normalized)) input.setCustomValidity('Remove this duplicate question.');
+                    else seen.add(normalized);
+                    if (!input.checkValidity()) valid = false;
+                });
+                return valid;
+            }
+
+            function closeForm() {
+                document.querySelectorAll('[data-question-preview]').forEach(preview => preview.remove());
+                modal.remove();
+            }
+
+            modal.querySelectorAll('[data-close]').forEach(button => button.onclick = closeForm);
+            questionList.addEventListener('input', event => {
+                const input = event.target.closest('[data-question-index]');
+                if (!input) return;
+                const index = Number(input.dataset.questionIndex);
+                questionValues[index] = input.value;
+                const length = questionList.querySelector('[data-question-length="' + index + '"]');
+                if (length) length.textContent = input.value.length + '/180';
+                input.setCustomValidity('');
+            });
+            questionList.addEventListener('click', event => {
+                const button = event.target.closest('[data-remove-question]');
+                if (!button) return;
+                questionValues.splice(Number(button.dataset.removeQuestion), 1);
+                renderQuestionFields(Math.min(Number(button.dataset.removeQuestion), questionValues.length - 1));
+            });
+            addQuestion.addEventListener('click', () => {
+                if (questionValues.length >= 6) return;
+                questionValues.push('');
+                renderQuestionFields(questionValues.length - 1);
+            });
+            renderQuestionFields();
+
+            async function openQuestionPreview() {
+                const title = form.elements.title.value.trim();
+                const description = form.elements.description.value.trim();
+                if (title.length < 2 || description.length < 20) {
+                    form.elements.title.setCustomValidity(title.length < 2 ? 'Enter a job title before drafting questions.' : '');
+                    form.elements.description.setCustomValidity(description.length < 20 ? 'Add at least 20 characters of role detail before drafting questions.' : '');
+                    form.reportValidity();
+                    return;
+                }
+                form.elements.title.setCustomValidity('');
+                form.elements.description.setCustomValidity('');
+                const preview = document.createElement('div');
+                preview.className = 'workspace-overlay'; preview.dataset.questionPreview = 'true';
+                preview.innerHTML = '<section class="workspace-dialog job-question-preview"><header><h3>Review AI question suggestions</h3><button type="button" data-preview-close class="workspace-icon-button" aria-label="Close suggestions" title="Close"><i class="fas fa-times" aria-hidden="true"></i></button></header>' +
+                    '<div class="workspace-dialog-body"><p class="job-question-preview-note">Suggestions for <strong data-preview-company>your company</strong>. Review and edit each question before using it. Nothing is saved until you save the job page.</p><div data-preview-state class="job-question-preview-state" role="status" aria-live="polite"><i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>Preparing role-specific suggestions…</div><div data-preview-questions class="job-question-preview-list"></div><p data-preview-error class="workspace-inline-error hidden" role="alert"></p></div>' +
+                    '<footer><span data-preview-count class="workspace-muted">0 of 6 selected</span><button type="button" data-preview-close class="workspace-button">Cancel</button><button type="button" data-replace-questions class="workspace-button" hidden>Replace current</button><button type="button" data-use-questions class="workspace-button is-primary" disabled>Use selected questions</button></footer></section>';
+                document.body.append(preview);
+                window.bindScheduleDialog?.(preview, 'Review AI question suggestions');
+                preview.querySelectorAll('[data-preview-close]').forEach(button => button.onclick = () => preview.remove());
+                const state = preview.querySelector('[data-preview-state]');
+                const suggestionsHost = preview.querySelector('[data-preview-questions]');
+                const apply = preview.querySelector('[data-use-questions]');
+                const replace = preview.querySelector('[data-replace-questions]');
+                const selectedCount = preview.querySelector('[data-preview-count]');
+                let suggestions = [];
+                replace.hidden = questionValues.length === 0;
+                if (questionValues.length) apply.textContent = 'Add to current';
+                function updateDraftCount() {
+                    const selected = suggestions.filter(item => item.selected).length;
+                    selectedCount.textContent = selected + ' of 6 selected';
+                    apply.disabled = selected < 1 || selected > 6;
+                }
+                function renderSuggestions(focusIndex = null) {
+                    suggestionsHost.replaceChildren();
+                    suggestions.forEach((item, index) => {
+                        const row = document.createElement('div'); row.className = 'job-question-preview-row';
+                        const label = document.createElement('label'); label.className = 'job-question-preview-select';
+                        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = item.selected;
+                        checkbox.setAttribute('aria-label', 'Include question ' + (index + 1));
+                        checkbox.addEventListener('change', () => { item.selected = checkbox.checked; updateDraftCount(); });
+                        label.append(checkbox, document.createTextNode('Use'));
+                        const editor = document.createElement('div'); editor.className = 'job-question-preview-edit';
+                        const caption = document.createElement('label'); caption.textContent = 'Question ' + (index + 1);
+                        const textarea = document.createElement('textarea'); textarea.maxLength = 180; textarea.rows = 2;
+                        textarea.value = item.question; textarea.setAttribute('aria-label', 'Edit question ' + (index + 1));
+                        textarea.addEventListener('input', () => { item.question = textarea.value; });
+                        const length = document.createElement('span'); length.className = 'job-question-length'; length.textContent = item.question.length + '/180';
+                        textarea.addEventListener('input', () => { length.textContent = textarea.value.length + '/180'; });
+                        editor.append(caption, textarea, length);
+                        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'workspace-icon-button is-danger';
+                        remove.setAttribute('aria-label', 'Remove suggestion ' + (index + 1)); remove.title = 'Remove suggestion';
+                        remove.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>';
+                        remove.addEventListener('click', () => { suggestions.splice(index, 1); renderSuggestions(); });
+                        row.append(label, editor, remove); suggestionsHost.append(row);
+                    });
+                    let add = preview.querySelector('[data-add-draft-question]');
+                    if (!add) {
+                        add = document.createElement('button'); add.type = 'button'; add.dataset.addDraftQuestion = 'true';
+                        add.className = 'workspace-button'; add.innerHTML = '<i class="fas fa-plus" aria-hidden="true"></i>Add a question';
+                        suggestionsHost.after(add);
+                        add.addEventListener('click', () => {
+                            if (suggestions.length >= 6) return;
+                            suggestions.push({question:'', selected:true});
+                            renderSuggestions(suggestions.length - 1);
+                        });
+                    }
+                    add.disabled = suggestions.length >= 6;
+                    if (focusIndex !== null) suggestionsHost.querySelectorAll('textarea')[focusIndex]?.focus();
+                    updateDraftCount();
+                }
+                function applyDraft(replaceCurrent) {
+                    const chosen = suggestions.filter(item => item.selected).map(item => item.question.trim().replace(/\s+/g, ' '));
+                    const combined = replaceCurrent ? chosen : [...questionValues, ...chosen];
+                    const seen = new Set();
+                    const problem = combined.find(question => {
+                        const key = question.toLowerCase();
+                        if (!question || question.length > 180 || seen.has(key)) return true;
+                        seen.add(key); return false;
+                    });
+                    if (!chosen.length || problem !== undefined) {
+                        const box = preview.querySelector('[data-preview-error]');
+                        box.textContent = !chosen.length ? 'Select at least one question to continue.' : 'Fix blank or duplicate questions before continuing.';
+                        box.classList.remove('hidden');
+                        return;
+                    }
+                    if (combined.length > 6) {
+                        const box = preview.querySelector('[data-preview-error]');
+                        box.textContent = 'There is room for ' + (replaceCurrent ? 6 : Math.max(0, 6 - questionValues.length)) + ' more question(s). Remove or unselect suggestions, or replace the current questions.';
+                        box.classList.remove('hidden');
+                        return;
+                    }
+                    questionValues = combined;
+                    renderQuestionFields();
+                    preview.remove();
+                }
+                apply.addEventListener('click', () => applyDraft(false));
+                replace.addEventListener('click', () => applyDraft(true));
+                const body = {title, description, location:form.elements.location.value,
+                    employment_type:form.elements.employment_type.value,
+                    ...(editing ? {page_id:Number(page.id)} : {}),
+                    ...(isSuperAdmin ? {company_id:Number(selectedCompanyId)} : {})};
+                try {
+                    const data = await scopedRequest('/api/job-application-pages/generate-questions', {
+                        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+                    });
+                    if (!preview.isConnected) return;
+                    if (!Array.isArray(data.questions) || !data.questions.length) throw new Error('No question suggestions were returned.');
+                    preview.querySelector('[data-preview-company]').textContent = data.company_name || 'your company';
+                    suggestions = data.questions.slice(0, 6).map(question => ({question:String(question), selected:true}));
+                    state.textContent = 'Review the suggestions. You can edit, remove, or add questions.';
+                    renderSuggestions();
+                } catch (error) {
+                    if (!preview.isConnected) return;
+                    state.textContent = 'Suggestions could not be prepared.';
+                    const box = preview.querySelector('[data-preview-error]');
+                    box.textContent = error.message; box.classList.remove('hidden');
+                }
+            }
+            modal.querySelector('[data-generate-questions]').addEventListener('click', openQuestionPreview);
             form.addEventListener('submit', async event => {
                 event.preventDefault();
+                if (!validateQuestionFields()) {
+                    questionList.querySelector(':invalid')?.reportValidity();
+                    return;
+                }
                 if (!form.reportValidity()) return;
                 const submit = form.querySelector('[type="submit"]');
                 submit.disabled = true; submit.innerHTML = '<i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>Saving...';
-                const questions = form.elements.questions.value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+                const questions = questionValues.map(value => value.trim().replace(/\s+/g, ' '));
                 const payload = {title:form.elements.title.value, location:form.elements.location.value,
                     employment_type:form.elements.employment_type.value, description:form.elements.description.value,
                     custom_questions:questions, ...(isSuperAdmin ? {company_id:Number(selectedCompanyId)} : {}),
@@ -163,7 +344,7 @@
                 try {
                     await scopedRequest(editing ? '/api/job-application-pages/' + Number(page.id) : '/api/job-application-pages',
                         {method:editing ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-                    modal.remove(); notify(editing ? 'Job page updated.' : 'Draft saved. Publish it when it is ready.'); await loadPages();
+                    closeForm(); notify(editing ? 'Job page updated.' : 'Draft saved. Publish it when it is ready.'); await loadPages();
                 } catch (error) {
                     const message = modal.querySelector('[data-error]'); message.textContent = error.message; message.classList.remove('hidden');
                     submit.disabled = false; submit.innerHTML = '<i class="fas fa-check" aria-hidden="true"></i>' + (editing ? 'Save changes' : 'Save draft');
@@ -285,7 +466,7 @@
         };
         window.addEventListener('job-application-interview-scheduled', onInterviewScheduled);
         if (!isSuperAdmin) loadPages();
-        return () => { disposed = true; sequence++; window.removeEventListener('job-application-interview-scheduled', onInterviewScheduled); document.querySelectorAll('[data-job-page-dialog]').forEach(modal => modal.remove()); };
+        return () => { disposed = true; sequence++; window.removeEventListener('job-application-interview-scheduled', onInterviewScheduled); document.querySelectorAll('[data-job-page-dialog],[data-question-preview]').forEach(modal => modal.remove()); };
     }
 
     async function initPublicApplicationPage(root) {
@@ -314,7 +495,7 @@
             const questionHost = root.querySelector('[data-questions]');
             questions.forEach((question, index) => {
                 const wrapper = document.createElement('div'); wrapper.className = 'application-field application-question';
-                const label = document.createElement('label'); label.htmlFor = 'application-question-' + index; label.textContent = question;
+                const label = document.createElement('label'); label.htmlFor = 'application-question-' + index; label.textContent = question + ' (optional)';
                 const input = document.createElement('input'); input.id = label.htmlFor; input.dataset.question = String(index); input.maxLength = 1000; input.autocomplete = 'off';
                 wrapper.append(label, input); questionHost.append(wrapper);
             });

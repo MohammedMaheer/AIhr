@@ -3010,12 +3010,37 @@ button, input, .glass {
 .job-pages-table .workspace-row-actions { white-space:nowrap; }
 .job-page-count { min-width:36px; min-height:32px; border:1px solid #d3dbe4; border-radius:5px; background:white; color:#1d4ed8; font-weight:600; }
 .job-page-dialog { width:min(680px,calc(100vw - 28px)); }
+.job-question-preview { width:min(760px,calc(100vw - 28px)); }
 .job-page-form { display:grid; gap:16px; }
 .job-page-form label { display:grid; gap:6px; font-size:14px; font-weight:600; }
 .job-page-form input,.job-page-form textarea { width:100%; min-width:0; box-sizing:border-box; border:1px solid #cbd5e1; border-radius:5px; padding:10px 11px; font:inherit; font-weight:400; }
 .job-page-form textarea { resize:vertical; }
 .job-page-form input:focus,.job-page-form textarea:focus { outline:3px solid #bfdbfe; border-color:#2563eb; }
 .job-page-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.job-question-editor { display:grid; gap:10px; padding-top:14px; border-top:1px solid #e3e7ed; }
+.job-question-toolbar,.job-question-toolbar > div,.job-question-footer { display:flex; align-items:center; gap:10px; }
+.job-question-toolbar { justify-content:space-between; }
+.job-question-toolbar > div { min-width:0; flex-wrap:wrap; }
+.job-question-toolbar .workspace-muted { font-size:12px; }
+.job-question-editor > p { margin:0; font-size:13px; }
+.job-question-footer { justify-content:space-between; }
+.job-question-list,.job-question-preview-list { display:grid; gap:10px; }
+.job-question-row { display:grid; grid-template-columns:minmax(0,1fr) 36px; align-items:end; gap:8px; }
+.job-question-row > label { min-width:0; position:relative; }
+.job-question-row > label > span:first-child,.job-question-preview-edit > label { color:#475569; font-size:12px; font-weight:600; }
+.job-question-row > label > .job-question-length,.job-question-length { justify-self:end; color:#64748b; font-size:11px; font-weight:400; }
+.job-question-row input { min-height:40px; }
+.job-question-preview-note { margin:0 0 16px; color:#475569; line-height:1.5; }
+.job-question-preview-state { margin-bottom:12px; color:#475569; }
+.job-question-preview-row { display:grid; grid-template-columns:52px minmax(0,1fr) 36px; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #e7ebf0; }
+.job-question-preview-select { display:flex; align-items:center; gap:6px; color:#475569; font-size:13px; }
+.job-question-preview-select input { width:16px; height:16px; accent-color:#2563eb; }
+.job-question-preview-edit { display:grid; min-width:0; gap:5px; }
+.job-question-preview-edit textarea { width:100%; min-height:58px; box-sizing:border-box; resize:vertical; border:1px solid #cbd5e1; border-radius:5px; padding:9px 10px; color:#172033; font:inherit; line-height:1.4; }
+.job-question-preview-edit textarea:focus { outline:3px solid #bfdbfe; border-color:#2563eb; }
+.job-question-preview [data-add-draft-question] { margin-top:12px; }
+.job-question-preview footer > [data-preview-count] { margin-right:auto; }
+.job-question-preview [data-preview-error] { margin-top:12px; }
 .job-applications-heading { display:flex; align-items:center; gap:16px; margin:0 0 16px; }
 .job-applications-heading > div { min-width:0; flex:1; }
 .job-applications-heading h3 { margin:0; font-size:18px; }
@@ -3042,4 +3067,10 @@ button, input, .glass {
     .job-page-form-grid { grid-template-columns:minmax(0,1fr); }
     .job-applications-view > .workspace-header { flex-direction:column; }
     .job-applications-heading > .workspace-button { flex:1; justify-content:center; }
+    .job-question-toolbar { align-items:flex-start; flex-direction:column; }
+    .job-question-toolbar [data-generate-questions] { width:100%; justify-content:center; }
+    .job-question-preview-row { grid-template-columns:46px minmax(0,1fr) 34px; gap:7px; }
+    .job-question-preview footer { flex-wrap:wrap; }
+    .job-question-preview footer > [data-preview-count] { flex-basis:100%; }
+    .job-question-preview footer > button { flex:1; justify-content:center; }
 }

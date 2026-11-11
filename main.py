@@ -57,9 +57,11 @@ from google.genai import types
 import os
 import json
 import base64
+import ipaddress
 import io
 import asyncio
 import copy
+from decimal import Decimal, InvalidOperation
 from typing import List, Dict, Any, AsyncGenerator
 import pypdf as PyPDF2
 import pdfplumber
@@ -11138,6 +11140,121 @@ def _application_questions(value):
     return questions
 
 
+def _application_public_url(value, label, max_length=2048):
+    if value is None or value == '':
+        return ''
+    if not isinstance(value, str) or len(value) > max_length:
+        raise HTTPException(status_code=422, detail=f'{label} must be a valid HTTPS link under {max_length} characters.')
+    candidate = _sanitize_user_text(value, max_length).strip()
+    try:
+        parsed = urlparse(candidate)
+        host = (parsed.hostname or '').rstrip('.').lower()
+        port = parsed.port
+        try:
+            ip = ipaddress.ip_address(host) if host else None
+        except ValueError:
+            ip = None
+        try:
+            ascii_host = host.encode('idna').decode('ascii')
+            dns_labels = ascii_host.split('.')
+            valid_dns = (len(ascii_host) <= 253 and len(dns_labels) >= 2 and
+                all(len(label) <= 63 and re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?', label)
+                    for label in dns_labels))
+        except (UnicodeError, ValueError):
+            valid_dns = False
+        ambiguous_numeric_host = bool(re.fullmatch(r'(?:\d+|0x[0-9a-f]+)(?:\.(?:\d+|0x[0-9a-f]+))*', host))
+        local_host = (not host or host == 'localhost' or
+            host.endswith(('.localhost', '.local', '.internal', '.lan')) or '.' not in host)
+        valid = (parsed.scheme == 'https' and bool(host) and not any(ch.isspace() for ch in candidate)
+            and not local_host and not ambiguous_numeric_host and '%' not in host
+            and (valid_dns if ip is None else ip.is_global)
+            and parsed.username is None and parsed.password is None and port in (None, 443))
+    except (ValueError, UnicodeError):
+        valid = False
+    if not valid:
+        raise HTTPException(status_code=422, detail=f'{label} must be a public HTTPS link without credentials or a custom port.')
+    return candidate
+
+
+def _application_amount(value, label):
+    if value is None or value == '':
+        return ''
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        raise HTTPException(status_code=422, detail=f'{label} must be a valid amount.')
+    try:
+        amount = Decimal(str(value))
+    except InvalidOperation:
+        raise HTTPException(status_code=422, detail=f'{label} must be a valid amount.')
+    if not amount.is_finite() or amount < 0 or amount > Decimal('999999999.99') or amount.normalize().as_tuple().exponent < -2:
+        raise HTTPException(status_code=422, detail=f'{label} must be between 0 and 999,999,999.99 with up to two decimals.')
+    return format(amount.normalize(), 'f')
+
+
+def _application_settings(value):
+    if value is None:
+        value = {}
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=422, detail='Application page settings must be an object.')
+    banner = value.get('banner') or {}
+    pay = value.get('pay') or {}
+    fields = value.get('fields') or {}
+    if not all(isinstance(item, dict) for item in (banner, pay, fields)):
+        raise HTTPException(status_code=422, detail='Banner, pay and form-field settings must be objects.')
+
+    headline = banner.get('headline', '')
+    if not isinstance(headline, str) or len(headline) > 160:
+        raise HTTPException(status_code=422, detail='Banner headline must be 160 characters or fewer.')
+    headline = _sanitize_user_text(headline, 160)
+    banner_color = banner.get('color', '#173B47')
+    if not isinstance(banner_color, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', banner_color):
+        raise HTTPException(status_code=422, detail='Choose a valid banner color.')
+    banner_image_url = _application_public_url(banner.get('image_url', ''), 'Banner image link')
+
+    arrangement = value.get('work_arrangement', 'unspecified')
+    if not isinstance(arrangement, str) or arrangement not in {'unspecified', 'onsite', 'hybrid', 'remote'}:
+        raise HTTPException(status_code=422, detail='Choose onsite, hybrid, remote or unspecified work arrangement.')
+    resume_policy = value.get('resume_policy', 'either')
+    if not isinstance(resume_policy, str) or resume_policy not in {'either', 'upload', 'link'}:
+        raise HTTPException(status_code=422, detail='Choose a valid resume submission option.')
+
+    show_pay = pay.get('show', False)
+    if not isinstance(show_pay, bool):
+        raise HTTPException(status_code=422, detail='Choose whether compensation should appear on the job page.')
+    pay_min = _application_amount(pay.get('minimum', ''), 'Minimum pay')
+    pay_max = _application_amount(pay.get('maximum', ''), 'Maximum pay')
+    if pay_min and pay_max and Decimal(pay_min) > Decimal(pay_max):
+        raise HTTPException(status_code=422, detail='Maximum pay must be at least the minimum pay.')
+    pay_currency = pay.get('currency', 'AED')
+    if not isinstance(pay_currency, str) or not re.fullmatch(r'[A-Za-z]{3}', pay_currency):
+        raise HTTPException(status_code=422, detail='Pay currency must be a three-letter currency code.')
+    pay_period = pay.get('period', 'month')
+    if not isinstance(pay_period, str) or pay_period not in {'hour', 'day', 'month', 'year'}:
+        raise HTTPException(status_code=422, detail='Choose hourly, daily, monthly or yearly pay.')
+    pay_note = pay.get('note', '')
+    if not isinstance(pay_note, str) or len(pay_note) > 160:
+        raise HTTPException(status_code=422, detail='Pay note must be 160 characters or fewer.')
+    pay_note = _sanitize_user_text(pay_note, 160)
+    if show_pay and not any((pay_min, pay_max, pay_note)):
+        raise HTTPException(status_code=422, detail='Add a pay range or compensation note before displaying compensation.')
+
+    field_defaults = {'phone': True, 'location': True, 'experience': True, 'linkedin': True, 'portfolio': False}
+    clean_fields = {}
+    for key, default in field_defaults.items():
+        selected = fields.get(key, default)
+        if not isinstance(selected, bool):
+            raise HTTPException(status_code=422, detail='Choose valid application form fields.')
+        clean_fields[key] = selected
+
+    return {
+        'banner': {'headline': headline, 'image_url': banner_image_url, 'color': banner_color.lower()},
+        'work_arrangement': arrangement,
+        'resume_policy': resume_policy,
+        'pay': {'show': show_pay, 'minimum': pay_min, 'maximum': pay_max,
+                'currency': pay_currency.upper(), 'period': pay_period, 'note': pay_note},
+        'fields': clean_fields,
+    }
+
+
 def _application_page_fields(payload):
     if not isinstance(payload, dict):
         raise HTTPException(status_code=422, detail='Provide valid job-page details.')
@@ -11150,7 +11267,9 @@ def _application_page_fields(payload):
     employment_type = _sanitize_user_text(payload.get('employment_type') or 'Full-time', 80)
     if len(title) < 2 or len(description) < 20:
         raise HTTPException(status_code=422, detail='Add a job title and a description of at least 20 characters.')
-    return title, description, location, employment_type, _application_questions(payload.get('custom_questions', []))
+    return (title, description, location, employment_type,
+            _application_questions(payload.get('custom_questions', [])),
+            _application_settings(payload.get('application_settings')))
 
 
 def _application_company_id(user, requested_company_id=None):
@@ -11186,7 +11305,7 @@ async def generate_application_questions(request: Request, user: dict = Depends(
     if any(payload.get(key) is not None and not isinstance(payload.get(key), str)
            for key in ('title', 'description', 'location', 'employment_type')):
         raise HTTPException(status_code=422, detail='Role details must be text.')
-    title, description, location, employment_type, _ = _application_page_fields({
+    title, description, location, employment_type, _, _ = _application_page_fields({
         'title': payload.get('title'), 'description': payload.get('description'),
         'location': payload.get('location'), 'employment_type': payload.get('employment_type'),
         'custom_questions': [],
@@ -11320,6 +11439,36 @@ async def public_job_application(request: Request, public_token: str):
     return templates.TemplateResponse(request, 'job_application_public.html', {'public_token': public_token})
 
 
+@app.get('/job-application-pages/{page_id}/preview', response_class=HTMLResponse)
+async def preview_job_application_page(page_id: int, request: Request, company_id: Optional[int] = None,
+                                      user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user, company_id)
+    with get_db_manager().get_cursor() as (cursor, _conn):
+        cursor.execute('SELECT 1 FROM job_application_pages WHERE id=%s AND company_id=%s', (page_id, company_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail='Job page not found.')
+    return templates.TemplateResponse(request, 'job_application_public.html', {
+        'public_token': '', 'preview_page_id': page_id, 'preview_company_id': company_id})
+
+
+@app.get('/api/job-application-pages/{page_id}/preview-data')
+@limiter.limit('60/minute')
+async def get_job_application_page_preview(page_id: int, request: Request, company_id: Optional[int] = None,
+                                           user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user, company_id)
+    with get_db_manager().get_cursor() as (cursor, _conn):
+        cursor.execute('''SELECT p.title,p.description,p.location,p.employment_type,p.custom_questions,
+            p.application_settings,c.company_name FROM job_application_pages p
+            JOIN tenant_companies c ON c.id=p.company_id WHERE p.id=%s AND p.company_id=%s''',
+            (page_id, company_id))
+        page = cursor.fetchone()
+    if not page:
+        raise HTTPException(status_code=404, detail='Job page not found.')
+    page = dict(page)
+    page['application_settings'] = _application_settings(page.get('application_settings'))
+    return {'success': True, 'page': page}
+
+
 @app.get('/api/public/application-pages/{public_token}')
 @limiter.limit('30/minute')
 async def get_public_application_page(request: Request, public_token: str):
@@ -11328,13 +11477,15 @@ async def get_public_application_page(request: Request, public_token: str):
     db = get_db_manager()
     with db.get_cursor() as (cursor, _conn):
         cursor.execute('''SELECT p.title,p.description,p.location,p.employment_type,p.custom_questions,
-            c.company_name FROM job_application_pages p JOIN tenant_companies c ON c.id=p.company_id
+            p.application_settings,c.company_name FROM job_application_pages p JOIN tenant_companies c ON c.id=p.company_id
             WHERE p.public_token=%s AND p.status='published' AND c.is_active IS DISTINCT FROM FALSE''',
             (public_token,))
         page = cursor.fetchone()
     if not page:
         raise HTTPException(status_code=404, detail='This application page is unavailable.')
-    return {'success': True, 'page': dict(page)}
+    page = dict(page)
+    page['application_settings'] = _application_settings(page.get('application_settings'))
+    return {'success': True, 'page': page}
 
 
 @app.post('/api/public/application-pages/{public_token}/applications')
@@ -11342,13 +11493,15 @@ async def get_public_application_page(request: Request, public_token: str):
 async def submit_public_application(
     request: Request,
     public_token: str,
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
     candidate_name: str = Form(...),
     email: str = Form(...),
     phone: str = Form(''),
     location: str = Form(''),
     years_experience: str = Form(''),
     linkedin_url: str = Form(''),
+    resume_url: str = Form(''),
+    portfolio_url: str = Form(''),
     answers: str = Form('{}'),
     consent: bool = Form(False),
     company_website: str = Form(''),
@@ -11360,33 +11513,10 @@ async def submit_public_application(
         return {'success': True, 'message': 'Your application has been received.'}
     name = _sanitize_user_text(candidate_name, 160)
     email_value = _sanitize_user_text(email, 254).lower()
-    phone_value = _sanitize_user_text(phone, 40)
-    location_value = _sanitize_user_text(location, 180)
-    linkedin_value = _sanitize_user_text(linkedin_url, 500)
     if len(name) < 2 or not re.fullmatch(r"[^\s@<>]{1,64}@[^\s@<>.]+(?:\.[^\s@<>.]+)+", email_value):
         raise HTTPException(status_code=422, detail='Enter your name and a valid email address.')
     if not consent:
         raise HTTPException(status_code=422, detail='Please confirm how your application information will be used.')
-    if linkedin_value:
-        try:
-            parsed_linkedin = urlparse(linkedin_value)
-            valid_linkedin = (parsed_linkedin.scheme == 'https'
-                and parsed_linkedin.hostname in {'linkedin.com', 'www.linkedin.com'}
-                and parsed_linkedin.path.startswith('/in/'))
-        except ValueError:
-            valid_linkedin = False
-        if not valid_linkedin:
-            raise HTTPException(status_code=422, detail='Use a valid LinkedIn profile link or leave it blank.')
-    experience = None
-    if years_experience.strip():
-        try:
-            experience = float(years_experience)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=422, detail='Enter experience as a number of years.')
-        if not np.isfinite(experience) or not 0 <= experience <= 80:
-            raise HTTPException(status_code=422, detail='Experience must be between 0 and 80 years.')
-        if abs(experience * 2 - round(experience * 2)) > 1e-7:
-            raise HTTPException(status_code=422, detail='Experience must use half-year increments.')
     try:
         supplied_answers = json.loads(answers)
     except (TypeError, ValueError):
@@ -11396,13 +11526,46 @@ async def submit_public_application(
 
     db = get_db_manager()
     with db.get_cursor() as (cursor, _conn):
-        cursor.execute('''SELECT p.id,p.company_id,p.created_by_user_id,p.custom_questions,c.company_code,
+        cursor.execute('''SELECT p.id,p.company_id,p.created_by_user_id,p.custom_questions,p.application_settings,c.company_code,
             c.gcs_bucket_name FROM job_application_pages p JOIN tenant_companies c ON c.id=p.company_id
             WHERE p.public_token=%s AND p.status='published' AND c.is_active IS DISTINCT FROM FALSE''',
             (public_token,))
         page = cursor.fetchone()
     if not page:
         raise HTTPException(status_code=404, detail='This application page is unavailable.')
+    settings = _application_settings(page.get('application_settings'))
+    fields = settings['fields']
+    phone_value = _sanitize_user_text(phone, 40) if fields['phone'] else ''
+    location_value = _sanitize_user_text(location, 180) if fields['location'] else ''
+    linkedin_value = _sanitize_user_text(linkedin_url, 500) if fields['linkedin'] else ''
+    portfolio_value = _application_public_url(portfolio_url, 'Portfolio link') if fields['portfolio'] else ''
+    resume_link = _application_public_url(resume_url, 'Resume link')
+    if linkedin_value:
+        try:
+            parsed_linkedin = urlparse(_application_public_url(linkedin_value, 'LinkedIn link', 500))
+            linkedin_host = (parsed_linkedin.hostname or '').rstrip('.').lower()
+            valid_linkedin = linkedin_host in {'linkedin.com', 'www.linkedin.com'} and parsed_linkedin.path.startswith('/in/')
+        except (HTTPException, ValueError):
+            valid_linkedin = False
+        if not valid_linkedin:
+            raise HTTPException(status_code=422, detail='Use a valid LinkedIn profile link or leave it blank.')
+    experience = None
+    if fields['experience'] and years_experience.strip():
+        try:
+            experience = float(years_experience)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail='Enter experience as a number of years.')
+        if not np.isfinite(experience) or not 0 <= experience <= 80:
+            raise HTTPException(status_code=422, detail='Experience must be between 0 and 80 years.')
+        if abs(experience * 2 - round(experience * 2)) > 1e-7:
+            raise HTTPException(status_code=422, detail='Experience must use half-year increments.')
+    has_upload = bool(file and file.filename)
+    if settings['resume_policy'] == 'upload' and not has_upload:
+        raise HTTPException(status_code=422, detail='Upload your CV or resume to continue.')
+    if settings['resume_policy'] == 'link' and not resume_link:
+        raise HTTPException(status_code=422, detail='Add a link to your CV or resume to continue.')
+    if settings['resume_policy'] == 'either' and not (has_upload or resume_link):
+        raise HTTPException(status_code=422, detail='Upload your CV or add a link to continue.')
     questions = page.get('custom_questions') or []
     if set(supplied_answers) - {str(i) for i in range(len(questions))}:
         raise HTTPException(status_code=422, detail='Review your answers and submit again.')
@@ -11414,37 +11577,46 @@ async def submit_public_application(
         answer = _sanitize_user_text(raw_answer, 1000)
         if answer:
             clean_answers[str(key)] = answer
-    original_name = _sanitize_user_text(Path((file.filename or '').replace('\\', '/')).name, 200)
-    extension = Path(original_name).suffix.lower()
-    if extension not in {'.pdf', '.doc', '.docx'}:
-        raise HTTPException(status_code=422, detail='Upload a PDF or Word CV.')
-    content = await file.read(MAX_FILE_SIZE + 1)
-    if not content or len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail=f'Your CV must be smaller than {MAX_FILE_SIZE // (1024 * 1024)} MB.')
-    is_valid, validation_message = validate_resume_payload(original_name, content)
-    if not is_valid:
-        raise HTTPException(status_code=422, detail=validation_message)
+    original_name = ''
+    extension = ''
+    content = b''
+    if has_upload:
+        original_name = _sanitize_user_text(Path((file.filename or '').replace('\\', '/')).name, 200)
+        extension = Path(original_name).suffix.lower()
+        if extension not in {'.pdf', '.doc', '.docx'}:
+            raise HTTPException(status_code=422, detail='Upload a PDF or Word CV.')
+        content = await file.read(MAX_FILE_SIZE + 1)
+        if not content or len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail=f'Your CV must be smaller than {MAX_FILE_SIZE // (1024 * 1024)} MB.')
+        is_valid, validation_message = validate_resume_payload(original_name, content)
+        if not is_valid:
+            raise HTTPException(status_code=422, detail=validation_message)
 
     company_id = int(page['company_id'])
-    await _check_resume_upload_limit(db, company_id, 1)
-    bucket_name = page.get('gcs_bucket_name') or get_company_gcs_bucket(page.get('company_code'))
-    if not bucket_name:
-        raise HTTPException(status_code=503, detail='The company application inbox is temporarily unavailable.')
-    safe_extension = extension
-    blob_name = f"Applications/{int(page['id'])}/{uuid.uuid4().hex}{safe_extension}"
+    bucket_name = None
+    blob_name = None
+    if has_upload:
+        await _check_resume_upload_limit(db, company_id, 1)
+        bucket_name = page.get('gcs_bucket_name') or get_company_gcs_bucket(page.get('company_code'))
+        if not bucket_name:
+            raise HTTPException(status_code=503, detail='The company application inbox is temporarily unavailable.')
+        blob_name = f"Applications/{int(page['id'])}/{uuid.uuid4().hex}{extension}"
     from psycopg2 import IntegrityError
     try:
         with db.get_cursor() as (cursor, _conn):
             cursor.execute('''INSERT INTO job_applications(page_id,company_id,candidate_name,normalized_email,
-                phone,location,years_experience,linkedin_url,answers,consent_at,status)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NOW(),'processing') RETURNING id''',
+                phone,location,years_experience,linkedin_url,resume_url,portfolio_url,answers,consent_at,status)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NOW(),%s) RETURNING id''',
                 (page['id'], company_id, name, email_value, phone_value, location_value, experience,
-                 linkedin_value, json.dumps(clean_answers)))
+                 linkedin_value, resume_link, portfolio_value, json.dumps(clean_answers),
+                 'processing' if has_upload else 'received'))
             application_id = cursor.fetchone()['id']
     except IntegrityError as exc:
         if getattr(getattr(exc, 'diag', None), 'constraint_name', '') == 'idx_job_applications_unique_email':
             return {'success': True, 'message': 'Your application has been received.'}
         raise HTTPException(status_code=503, detail='Your application could not be completed. Please retry shortly.')
+    if not has_upload:
+        return {'success': True, 'message': 'Your application has been received.'}
     try:
         indexed = await _run_resume_upload(db, bucket_name=bucket_name, blob_name=blob_name,
             filename=original_name, content=content,
@@ -11493,14 +11665,16 @@ async def list_job_application_pages(request: Request, company_id: Optional[int]
     company_id = _application_company_id(user, company_id)
     db = get_db_manager()
     with db.get_cursor() as (cursor, _conn):
-        cursor.execute('''SELECT p.id,p.title,p.description,p.location,p.employment_type,p.custom_questions,
+        cursor.execute('''SELECT p.id,p.title,p.description,p.location,p.employment_type,p.custom_questions,p.application_settings,
             p.status,p.version,p.public_token,p.published_at,p.created_at,p.updated_at,
             COUNT(a.id) FILTER (WHERE a.status NOT IN ('erased','processing')) AS applicant_count,
-            COUNT(a.id) FILTER (WHERE a.status NOT IN ('erased','processing') AND NOT a.vector_indexed) AS indexing_pending
+            COUNT(a.id) FILTER (WHERE a.status NOT IN ('erased','processing')
+                AND a.resume_upload_id IS NOT NULL AND NOT a.vector_indexed) AS indexing_pending
             FROM job_application_pages p LEFT JOIN job_applications a ON a.page_id=p.id
             WHERE p.company_id=%s GROUP BY p.id ORDER BY p.updated_at DESC,p.id DESC''', (company_id,))
         rows = [dict(row) for row in cursor.fetchall()]
     for row in rows:
+        row['application_settings'] = _application_settings(row.get('application_settings'))
         row['public_url'] = '/apply/' + row.pop('public_token') if row['status'] == 'published' else None
         for key in ('published_at', 'created_at', 'updated_at'):
             row[key] = row[key].isoformat() if row[key] else None
@@ -11512,7 +11686,7 @@ async def list_job_application_pages(request: Request, company_id: Optional[int]
 async def create_job_application_page(request: Request, user: dict = Depends(require_auth)):
     payload = await request.json()
     company_id = _application_company_id(user, payload.get('company_id'))
-    title, description, location, employment_type, questions = _application_page_fields(payload)
+    title, description, location, employment_type, questions, settings = _application_page_fields(payload)
     status = payload.get('status', 'draft')
     if not isinstance(status, str) or status not in {'draft', 'published'}:
         raise HTTPException(status_code=422, detail='A new page must be a draft or published.')
@@ -11520,16 +11694,16 @@ async def create_job_application_page(request: Request, user: dict = Depends(req
     db = get_db_manager()
     with db.get_cursor() as (cursor, _conn):
         cursor.execute('''INSERT INTO job_application_pages(company_id,created_by_user_id,title,description,
-            location,employment_type,custom_questions,public_token,status,published_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,CASE WHEN %s='published' THEN NOW() END)
+            location,employment_type,custom_questions,application_settings,public_token,status,published_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,CASE WHEN %s='published' THEN NOW() END)
             RETURNING id,version,created_at,updated_at,published_at''',
             (company_id, user['id'], title, description, location, employment_type,
-             json.dumps(questions), token, status, status))
+             json.dumps(questions), json.dumps(settings), token, status, status))
         row = dict(cursor.fetchone())
         _application_audit(cursor, user, company_id, 'CREATE_JOB_APPLICATION_PAGE', row['id'], {},
                            {'status': status, 'title': title, 'version': row['version']})
     return {'success': True, 'page': {**row, 'title': title, 'description': description, 'location': location,
-            'employment_type': employment_type, 'custom_questions': questions, 'status': status,
+            'employment_type': employment_type, 'custom_questions': questions, 'application_settings': settings, 'status': status,
             'public_url': '/apply/' + token if status == 'published' else None}}
 
 
@@ -11539,7 +11713,7 @@ async def update_job_application_page(page_id: int, request: Request, company_id
                                      user: dict = Depends(require_auth)):
     company_id = _application_company_id(user, company_id)
     payload = await request.json()
-    title, description, location, employment_type, questions = _application_page_fields(payload)
+    title, description, location, employment_type, questions, settings = _application_page_fields(payload)
     version = payload.get('version')
     if isinstance(version, bool) or not isinstance(version, int) or version < 1:
         raise HTTPException(status_code=422, detail='Refresh this page before saving your changes.')
@@ -11553,9 +11727,9 @@ async def update_job_application_page(page_id: int, request: Request, company_id
         if old['version'] != version:
             raise HTTPException(status_code=409, detail='This page changed in another session. Refresh and try again.')
         cursor.execute('''UPDATE job_application_pages SET title=%s,description=%s,location=%s,
-            employment_type=%s,custom_questions=%s::jsonb,version=version+1,updated_at=NOW()
+            employment_type=%s,custom_questions=%s::jsonb,application_settings=%s::jsonb,version=version+1,updated_at=NOW()
             WHERE id=%s AND company_id=%s RETURNING version,updated_at,status,public_token,published_at''',
-            (title, description, location, employment_type, json.dumps(questions), page_id, company_id))
+            (title, description, location, employment_type, json.dumps(questions), json.dumps(settings), page_id, company_id))
         row = dict(cursor.fetchone())
         public_token = row.pop('public_token')
         _application_audit(cursor, user, company_id, 'EDIT_JOB_APPLICATION_PAGE', page_id,
@@ -11563,7 +11737,7 @@ async def update_job_application_page(page_id: int, request: Request, company_id
     row['updated_at'] = row['updated_at'].isoformat()
     row['published_at'] = row['published_at'].isoformat() if row['published_at'] else None
     return {'success': True, 'page': {**row, 'title': title, 'description': description, 'location': location,
-            'employment_type': employment_type, 'custom_questions': questions,
+            'employment_type': employment_type, 'custom_questions': questions, 'application_settings': settings,
             'public_url': '/apply/' + public_token if row['status'] == 'published' else None}}
 
 
@@ -11646,18 +11820,19 @@ async def export_job_applications_csv(page_id: int, request: Request, company_id
     def csv_stream():
         output = io.StringIO(newline='')
         writer = csv.writer(output)
-        writer.writerow(['Name','Email','Phone','Location','Experience (years)','LinkedIn','Status','CV indexed','Received'])
+        writer.writerow(['Name','Email','Phone','Location','Experience (years)','LinkedIn','Resume link','Portfolio link','Status','CV indexed','Received'])
         yield output.getvalue()
         output.seek(0); output.truncate(0)
         with db.get_cursor() as (cursor, conn):
             try:
                 cursor.execute('''SELECT candidate_name,normalized_email,phone,location,years_experience,linkedin_url,
-                    status,vector_indexed,created_at FROM job_applications WHERE page_id=%s AND company_id=%s
+                    resume_url,portfolio_url,status,vector_indexed,created_at FROM job_applications WHERE page_id=%s AND company_id=%s
                     AND status NOT IN ('erased','processing') ORDER BY created_at DESC''', (page_id, company_id))
                 while rows := cursor.fetchmany(500):
                     for row in rows:
                         writer.writerow([csv_safe(row['candidate_name']),csv_safe(row['normalized_email']),csv_safe(row['phone']),csv_safe(row['location']),
-                            row['years_experience'],csv_safe(row['linkedin_url']),row['status'],row['vector_indexed'],row['created_at'].isoformat()])
+                            row['years_experience'],csv_safe(row['linkedin_url']),csv_safe(row['resume_url']),
+                            csv_safe(row['portfolio_url']),row['status'],row['vector_indexed'],row['created_at'].isoformat()])
                     yield output.getvalue()
                     output.seek(0); output.truncate(0)
             finally:
@@ -11686,7 +11861,7 @@ async def list_job_applications(page_id: int, request: Request, limit: int = 100
                        (page_id, company_id))
         total = cursor.fetchone()['total']
         cursor.execute('''SELECT a.id,a.candidate_name,a.normalized_email,a.phone,a.location,a.years_experience,
-            a.linkedin_url,a.answers,a.status,a.version,a.vector_indexed,a.created_at,a.resume_upload_id,
+            a.linkedin_url,a.resume_url,a.portfolio_url,a.answers,a.status,a.version,a.vector_indexed,a.created_at,a.resume_upload_id,
             u.file_name,i.id AS interview_id,i.interview_date,i.interview_time,i.status AS interview_status
             FROM job_applications a LEFT JOIN resume_uploads u ON u.id=a.resume_upload_id
             LEFT JOIN LATERAL (

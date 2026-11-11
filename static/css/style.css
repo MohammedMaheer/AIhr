@@ -3017,6 +3017,14 @@ button, input, .glass {
 .job-page-form textarea { resize:vertical; }
 .job-page-form input:focus,.job-page-form textarea:focus { outline:3px solid #bfdbfe; border-color:#2563eb; }
 .job-page-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.job-page-settings { display:grid; gap:12px; min-width:0; padding:14px; border:1px solid #e0e6ed; border-radius:6px; background:#fafbfd; }
+.job-page-settings h4,.job-page-field-options legend { margin:0; color:#172033; font-size:14px; font-weight:700; }
+.job-page-settings > p { margin:0; font-size:12px; }
+.job-page-form .job-page-check { display:flex; align-items:center; gap:8px; font-weight:500; }
+.job-page-form .job-page-check input,.job-page-option-grid input { width:16px; height:16px; margin:0; accent-color:#2563eb; }
+.job-page-option-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px 16px; }
+.job-page-field-options { margin:0; }
+.job-page-form [hidden] { display:none !important; }
 .job-question-editor { display:grid; gap:10px; padding-top:14px; border-top:1px solid #e3e7ed; }
 .job-question-toolbar,.job-question-toolbar > div,.job-question-footer { display:flex; align-items:center; gap:10px; }
 .job-question-toolbar { justify-content:space-between; }
@@ -3065,6 +3073,7 @@ button, input, .glass {
 }
 @media (max-width:520px) {
     .job-page-form-grid { grid-template-columns:minmax(0,1fr); }
+    .job-page-option-grid { grid-template-columns:minmax(0,1fr); }
     .job-applications-view > .workspace-header { flex-direction:column; }
     .job-applications-heading > .workspace-button { flex:1; justify-content:center; }
     .job-question-toolbar { align-items:flex-start; flex-direction:column; }

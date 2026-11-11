@@ -13,13 +13,25 @@
         .application-brand { min-height:96px; display:flex; align-items:center; padding:0 max(24px,calc((100vw - 1080px)/2)); background:#171c25; }
         .application-brand img { width:min(220px,58vw); height:auto; display:block; }
         .application-main { width:min(100% - 32px,760px); margin:32px auto 64px; }
+        .application-preview-note { display:flex; align-items:center; justify-content:space-between; gap:14px; margin:0 0 14px; padding:12px 14px; border:1px solid #eed08a; border-radius:6px; background:#fff7df; color:#49360a; font-size:14px; }
+        .application-preview-note a { flex:0 0 auto; color:#174b77; font-weight:600; }
+        .application-banner { position:relative; display:flex; min-height:112px; align-items:flex-end; overflow:hidden; background:#173b47; color:#fff; }
+        .application-banner[hidden],.application-main [hidden] { display:none !important; }
+        .application-banner img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+        .application-banner-content { position:relative; z-index:1; width:100%; padding:22px 30px; background:linear-gradient(transparent,rgba(0,0,0,.6)); }
+        .application-banner-content p { max-width:680px; margin:0; font-size:22px; font-weight:700; overflow-wrap:anywhere; }
         .application-heading { padding:28px 30px; background:white; border:1px solid #dfe4ea; border-bottom:0; border-radius:8px 8px 0 0; }
+        .application-banner:not([hidden]) + .application-heading { border-radius:0; }
         .application-eyebrow { margin:0 0 6px; color:#526174; font-size:14px; font-weight:600; }
         .application-heading h1 { margin:0; font-size:30px; line-height:1.2; overflow-wrap:anywhere; }
         .application-meta { margin:12px 0 0; color:#526174; }
+        .application-pay { display:table; margin:14px 0 0; padding:7px 10px; border:1px solid #b9e4d2; border-radius:5px; background:#ecf8f2; color:#14563e; font-size:14px; font-weight:700; }
         .application-description { padding:20px 30px; background:white; border:1px solid #dfe4ea; border-top:1px solid #eef0f3; white-space:pre-wrap; overflow-wrap:anywhere; }
         .application-form { padding:26px 30px 30px; background:white; border:1px solid #dfe4ea; border-top:0; border-radius:0 0 8px 8px; }
         .application-form h2 { margin:0 0 18px; font-size:20px; }
+        .application-resume { margin:2px 0 18px; padding:16px; border:1px solid #dfe4ea; border-radius:6px; background:#fafbfd; }
+        .application-resume h3 { margin:0 0 4px; font-size:16px; }
+        .application-resume .application-field:last-child { margin-bottom:0; }
         .application-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
         .application-field { display:grid; gap:6px; min-width:0; margin-bottom:16px; }
         .application-field label,.application-field .field-label { font-size:14px; font-weight:600; }
@@ -42,7 +54,11 @@
         @media(max-width:600px) {
             .application-brand { min-height:76px; padding:0 18px; }
             .application-main { width:calc(100% - 20px); margin:16px auto 36px; }
+            .application-preview-note { align-items:flex-start; flex-direction:column; }
             .application-heading,.application-description,.application-form { padding:20px 18px; }
+            .application-banner-content { padding:18px; }
+            .application-banner-content p { font-size:18px; }
+            .application-resume { padding:13px; }
             .application-heading h1 { font-size:24px; }
             .application-grid { grid-template-columns:minmax(0,1fr); gap:0; }
             .application-submit { width:100%; }
@@ -52,7 +68,8 @@
 </head>
 <body>
     <header class="application-brand"><img src="/static/review/efforts-solutions-logo.png" alt="Efforts Solutions"></header>
-    <main class="application-main" id="candidate-application" data-public-token="{{ public_token }}">
+    <main class="application-main" id="candidate-application" data-public-token="{{ public_token }}"
+        data-preview-page-id="{{ preview_page_id or '' }}" data-preview-company-id="{{ preview_company_id or '' }}">
         <div class="application-loading" role="status">Loading job details...</div>
     </main>
     <script src="/static/js/job-applications.js?v={{ asset_v.job_applications_js }}" defer></script>

@@ -47,6 +47,8 @@ def job_app_flow(queue_db, tmp_path, monkeypatch):
         cursor.execute(migration.read_text(encoding='utf-8'))
         workflow_migration = Path(__file__).resolve().parents[1] / 'deploy/vps/migrations/20261111_job_application_workflow.sql'
         cursor.execute(workflow_migration.read_text(encoding='utf-8'))
+        screen_migration = Path(__file__).resolve().parents[1] / 'deploy/vps/migrations/20261111_job_application_screen.sql'
+        cursor.execute(screen_migration.read_text(encoding='utf-8'))
     monkeypatch.setattr(db, 'get_company_by_id', lambda company_id: ({
         'id': company_id, 'company_code': 'jobs-one' if company_id == 1 else 'jobs-two',
         'company_name': 'Fictional Hiring Co' if company_id == 1 else 'Other Company',
@@ -101,14 +103,25 @@ def submit(flow, url, **changes):
     return flow.client.post(url, data=data, files={'file':('candidate.pdf',b'%PDF-1.7\nfixture CV', 'application/pdf')})
 
 
+def submit_link(flow, url, **changes):
+    data = {'candidate_name':'Fictional Link Candidate','email':'link-candidate@example.invalid',
+            'phone':'+971 50 000 0000','location':'Abu Dhabi','years_experience':'5.5',
+            'linkedin_url':'https://www.linkedin.com/in/fictional','resume_url':'https://files.example.com/cv.pdf',
+            'portfolio_url':'https://portfolio.example.com/person','answers':json.dumps({'0':'Thirty days'}),
+            'consent':'true', **changes}
+    return flow.client.post(url, data=data)
+
+
 def test_published_page_submission_indexes_cv_and_tenant_manager_reviews(job_app_flow):
     flow = job_app_flow
     page = publish(flow)
     token = page['public_url'].rsplit('/', 1)[1]
     public = flow.client.get('/api/public/application-pages/' + token)
     assert public.status_code == 200
-    assert set(public.json()['page']) == {'title','description','location','employment_type','custom_questions','company_name'}
-    response = submit(flow, '/api/public/application-pages/' + token + '/applications')
+    assert set(public.json()['page']) == {'title','description','location','employment_type','custom_questions','application_settings','company_name'}
+    assert public.json()['page']['application_settings']['resume_policy'] == 'either'
+    response = submit(flow, '/api/public/application-pages/' + token + '/applications',
+                      resume_url='https://files.example.com/candidate-cv.pdf')
     assert response.status_code == 200, response.text
     assert response.json()['message'] == 'Your application has been received.'
     flow.upload.assert_awaited_once()
@@ -123,6 +136,7 @@ def test_published_page_submission_indexes_cv_and_tenant_manager_reviews(job_app
     assert result['candidate_name'] == 'Fictional Candidate' and result['normalized_email'] == 'candidate@example.invalid'
     assert result['answers'] == {'0':'Thirty days'} and result['vector_indexed'] is True
     assert result['resume_upload_id'] and result['file_name'] == 'candidate.pdf'
+    assert result['resume_url'] == 'https://files.example.com/candidate-cv.pdf' and result['portfolio_url'] == ''
     blob_key = Path(flow.storage / 'jobs-one-bucket' / arguments['blob_name'])
     assert blob_key.is_file()
 
@@ -162,6 +176,102 @@ def test_page_edit_publish_pause_close_and_audit_use_optimistic_versions(job_app
     assert actions.count('EDIT_JOB_APPLICATION_PAGE') == 1
     assert actions.count('CHANGE_JOB_APPLICATION_PAGE_STATUS') == 3
     assert actions.count('DELETE_EMPTY_JOB_APPLICATION_PAGE') == 1
+
+
+def test_application_settings_persist_and_link_only_applicants_are_not_indexed(job_app_flow):
+    flow = job_app_flow
+    settings = {'banner':{'headline':'Join our platform team','color':'#245f52','image_url':''},
+        'work_arrangement':'hybrid','resume_policy':'either',
+        'pay':{'show':True,'minimum':'12000','maximum':'18000','currency':'AED','period':'month','note':'Based on experience'},
+        'fields':{'phone':False,'location':False,'experience':False,'linkedin':False,'portfolio':True}}
+    response = flow.client.post('/api/job-application-pages', json={**page_payload(),
+        'application_settings':settings,'status':'published'})
+    assert response.status_code == 200, response.text
+    page = response.json()['page']
+    assert page['application_settings'] == settings
+    token = page['public_url'].rsplit('/',1)[1]
+    public_page = flow.client.get('/api/public/application-pages/' + token).json()['page']
+    assert public_page['application_settings'] == settings
+
+    result = submit_link(flow, '/api/public/application-pages/' + token + '/applications')
+    assert result.status_code == 200, result.text
+    flow.upload.assert_not_awaited()
+    listed = flow.client.get(f"/api/job-application-pages/{page['id']}/applications").json()
+    candidate = listed['applications'][0]
+    assert candidate['resume_upload_id'] is None and candidate['vector_indexed'] is False
+    assert candidate['resume_url'] == 'https://files.example.com/cv.pdf'
+    assert candidate['portfolio_url'] == 'https://portfolio.example.com/person'
+    assert candidate['phone'] == '' and candidate['location'] == '' and candidate['years_experience'] is None
+    assert candidate['linkedin_url'] == '' and candidate['status'] == 'received'
+    pages = flow.client.get('/api/job-application-pages').json()['pages']
+    assert pages[0]['indexing_pending'] == 0
+    export = flow.client.get(f"/api/job-application-pages/{page['id']}/applications.csv").text
+    assert 'https://files.example.com/cv.pdf' in export and 'https://portfolio.example.com/person' in export
+
+
+def test_draft_page_preview_uses_saved_page_and_stays_private(job_app_flow):
+    flow = job_app_flow
+    settings = {'banner':{'headline':'Preview this role','color':'#245f52','image_url':''},
+        'work_arrangement':'remote','resume_policy':'link',
+        'pay':{'show':True,'minimum':'10000','maximum':'','currency':'AED','period':'month','note':''},
+        'fields':{'phone':True,'location':True,'experience':True,'linkedin':True,'portfolio':True}}
+    page = flow.client.post('/api/job-application-pages', json={**page_payload(),
+        'application_settings':settings}).json()['page']
+    preview = flow.client.get(f"/job-application-pages/{page['id']}/preview")
+    assert preview.status_code == 200 and f'data-preview-page-id="{page["id"]}"' in preview.text
+    preview_data = flow.client.get(f"/api/job-application-pages/{page['id']}/preview-data")
+    assert preview_data.status_code == 200
+    assert preview_data.json()['page']['application_settings'] == settings
+    with flow.db.get_cursor() as (cursor, _):
+        cursor.execute('SELECT public_token FROM job_application_pages WHERE id=%s', (page['id'],))
+        draft_token = cursor.fetchone()['public_token']
+    assert flow.client.get(f"/api/public/application-pages/{draft_token}").status_code == 404
+
+    flow.actor['user'] = {'id':8,'email':'other@example.invalid','user_type':'tenant_admin',
+                          'company':{'company_id':2,'company_code':'jobs-two'}}
+    assert flow.client.get(f"/job-application-pages/{page['id']}/preview").status_code == 404
+    assert flow.client.get(f"/api/job-application-pages/{page['id']}/preview-data").status_code == 404
+
+
+@pytest.mark.parametrize('settings,changes', [
+    ({'resume_policy':'upload'}, {'resume_url':'https://files.example.com/cv.pdf'}),
+    ({'resume_policy':'link'}, {}),
+])
+def test_application_resume_policy_requires_its_selected_method(job_app_flow, settings, changes):
+    flow = job_app_flow
+    page = flow.client.post('/api/job-application-pages', json={**page_payload(),
+        'application_settings':settings,'status':'published'}).json()['page']
+    token = page['public_url'].rsplit('/',1)[1]
+    response = flow.client.post('/api/public/application-pages/' + token + '/applications',
+        data={'candidate_name':'Fictional Candidate','email':'policy@example.invalid','consent':'true',**changes})
+    assert response.status_code == 422
+    flow.upload.assert_not_awaited()
+
+
+@pytest.mark.parametrize('settings', [
+    {'resume_policy':'invalid'},
+    {'pay':{'show':True,'minimum':'200','maximum':'100','currency':'AED','period':'month'}},
+    {'pay':{'show':True,'currency':'AED','period':'month'}},
+    {'banner':{'image_url':'http://example.com/image.jpg'}},
+])
+def test_job_page_rejects_invalid_presentation_settings(job_app_flow, settings):
+    response = job_app_flow.client.post('/api/job-application-pages', json={**page_payload(),
+        'application_settings':settings})
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize('resume_url', [
+    'http://files.example.com/cv.pdf','https://localhost/cv.pdf','https://127.0.0.1/cv.pdf',
+    'https://127.1/cv.pdf','https://2130706433/cv.pdf','https://0x7f000001/cv.pdf',
+    'https://user:password@files.example.com/cv.pdf','https://files.example.com:8443/cv.pdf',
+])
+def test_public_application_rejects_unsafe_resume_links(job_app_flow, resume_url):
+    flow = job_app_flow
+    page = publish(flow)
+    token = page['public_url'].rsplit('/',1)[1]
+    response = submit_link(flow, '/api/public/application-pages/' + token + '/applications', resume_url=resume_url)
+    assert response.status_code == 422
+    flow.upload.assert_not_awaited()
 
 
 @pytest.mark.parametrize('questions', [

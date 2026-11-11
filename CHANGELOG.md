@@ -5,6 +5,34 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.11.5 - 2026-11-11
+
+### Build Custom Candidate Application Pages
+
+- Let hiring teams configure a branded banner, employment type, work arrangement,
+  compensation range and pay period, resume submission rules, and which optional
+  candidate details to collect. Add common currency suggestions while retaining
+  custom three-letter currency codes.
+- Allow candidates to upload a PDF/Word CV, provide a public HTTPS resume link,
+  or do both. Uploaded CVs keep the existing storage and indexing flow; links are
+  stored without server-side fetching or indexing. Validate public links and
+  enforce the configured fields and resume policy in the API.
+- Add tenant-scoped, authenticated previews for saved drafts. Preview uses the
+  candidate page layout but cannot submit an application. Show external resumes
+  and portfolio links in applicant review and CSV exports.
+- Pass 965 backend tests in each provider mode (125 skipped), 41 PostgreSQL-backed
+  application tests, 1,090 isolated queue/recovery tests and frontend DOM checks.
+  Compare 105 search fixtures against 7,851 stored vectors: identical embeddings
+  and scores, zero top-10 ranking changes and zero AI calls. Audit 102 runtime
+  packages with zero known vulnerabilities; the additive migration rehearsal
+  preserved all 7,862 resume records and 7,852 vectors.
+- Deploy `clean-20261111t102656z`; SmartHR and document preview are healthy, no
+  unrelated containers changed, and business counts, resume fingerprints, OAuth
+  credentials and recruiter records were preserved. Live assets match tested
+  hashes; private preview routes reject anonymous access. No live application
+  was submitted. Browser-control settings prevented screenshot-based desktop and
+  mobile visual verification, so this release records automated UI checks only.
+
 ## v2026.11.11.4 - 2026-11-11
 
 ### Improve Application Questions

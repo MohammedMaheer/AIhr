@@ -28,6 +28,10 @@ async function run() {
                 company_name: 'Fictional Hiring Team',
                 description: '<script>bad()</script>Build useful software.',
                 location: 'Remote', employment_type: 'Full-time',
+                application_settings:{banner:{headline:'Create what is next',color:'#245f52',image_url:''},
+                    work_arrangement:'remote',resume_policy:'either',
+                    pay:{show:true,minimum:'12000',maximum:'18000',currency:'AED',period:'month',note:'Based on experience'},
+                    fields:{phone:false,location:false,experience:false,linkedin:false,portfolio:true}},
                 custom_questions: ['<svg onload=bad()>Availability?']
             } })
         };
@@ -38,15 +42,22 @@ async function run() {
 
     const root = document.getElementById('candidate-application');
     assert(root.textContent.includes('<img src=x onerror=alert(1)> Engineer'));
-    assert.equal(root.querySelectorAll('img,script,svg').length, 0);
+    assert.equal(root.querySelectorAll('script,svg').length, 0);
+    assert.equal(root.querySelectorAll('[data-banner-image]').length, 1);
     assert.match(root.querySelector('.application-consent').textContent, /AI-assisted tools/);
     assert.equal(root.querySelectorAll('[data-question]').length, 1);
+    assert.equal(root.querySelector('[data-banner-headline]').textContent, 'Create what is next');
+    assert.match(root.querySelector('[data-pay]').textContent, /per month/);
+    assert.equal(root.querySelector('[data-field="phone"]').hidden, true);
+    assert.equal(root.querySelector('[data-field="portfolio"]').hidden, false);
+    assert.match(root.querySelector('[data-meta]').textContent, /Remote/);
 
     const form = root.querySelector('[data-form]');
     form.reportValidity = () => true;
     form.elements.candidate_name.value = 'Fictional Candidate';
     form.elements.email.value = 'candidate@example.invalid';
     form.elements.consent.checked = true;
+    form.elements.resume_url.value = 'https://files.example.com/candidate.pdf';
     form.querySelector('[data-question]').value = 'Two weeks';
     form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
     await flush();
@@ -55,6 +66,7 @@ async function run() {
     assert(submission);
     assert.equal(submission.options.credentials, 'omit');
     assert.equal(submission.options.body.get('candidate_name'), 'Fictional Candidate');
+    assert.equal(submission.options.body.get('resume_url'), 'https://files.example.com/candidate.pdf');
     assert.deepEqual(JSON.parse(submission.options.body.get('answers')), { '0': 'Two weeks' });
     assert.equal(root.querySelector('[role="status"] strong').textContent, 'Application received');
     assert.equal(document.activeElement, root.querySelector('[role="status"]'));
@@ -89,6 +101,8 @@ async function run() {
     const workspace = manager.document.getElementById('job-applications-workspace');
     const dispose = manager.JobApplications.mount(workspace);
     await flush();
+    assert.match(workspace.querySelector('[title="Preview candidate page"]').href,
+        /\/job-application-pages\/11\/preview$/);
     workspace.querySelector('[data-applicants="11"]').click();
     await flush();
     assert.equal(workspace.querySelectorAll('img').length, 0);
@@ -137,6 +151,13 @@ async function run() {
     const pageForm = admin.document.querySelector('[data-job-page-dialog] form');
     pageForm.elements.title.value = 'Fictional Role';
     pageForm.elements.description.value = 'A sufficiently detailed fictional role description.';
+    pageForm.elements.work_arrangement.value = 'hybrid';
+    pageForm.elements.show_pay.checked = true;
+    pageForm.elements.show_pay.dispatchEvent(new admin.Event('change',{bubbles:true}));
+    pageForm.elements.pay_minimum.value = '10000';
+    pageForm.elements.pay_maximum.value = '15000';
+    pageForm.elements.pay_currency.value = 'AED';
+    pageForm.elements.field_portfolio.checked = true;
     admin.document.querySelector('[data-generate-questions]').click();
     await flush();
     const preview = admin.document.querySelector('[data-question-preview]');
@@ -165,8 +186,44 @@ async function run() {
     assert.deepEqual(JSON.parse(createCall.options.body).custom_questions,[
         'Edited after human review.','How do you troubleshoot a service issue?'
     ]);
+    assert.equal(JSON.parse(createCall.options.body).application_settings.work_arrangement,'hybrid');
+    assert.deepEqual(JSON.parse(createCall.options.body).application_settings.pay,
+        {show:true,minimum:'10000',maximum:'15000',currency:'AED',period:'month',note:''});
+    assert.equal(JSON.parse(createCall.options.body).application_settings.fields.portfolio,true);
     adminDom.window.close();
-    console.log('Application flows passed: public validation, safe rendering, linked recruiter email/interview actions and accessible success state.');
+
+    const previewDom = new JSDOM('<main id="candidate-application" data-public-token="" data-preview-page-id="11" data-preview-company-id="1"></main>', {
+        url:'https://app.example.invalid/job-application-pages/11/preview',runScripts:'outside-only'
+    });
+    const previewWindow = previewDom.window;
+    previewWindow.escapeHtml = escape;
+    previewWindow.escapeAttr = escape;
+    const previewCalls = [];
+    previewWindow.fetch = async (url, options = {}) => {
+        previewCalls.push({url:String(url),options});
+        return {ok:true,headers:{get:()=> 'application/json'},json:async()=>({page:{
+            title:'Draft Preview Engineer',company_name:'Fictional Hiring Team',
+            description:'A saved draft preview for checking candidate presentation.',location:'Dubai',
+            employment_type:'Part-time',custom_questions:[],
+            application_settings:{banner:{headline:'Preview only',color:'#245f52',image_url:''},
+                work_arrangement:'hybrid',resume_policy:'link',
+                pay:{show:true,minimum:'8000',maximum:'12000',currency:'AED',period:'month',note:''},
+                fields:{phone:true,location:true,experience:true,linkedin:true,portfolio:false}}
+        }})};
+    };
+    previewWindow.eval(source);
+    await flush();
+    const previewRoot = previewWindow.document.getElementById('candidate-application');
+    assert.match(previewRoot.querySelector('.application-preview-note').textContent,/not accepting applications/);
+    assert.equal(previewRoot.querySelector('[name="file"]').disabled,true);
+    assert.equal(previewRoot.querySelector('[name="resume_url"]').required,true);
+    assert.equal(previewRoot.querySelector('[type="submit"]').textContent,'Preview only');
+    assert(previewCalls.some(call=>call.url.includes('/api/job-application-pages/11/preview-data')));
+    previewRoot.querySelector('[data-form]').dispatchEvent(new previewWindow.Event('submit',{bubbles:true,cancelable:true}));
+    await flush();
+    assert.equal(previewCalls.some(call=>call.options.method==='POST'),false);
+    previewDom.window.close();
+    console.log('Application flows passed: configurable candidate page, resume links, compensation, validation, safe rendering and recruiter workflows.');
 }
 
 run().catch(error => { console.error(error); process.exitCode = 1; });

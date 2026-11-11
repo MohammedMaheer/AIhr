@@ -66,7 +66,7 @@ def _pages(session, url, *, params=None, max_pages=100):
     raise RuntimeError("Microsoft pagination exceeded the safe import limit. Use a smaller import.")
 
 
-def collect_resume_mail(token, limit, *, include_attachment, classify_context):
+def collect_resume_mail(token, limit, *, include_attachment, classify_context, identity_scope=""):
     limit = max(1, min(int(limit), 500))
     results, total_bytes = [], 0
     with requests.Session() as session:
@@ -107,9 +107,11 @@ def collect_resume_mail(token, limit, *, include_attachment, classify_context):
                 if total_bytes > MAX_IMPORT_BYTES or len(content) > MAX_ATTACHMENT_BYTES:
                     raise RuntimeError("Mailbox import exceeds 50 MB. Reduce the message limit.")
                 clean = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", filename)[:180]
-                identity = hashlib.sha256((message_id + ":" + attachment["id"]).encode()).hexdigest()[:16]
+                identity = hashlib.sha256(
+                    (identity_scope + ":" + message_id + ":" + attachment["id"]).encode()).hexdigest()[:16]
                 attachments.append({"filename": f"graph_{identity}_{clean}", "original_filename": filename,
-                                    "content": content, "content_type": data.get("contentType") or "application/octet-stream"})
+                                    "content": content, "content_type": data.get("contentType") or "application/octet-stream",
+                                    "stable_identity": True})
             if attachments:
                 results.append({"id": message_id, "from": ((message.get("from") or {}).get("emailAddress") or {}).get("address", "Unknown"),
                                 "subject": subject, "date": message.get("receivedDateTime") or "Unknown",

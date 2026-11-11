@@ -455,12 +455,13 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> Ind
         return IndexOperation("local/operations/create_document_missing_file", error_code="source_missing")
 
     text = _extract_text_from_file(path)
-    filename = Path(key or path.name).name
+    struct = document.struct_data or {}
+    display_filename = struct.get("filename")
+    filename = Path(display_filename).name if isinstance(display_filename, str) and display_filename else Path(key or path.name).name
     folder = Path(key).parent.as_posix() if key and len(Path(key).parts) > 1 else ""
     storage_bucket = urlparse(uri).netloc
     ctype = (getattr(content, "mime_type", "") if content else "") or mimetypes.guess_type(str(path))[0] or path.suffix.lstrip(".")
 
-    struct = document.struct_data or {}
     company_id = None
     try:
         raw_company_id = struct.get("company_id")

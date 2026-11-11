@@ -40,6 +40,7 @@ def test_graph_paginates_messages_and_attachments_and_reuses_inline_bytes():
     assert len(emails[0]["attachments"]) == 2
     assert session.get.call_count == 5
     assert emails[0]["attachments"][0]["filename"] != emails[0]["attachments"][1]["filename"]
+    assert all(item["stable_identity"] is True for email in emails for item in email["attachments"])
 
 
 def test_attachment_query_keeps_all_dates_and_satisfies_graph_sort_filter_rules():

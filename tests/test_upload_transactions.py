@@ -73,6 +73,25 @@ def test_storage_failure_rolls_back_tracking_and_releases_company_lock(uploads_d
     assert uploads_db.get_company_stats(1)['total_resumes'] == 1
 
 
+def test_reimport_of_same_stable_mail_attachment_is_idempotent(uploads_db, monkeypatch):
+    storage = MagicMock()
+    monkeypatch.setattr(main, '_get_storage_client', lambda: storage)
+    index = MagicMock(return_value=True)
+    monkeypatch.setattr(main, 'upload_to_vector_datastore', index)
+    monkeypatch.setenv('SMARTHR_LOCAL_MODE', '0')
+
+    assert store(uploads_db, 'email/graph-mailbox-attachment.pdf') is True
+    assert store(uploads_db, 'email/graph-mailbox-attachment.pdf') is True
+
+    assert uploads_db.get_company_stats(1)['total_resumes'] == 1
+    with uploads_db.get_cursor() as (cursor, _):
+        cursor.execute('SELECT COUNT(*) AS count FROM resume_uploads WHERE company_id=1 AND file_path=%s',
+                       ('email/graph-mailbox-attachment.pdf',))
+        assert cursor.fetchone()['count'] == 1
+    assert storage.bucket.return_value.blob.return_value.upload_from_string.call_count == 2
+    assert index.call_count == 2
+
+
 def test_inactive_workspace_is_rejected_before_storage_write(uploads_db, monkeypatch):
     with uploads_db.get_cursor() as (cursor, _):
         cursor.execute('UPDATE tenant_companies SET is_active=FALSE WHERE id=1')

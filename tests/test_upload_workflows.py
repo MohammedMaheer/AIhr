@@ -2,6 +2,7 @@
 import asyncio
 import inspect
 import io
+import re
 import threading
 from unittest.mock import MagicMock
 
@@ -24,6 +25,7 @@ def upload_api(api, monkeypatch):
     monkeypatch.setattr(main, 'get_company_resources', lambda user: ('fixture-bucket', 'fixture-store'))
     monkeypatch.setattr(main, 'config', {'upload': {'allowed_extensions': ['.pdf', '.doc', '.docx']}})
     db.get_company_stats.return_value = {'max_resumes': 10, 'total_resumes': 2}
+    db.get_existing_resume_paths.return_value = set()
     store = MagicMock(return_value=True)
     monkeypatch.setattr(main, '_store_resume_upload', store)
     return client, db, store
@@ -142,8 +144,29 @@ def test_mail_import_honors_exact_destination_and_original_received_date(upload_
     if folder is not None: data['folder_path']=folder
     response=client.post(endpoint,data=data)
     assert response.status_code==200
-    assert store.call_args.kwargs['blob_name']==(folder or 'email_attachments')+'/fixture.pdf'
+    expected_folder = folder or 'email_attachments'
+    assert re.fullmatch(re.escape(expected_folder) + r'/fixture__[a-f0-9]{12}\.pdf',
+                        store.call_args.kwargs['blob_name'])
     assert store.call_args.kwargs['source_received']=='2026-04-30T23:59:59Z'
+
+
+def test_reimported_graph_attachment_is_not_rejected_at_full_quota(upload_api, monkeypatch):
+    client, db, store = upload_api
+    messages = attachments()
+    item = messages[0]['attachments'][0]
+    item['filename'] = 'graph-synthetic-identity_fixture.pdf'
+    item['stable_identity'] = True
+    path = 'email_attachments/graph-synthetic-identity_fixture.pdf'
+    db.get_company_stats.return_value = {'max_resumes': 2, 'total_resumes': 2}
+    db.get_existing_resume_paths.return_value = {path}
+    monkeypatch.setattr(main, 'scrape_outlook_attachments', lambda *args: messages)
+
+    response = client.post('/api/scrape-email-attachments',
+        data={'email_provider':'outlook','email_address':'fixture@example.invalid','limit':1})
+
+    assert response.status_code == 200
+    assert store.call_args.kwargs['blob_name'] == path
+    db.get_company_stats.assert_not_called()
 
 
 def test_unknown_file_size_is_read_with_a_hard_bound(upload_api, monkeypatch):
@@ -162,6 +185,7 @@ def test_unknown_file_size_is_read_with_a_hard_bound(upload_api, monkeypatch):
 def test_shared_store_preserves_metadata_and_call_order(monkeypatch):
     db, storage = MagicMock(), MagicMock()
     records = db.resume_upload_lock.return_value.__enter__.return_value
+    records.get_resume_upload_id.return_value = None
     records.get_company_stats.return_value = {'max_resumes': 10, 'total_resumes': 0}
     calls = []
     storage.bucket.return_value.blob.return_value.upload_from_string.side_effect = lambda *a, **k: calls.append('storage')

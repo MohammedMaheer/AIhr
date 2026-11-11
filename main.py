@@ -2403,7 +2403,8 @@ def get_mime_type_for_datastore(file_path: str) -> str:
 
     return mime_type
 
-def upload_to_vector_datastore(file_path: str, company_id: int = None, company_code: str = None, user_id: str = None) -> bool:
+def upload_to_vector_datastore(file_path: str, company_id: int = None, company_code: str = None,
+                               user_id: str = None, display_filename: str = None) -> bool:
     """
     Upload a document to the company-specific vector datastore with proper metadata.
     This enables incremental indexing during file upload.
@@ -2457,7 +2458,7 @@ def upload_to_vector_datastore(file_path: str, company_id: int = None, company_c
         }
 
         # Extract filename for better searchability
-        filename = file_path.split('/')[-1]
+        filename = display_filename or file_path.split('/')[-1]
         structured_data["filename"] = filename
         structured_data["file_extension"] = filename.split('.')[-1] if '.' in filename else "unknown"
 
@@ -5670,6 +5671,7 @@ def scrape_gmail_attachments(email_address: str, password: str, limit: int = 100
                     body_plain = ""
                     body_html = ""
                     attachments = []
+                    attachment_parts = []
 
                     if msg.is_multipart():
                         for part in msg.walk():
@@ -5679,6 +5681,8 @@ def scrape_gmail_attachments(email_address: str, password: str, limit: int = 100
                             if "attachment" in content_disposition:
                                 # Process attachment
                                 filename = safe_decode_filename(part.get_filename())
+                                if is_supported_resume_attachment(filename):
+                                    attachment_parts.append((filename, content_type, part))
 
                                 if is_resume_attachment(filename):
                                     try:
@@ -5730,8 +5734,27 @@ def scrape_gmail_attachments(email_address: str, password: str, limit: int = 100
 
                     # Check if this email is resume-related
                     body_text = body_plain or body_html or ""
+                    email_related = is_resume_related_email(subject, body_text)
+                    for filename, content_type, part in attachment_parts:
+                        if is_resume_attachment(filename) or not should_collect_email_attachment(filename, email_related):
+                            continue
+                        try:
+                            payload = part.get_payload(decode=True)
+                            if payload:
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                clean_filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+                                unique_filename = f"{timestamp}_{eid.decode()}_{clean_filename}"
+                                attachments.append({
+                                    "filename": unique_filename,
+                                    "original_filename": filename,
+                                    "content": payload,
+                                    "content_type": content_type
+                                })
+                                print(f"📎 Found resume attachment: {filename}")
+                        except Exception as e:
+                            print(f"❌ Failed to process attachment {filename}: {e}")
 
-                    if attachments or is_resume_related_email(subject, body_text):
+                    if attachments or email_related:
                         snippet_source = body_plain or body_html
 
                         results.append({
@@ -5783,7 +5806,8 @@ def scrape_outlook_attachments(email_address: str, password: str, limit: int = 1
             return collect_resume_mail(token, limit,
                 include_attachment=lambda name, related: is_supported_resume_attachment(name)
                 and (not require_context or should_collect_email_attachment(name, related)),
-                classify_context=is_resume_related_email)
+                classify_context=is_resume_related_email,
+                identity_scope=email_address.casefold())
     if not password:
         raise RuntimeError("Connect your Microsoft mailbox in Integrations before importing CVs without a password. Do not disable MFA.")
     try:
@@ -6014,17 +6038,31 @@ def _validate_resume_upload_limit(stats, count):
         raise HTTPException(status_code=400, detail=detail)
 
 
+def _resume_blob_name(folder, safe_name, *, stable_identity=False):
+    if stable_identity:
+        return f"{folder}{safe_name}"
+    parent, separator, filename = safe_name.rpartition("/")
+    stem, extension = os.path.splitext(filename)
+    unique_name = f"{stem}__{uuid.uuid4().hex[:12]}{extension}"
+    if separator:
+        unique_name = f"{parent}/{unique_name}"
+    return f"{folder}{unique_name}"
+
+
 def _store_resume_upload(db, *, bucket_name, blob_name, filename, content, content_type,
                          user_id, company_id, company_code, source_received=None):
     blob = _get_storage_client().bucket(bucket_name).blob(blob_name)
     with db.resume_upload_lock(company_id) as records:
-        if company_id is not None:
+        existing_id = records.get_resume_upload_id(company_id, blob_name) if company_id is not None else None
+        if company_id is not None and existing_id is None:
             _validate_resume_upload_limit(records.get_company_stats(company_id), 1)
         blob.upload_from_string(content, content_type=content_type)
-        records.track_resume_upload(file_name=filename, file_path=blob_name, file_size=len(content),
-                                    mime_type=content_type, user_id=user_id, company_id=company_id)
+        if existing_id is None:
+            records.track_resume_upload(file_name=filename, file_path=blob_name, file_size=len(content),
+                                        mime_type=content_type, user_id=user_id, company_id=company_id)
     indexed = upload_to_vector_datastore(file_path=blob_name, company_id=company_id,
-                                         company_code=company_code, user_id=str(user_id))
+                                         company_code=company_code, user_id=str(user_id),
+                                         display_filename=filename)
     if os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
         from services.resume_filters import record_metadata
         try:
@@ -6085,8 +6123,23 @@ async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], fold
 
     company_id = _get_company_id(user)
 
-    total_attachments = sum(len(email_data['attachments']) for email_data in scraped_emails)
-    await _check_resume_upload_limit(db, company_id, total_attachments)
+    blob_names = {}
+    candidate_paths = set()
+    for email_data in scraped_emails:
+        for attachment in email_data['attachments']:
+            filename = attachment['filename']
+            original_filename = attachment['original_filename']
+            safe_name = _sanitize_object_path(filename) or _sanitize_object_path(original_filename) or 'attachment'
+            blob_name = _resume_blob_name(
+                upload_folder, safe_name, stable_identity=attachment.get('stable_identity') is True)
+            blob_names[id(attachment)] = blob_name
+            candidate_paths.add(blob_name)
+
+    existing_paths = set()
+    if company_id is not None and candidate_paths:
+        existing_paths = await asyncio.to_thread(
+            db.get_existing_resume_paths, company_id, list(candidate_paths))
+    await _check_resume_upload_limit(db, company_id, len(candidate_paths - existing_paths))
 
     upload_results = []
     success_count = 0
@@ -6105,6 +6158,7 @@ async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], fold
                 content = attachment['content']
                 content_type = attachment['content_type']
                 safe_name = _sanitize_object_path(filename) or _sanitize_object_path(original_filename) or 'attachment'
+                blob_name = blob_names[id(attachment)]
 
                 print(f"📤 Uploading {original_filename} from email: {email_subject[:50]}...")
 
@@ -6133,9 +6187,6 @@ async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], fold
                     })
                     error_count += 1
                     continue
-
-                # Upload to GCS
-                blob_name = f"{upload_folder}{safe_name}"
 
                 # Upload to vector datastore
                 company_code = None
@@ -6488,7 +6539,7 @@ async def upload_files(
                 # Sanitize filename to prevent path injection via crafted filenames
                 safe_name = _sanitize_object_path(file.filename) or 'unnamed'
                 # Upload to GCS
-                blob_name = f"{upload_folder}{safe_name}"
+                blob_name = _resume_blob_name(upload_folder, safe_name)
 
                 # Upload to vector datastore for immediate searchability (incremental indexing)
                 company_code = None
@@ -12077,8 +12128,11 @@ async def download_resume(file_path: str, user: dict = Depends(require_auth)):
             raise HTTPException(status_code=400, detail="Invalid file path")
 
         is_super = (user.get('user_type') == 'super_admin')
+        bucket_name, _ = get_company_resources(user) if not is_super else (None, None)
         # Tenant ownership check (skipped for super_admin)
         if not is_super:
+            if not bucket_name or (requested_bucket and requested_bucket != bucket_name):
+                raise HTTPException(status_code=404, detail="Resume file not found")
             tenant_company_id = (user.get('company_info') or {}).get('id')
             if tenant_company_id is None and isinstance(user.get('company'), dict):
                 tenant_company_id = user['company'].get('company_id') or user['company'].get('id')
@@ -12090,13 +12144,11 @@ async def download_resume(file_path: str, user: dict = Depends(require_auth)):
                 # Return 404 (not 403) to avoid leaking existence
                 raise HTTPException(status_code=404, detail="Resume file not found")
 
-        # Resolve bucket: company-specific first, fallback to global
-        bucket_name, _ = get_company_resources(user) if not is_super else (None, None)
+        # Tenant downloads stay in their resolved company bucket; legacy
+        # global-bucket fallback is reserved for super-admin recovery.
         if not bucket_name:
             bucket_name = GCS_BUCKET_NAME
         if requested_bucket:
-            if not is_super and requested_bucket not in {bucket_name, GCS_BUCKET_NAME}:
-                raise HTTPException(status_code=404, detail="Resume file not found")
             bucket_name = requested_bucket
         if not bucket_name:
             raise HTTPException(status_code=500, detail="GCS bucket not configured")
@@ -12107,7 +12159,7 @@ async def download_resume(file_path: str, user: dict = Depends(require_auth)):
         blob = bucket.blob(blob_name)
         if not blob.exists():
             # Fallback to legacy global bucket if company bucket misses
-            if bucket_name != GCS_BUCKET_NAME and GCS_BUCKET_NAME:
+            if is_super and bucket_name != GCS_BUCKET_NAME and GCS_BUCKET_NAME:
                 legacy = client.bucket(GCS_BUCKET_NAME).blob(blob_name)
                 if legacy.exists():
                     blob = legacy

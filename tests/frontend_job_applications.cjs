@@ -87,7 +87,10 @@ async function run() {
     const applications = [{ id: 21, candidate_name: '<img src=x onerror=alert(1)> Candidate',
         normalized_email: 'candidate@example.invalid', phone: '', location: 'Remote', years_experience: 5,
         answers: {}, status: 'received', version: 1, vector_indexed: true, resume_upload_id: 42,
-        created_at: '2026-11-11T00:00:00Z', interview_id: null }];
+        created_at: '2026-11-11T00:00:00Z', interview_id: null },
+        { id: 22, candidate_name: 'Indexing Needs Attention', normalized_email: 'second@example.invalid',
+            answers: {}, status: 'received', version: 1, vector_indexed: false, resume_upload_id: 43,
+            created_at: '2026-11-11T00:00:00Z', interview_id: null }];
     manager.fetch = async url => {
         const payload = String(url).includes('/generate-questions')
             ? {success:true,company_name:'Fictional Hiring Co',questions:[
@@ -97,18 +100,20 @@ async function run() {
             ? { success: true, applications, total: 1 }
             : { success: true, pages: [{ id: 11, title: 'Platform Engineer', location: 'Remote',
                 employment_type: 'Full-time', status: 'published', version: 1, public_url: '/apply/' + 'b'.repeat(42),
-                applicant_count: 1 }] };
+                applicant_count: 2, indexing_pending: 1 }] };
         return { ok: true, headers: { get: () => 'application/json' }, json: async () => payload };
     };
     manager.eval(source);
     const workspace = manager.document.getElementById('job-applications-workspace');
     const dispose = manager.JobApplications.mount(workspace);
     await flush();
+    assert.match(workspace.textContent, /1 CV needs indexing/);
     assert.match(workspace.querySelector('[title="Preview candidate page"]').href,
         /\/job-application-pages\/11\/preview$/);
     workspace.querySelector('[data-applicants="11"]').click();
     await flush();
     assert.equal(workspace.querySelectorAll('img').length, 0);
+    assert.match(workspace.textContent, /Uploaded; not searchable/);
     workspace.querySelector('[data-email-applicant="21"]').click();
     workspace.querySelector('[data-schedule-applicant="21"]').click();
     assert.equal(emailContext.jobApplicationId, '21');

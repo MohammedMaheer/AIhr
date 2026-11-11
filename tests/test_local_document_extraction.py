@@ -49,6 +49,31 @@ def test_missing_source_is_not_reported_as_indexed():
     assert operation.error_code == 'source_missing'
 
 
+def test_unique_storage_key_keeps_original_display_filename(tmp_path):
+    path = tmp_path / 'generated-id__abc123.pdf'
+    path.write_bytes(b'fixture')
+    conn, cursor, pool = MagicMock(), MagicMock(), MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cursor
+    pool.getconn.return_value = conn
+    document = discovery.Document(
+        struct_data={'company_id': '7', 'filename': 'Original Candidate CV.pdf'},
+        content=discovery.Document.Content(
+            uri='gs://fixture-bucket/resumes/generated-id__abc123.pdf',
+            mime_type='application/pdf'))
+    text = 'Fictional Python engineer with production API experience.'
+    with patch.object(discovery, '_paths_for_uri', return_value=('resumes/generated-id__abc123.pdf', [path])), \
+         patch.object(discovery, '_extract_text_from_file', return_value=text), \
+         patch.object(discovery, '_embed_query', return_value=[.1] * 384), \
+         patch.object(discovery, '_ensure_advanced_search_schema'), \
+         patch.object(discovery, '_get_pool', return_value=pool):
+        operation = discovery._upsert_document_embedding(document, document_id='generated-id')
+
+    assert operation.indexed is True
+    assert cursor.execute.call_args_list[0].args[1][0] == 'Original Candidate CV.pdf'
+    conn.commit.assert_called_once()
+    pool.putconn.assert_called_once_with(conn)
+
+
 @pytest.mark.parametrize('text,indexed', [('', False), ('short', False), ('Fictional Python engineer. '*5, True)])
 def test_saved_file_and_searchable_index_are_distinct(tmp_path, text, indexed):
     path = tmp_path/'fixture.docx'

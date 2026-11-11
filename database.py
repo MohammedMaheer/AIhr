@@ -1353,7 +1353,28 @@ class DatabaseManager:
                     raise ValueError('Upload workspace is unavailable')
             yield SimpleNamespace(
                 get_company_stats=lambda cid: self.get_company_stats(cid, cursor=cursor),
+                get_resume_upload_id=lambda cid, path: self.get_resume_upload_id(cid, path, cursor=cursor),
                 track_resume_upload=lambda **data: self.track_resume_upload(cursor=cursor, **data))
+
+    def get_resume_upload_id(self, company_id, file_path, *, cursor=None):
+        if cursor is None:
+            with self.get_cursor() as (owned_cursor, _conn):
+                return self.get_resume_upload_id(company_id, file_path, cursor=owned_cursor)
+        cursor.execute(
+            "SELECT id FROM resume_uploads WHERE company_id=%s AND file_path=%s ORDER BY id LIMIT 1",
+            (company_id, file_path))
+        row = cursor.fetchone()
+        return row['id'] if row else None
+
+    def get_existing_resume_paths(self, company_id, file_paths):
+        paths = list(dict.fromkeys(path for path in file_paths if isinstance(path, str) and path))
+        if company_id is None or not paths:
+            return set()
+        with self.get_cursor() as (cursor, _conn):
+            cursor.execute(
+                "SELECT file_path FROM resume_uploads WHERE company_id=%s AND file_path = ANY(%s)",
+                (company_id, paths))
+            return {row['file_path'] for row in cursor.fetchall()}
 
     def track_resume_upload(self, file_name, file_path, file_size, mime_type, user_id, company_id, *, cursor=None):
         """Track a resume upload (limit checking should be done before calling this method)"""

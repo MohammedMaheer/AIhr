@@ -119,7 +119,8 @@ def list_interviews(db,user_id,company_id,page=1,page_size=25,status='all'):
     with db.get_cursor() as (cursor,_):
         cursor.execute('SELECT count(*) AS count FROM scheduled_interviews WHERE '+where,params)
         total=cursor.fetchone()['count']
-        cursor.execute('''SELECT id,candidate_name,position,interview_date,interview_time,time_zone,status
+        cursor.execute('''SELECT id,candidate_name,position,interview_date,interview_time,time_zone,status,
+            job_application_id
             FROM scheduled_interviews WHERE '''+where+' ORDER BY interview_date DESC,id DESC LIMIT %s OFFSET %s',
             params+[page_size,(page-1)*page_size])
         return {'success':True,'interviews':[dict(row) for row in cursor.fetchall()],'total':total,'page':page,'page_size':page_size}

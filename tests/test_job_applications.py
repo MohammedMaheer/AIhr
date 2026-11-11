@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -32,9 +33,20 @@ def job_app_flow(queue_db, tmp_path, monkeypatch):
             CREATE TABLE resume_embeddings(id SERIAL PRIMARY KEY,storage_bucket TEXT,folder TEXT,filename TEXT,
                 company_id INTEGER);
             CREATE TABLE audit_logs(user_id INTEGER,company_id INTEGER,action TEXT,entity_type TEXT,
-                entity_id INTEGER,old_values JSONB,new_values JSONB);''')
+                entity_id INTEGER,old_values JSONB,new_values JSONB);
+            CREATE TABLE scheduled_interviews(id SERIAL PRIMARY KEY,candidate_name TEXT NOT NULL,
+                candidate_email TEXT,interview_type TEXT NOT NULL,interview_date DATE NOT NULL,
+                interview_time TIME,duration_minutes INTEGER DEFAULT 60,location TEXT,interviewer TEXT,
+                notes TEXT,status TEXT DEFAULT 'scheduled',created_by TEXT,company_id INTEGER,
+                meeting_provider TEXT,meeting_join_url TEXT,meeting_event_id TEXT,search_result_id INTEGER,
+                position TEXT,time_zone TEXT,calendar_account_id TEXT);
+            CREATE TABLE interview_emails_sent(id SERIAL PRIMARY KEY,company_id INTEGER,sent_by_user_id INTEGER,
+                recipient_email TEXT NOT NULL,candidate_name TEXT,kind TEXT,subject TEXT,body TEXT,provider TEXT,
+                status TEXT,error_message TEXT,search_result_id INTEGER,interview_id INTEGER,created_at TIMESTAMP DEFAULT NOW());''')
         migration = Path(__file__).resolve().parents[1] / 'deploy/vps/migrations/20261111_job_applications.sql'
         cursor.execute(migration.read_text(encoding='utf-8'))
+        workflow_migration = Path(__file__).resolve().parents[1] / 'deploy/vps/migrations/20261111_job_application_workflow.sql'
+        cursor.execute(workflow_migration.read_text(encoding='utf-8'))
     monkeypatch.setattr(db, 'get_company_by_id', lambda company_id: {
         'id': company_id, 'company_code': 'jobs-one' if company_id == 1 else 'jobs-two',
         'company_name': 'Fictional Hiring Co' if company_id == 1 else 'Other Company',
@@ -227,6 +239,62 @@ def test_job_pages_applicants_and_status_changes_are_company_scoped(job_app_flow
     flow.actor['user'] = {'id':7,'email':'manager@example.invalid','user_type':'tenant_admin',
                           'company':{'company_id':1,'company_code':'jobs-one'}}
     assert flow.client.get('/api/job-application-pages').json()['pages'][0]['applicant_count'] == 1
+
+
+def test_applicant_email_preview_is_canonical_and_auditable(job_app_flow):
+    flow = job_app_flow
+    page = publish(flow)
+    submitted = submit(flow, '/api/public/application-pages/' + page['public_url'].rsplit('/',1)[1] + '/applications')
+    assert submitted.status_code == 200, submitted.text
+    applicant = flow.client.get(f"/api/job-application-pages/{page['id']}/applications").json()['applications'][0]
+    response = flow.client.post('/api/preview-candidate-email', json={
+        'job_application_id': applicant['id'], 'candidate_name':'Spoofed Name',
+        'candidate_email':'attacker@example.invalid', 'position':'Wrong Role',
+        'message_subject':'Application update', 'message_body':'A reviewed message.'})
+    assert response.status_code == 200, response.text
+    assert response.json()['recipient'] == 'candidate@example.invalid'
+    assert 'attacker@example.invalid' not in response.text
+    message_id = flow.db.log_email_sent(company_id=1, sent_by_user_id=7,
+        recipient_email='candidate@example.invalid', candidate_name='Fictional Candidate',
+        kind='custom', subject='Application update', body='Reviewed', provider='smtp',
+        job_application_id=applicant['id'])
+    assert message_id
+    with flow.db.get_cursor() as (cursor, _):
+        cursor.execute('SELECT job_application_id FROM interview_emails_sent WHERE id=%s', (message_id,))
+        assert cursor.fetchone()['job_application_id'] == applicant['id']
+
+
+def test_applicant_interview_is_tenant_checked_and_linked_to_application(job_app_flow):
+    flow = job_app_flow
+    page = publish(flow)
+    submitted = submit(flow, '/api/public/application-pages/' + page['public_url'].rsplit('/',1)[1] + '/applications')
+    assert submitted.status_code == 200, submitted.text
+    applicant = flow.client.get(f"/api/job-application-pages/{page['id']}/applications").json()['applications'][0]
+    payload = {'job_application_id':applicant['id'],'candidate_name':'Spoofed Name',
+        'candidate_email':'spoofed@example.invalid','position':'Wrong Role','company':'Fictional Hiring Co',
+        'interview_type':'video','interview_date':(date.today()+timedelta(days=30)).isoformat(),
+        'interview_time':'10:00','time_zone':'Asia/Kolkata','duration':30,'meeting_provider':'none',
+        'send_invite_email':False,'interviewer':'Fictional Manager','location':'Video call'}
+    response = flow.client.post('/api/schedule-interview', json=payload)
+    assert response.status_code == 200, response.text
+    interview_id = response.json()['interview_id']
+    with flow.db.get_cursor() as (cursor, _):
+        cursor.execute('''SELECT candidate_name,candidate_email,position,job_application_id
+            FROM scheduled_interviews WHERE id=%s''', (interview_id,))
+        interview = cursor.fetchone()
+    assert interview['candidate_name'] == 'Fictional Candidate'
+    assert interview['candidate_email'] == 'candidate@example.invalid'
+    assert interview['position'] == 'Platform Engineer' and interview['job_application_id'] == applicant['id']
+    listed = flow.client.get(f"/api/job-application-pages/{page['id']}/applications").json()['applications'][0]
+    assert listed['interview_id'] == interview_id and listed['interview_status'] == 'scheduled'
+
+    flow.actor['user'] = {'id':8,'email':'other@example.invalid','user_type':'tenant_admin',
+                          'company':{'company_id':2,'company_code':'jobs-two'}}
+    rejected = flow.client.post('/api/schedule-interview', json=payload)
+    assert rejected.status_code == 404
+    with flow.db.get_cursor() as (cursor, _):
+        cursor.execute('SELECT COUNT(*) AS count FROM scheduled_interviews')
+        assert cursor.fetchone()['count'] == 1
 
 
 def test_application_creator_requires_company_context_and_authenticated_manager(job_app_flow):

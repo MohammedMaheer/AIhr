@@ -1692,7 +1692,8 @@ class DatabaseManager:
                         ADD COLUMN IF NOT EXISTS meeting_provider   VARCHAR(40),
                         ADD COLUMN IF NOT EXISTS meeting_join_url   TEXT,
                         ADD COLUMN IF NOT EXISTS meeting_event_id   VARCHAR(255),
-                        ADD COLUMN IF NOT EXISTS search_result_id   INTEGER
+                        ADD COLUMN IF NOT EXISTS search_result_id   INTEGER,
+                        ADD COLUMN IF NOT EXISTS job_application_id BIGINT
                 """)
                 from services.workspace_records import SCHEMA_SQL
                 cursor.execute(SCHEMA_SQL)
@@ -1744,9 +1745,11 @@ class DatabaseManager:
                         error_message   TEXT,
                         search_result_id INTEGER,
                         interview_id    INTEGER REFERENCES scheduled_interviews(id) ON DELETE SET NULL,
+                        job_application_id BIGINT,
                         created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
+                cursor.execute("ALTER TABLE interview_emails_sent ADD COLUMN IF NOT EXISTS job_application_id BIGINT")
                 # 4. OAuth tokens for Google / Microsoft per-user.
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS oauth_tokens (
@@ -1829,22 +1832,29 @@ class DatabaseManager:
 
     def log_email_sent(self, *, company_id, sent_by_user_id, recipient_email,
                        candidate_name, kind, subject, body, provider, status='sent',
-                       error_message=None, search_result_id=None, interview_id=None):
+                       error_message=None, search_result_id=None, interview_id=None,
+                       job_application_id=None):
         self.ensure_integrations_tables()
         try:
             with self.get_cursor() as (cursor, conn):
                 if search_result_id is not None and not self._lock_candidate(cursor, search_result_id, company_id):
                     raise ValueError('Candidate record is outside the workspace')
+                if job_application_id is not None:
+                    cursor.execute("""SELECT 1 FROM job_applications
+                        WHERE id=%s AND company_id=%s AND status NOT IN ('erased','processing')
+                        FOR UPDATE""", (job_application_id, company_id))
+                    if not cursor.fetchone():
+                        raise ValueError('Application is outside the workspace')
                 cursor.execute("""
                     INSERT INTO interview_emails_sent
                         (company_id, sent_by_user_id, recipient_email, candidate_name,
                          kind, subject, body, provider, status, error_message,
-                         search_result_id, interview_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         search_result_id, interview_id, job_application_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """, (company_id, sent_by_user_id, recipient_email, candidate_name,
                       kind, subject, body, provider, status, error_message,
-                      search_result_id, interview_id))
+                      search_result_id, interview_id, job_application_id))
                 return cursor.fetchone()['id']
         except Exception as e:
             logger.warning("log_email_sent failed: %s", type(e).__name__)
@@ -1934,15 +1944,22 @@ class DatabaseManager:
             result_id = interview_data.get('search_result_id')
             if result_id is not None and not self._lock_candidate(cursor, result_id, interview_data['company_id']):
                 raise ValueError('Candidate record is outside the workspace')
+            application_id = interview_data.get('job_application_id')
+            if application_id is not None:
+                cursor.execute("""SELECT 1 FROM job_applications
+                    WHERE id=%s AND company_id=%s AND status NOT IN ('erased','processing')
+                    FOR UPDATE""", (application_id, interview_data['company_id']))
+                if not cursor.fetchone():
+                    raise ValueError('Application is outside the workspace')
             cursor.execute("""
                 INSERT INTO scheduled_interviews
                 (candidate_name, candidate_email, interview_type, interview_date,
                  interview_time, duration_minutes, location, interviewer, notes,
                  created_by, company_id, status,
                  meeting_provider, meeting_join_url, meeting_event_id,
-                 search_result_id, position, time_zone, calendar_account_id)
+                 search_result_id, position, time_zone, calendar_account_id, job_application_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s)
+                        %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """, (
                 interview_data['candidate_name'],
@@ -1964,6 +1981,7 @@ class DatabaseManager:
                 interview_data.get('position'),
                 interview_data.get('time_zone'),
                 interview_data.get('calendar_account_id'),
+                application_id,
             ))
 
             interview_id = cursor.fetchone()['id']

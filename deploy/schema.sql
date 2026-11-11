@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS scheduled_interviews (
     meeting_join_url  TEXT,
     meeting_event_id  VARCHAR(255),
     search_result_id  INTEGER,
+    job_application_id BIGINT,
     created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -197,6 +198,7 @@ CREATE TABLE IF NOT EXISTS interview_emails_sent (
     error_message    TEXT,
     search_result_id INTEGER,
     interview_id     INTEGER REFERENCES scheduled_interviews(id) ON DELETE SET NULL,
+    job_application_id BIGINT,
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

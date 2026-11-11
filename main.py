@@ -11142,6 +11142,27 @@ def _application_company_id(user):
     return int(company_id)
 
 
+async def _validate_outreach_application(db, data, user):
+    application_id = data.get('job_application_id')
+    if application_id is None:
+        return None
+    company_id = _application_company_id(user)
+    with db.get_cursor() as (cursor, _conn):
+        cursor.execute('''SELECT a.id,a.company_id,a.candidate_name,a.normalized_email,
+            p.title AS position,p.location FROM job_applications a
+            JOIN job_application_pages p ON p.id=a.page_id AND p.company_id=a.company_id
+            WHERE a.id=%s AND a.company_id=%s AND a.status NOT IN ('erased','processing')''',
+            (application_id, company_id))
+        application = cursor.fetchone()
+    if not application:
+        raise HTTPException(status_code=404, detail='Application not found in this workspace.')
+    application = dict(application)
+    data['candidate_name'] = application['candidate_name']
+    data['candidate_email'] = application['normalized_email']
+    data['position'] = application['position']
+    return application
+
+
 def _application_audit(cursor, user, company_id, action, entity_id, old_values, new_values,
                        entity_type='job_application_page'):
     cursor.execute('''INSERT INTO audit_logs(user_id,company_id,action,entity_type,entity_id,old_values,new_values)
@@ -11514,7 +11535,14 @@ async def list_job_applications(page_id: int, request: Request, limit: int = 100
         total = cursor.fetchone()['total']
         cursor.execute('''SELECT a.id,a.candidate_name,a.normalized_email,a.phone,a.location,a.years_experience,
             a.linkedin_url,a.answers,a.status,a.version,a.vector_indexed,a.created_at,a.resume_upload_id,
-            u.file_name FROM job_applications a LEFT JOIN resume_uploads u ON u.id=a.resume_upload_id
+            u.file_name,i.id AS interview_id,i.interview_date,i.interview_time,i.status AS interview_status
+            FROM job_applications a LEFT JOIN resume_uploads u ON u.id=a.resume_upload_id
+            LEFT JOIN LATERAL (
+                SELECT si.id,si.interview_date,si.interview_time,si.status FROM scheduled_interviews si
+                WHERE si.job_application_id=a.id AND si.company_id=a.company_id
+                ORDER BY CASE WHEN si.status='scheduled' THEN 0 ELSE 1 END,si.interview_date DESC,si.id DESC
+                LIMIT 1
+            ) i ON TRUE
             WHERE a.page_id=%s AND a.company_id=%s AND a.status NOT IN ('erased','processing')
             ORDER BY a.created_at DESC,a.id DESC LIMIT %s OFFSET %s''', (page_id, company_id, limit, offset))
         rows = [dict(row) for row in cursor.fetchall()]
@@ -12219,6 +12247,11 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
         data['interview_time'] = data.get('interview_time') or '09:00'
         db = get_db_manager()
         await _validate_outreach_candidate(db, data, user)
+        application = await _validate_outreach_application(db, data, user)
+        if application:
+            data['candidate_name'] = application['candidate_name']
+            data['candidate_email'] = application['normalized_email']
+            data['position'] = application['position']
 
         # Add user and company info
         data['created_by'] = user['id']
@@ -12355,6 +12388,7 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
                         provider=email_result.get('provider'),
                         search_result_id=data.get('search_result_id'),
                         interview_id=interview_id,
+                        job_application_id=data.get('job_application_id'),
                     )
                 else:
                     email_result = {"success": False, "skipped": True,
@@ -12526,6 +12560,7 @@ async def preview_candidate_email(request: Request, user: dict = Depends(require
         validate_email(data)
         db = get_db_manager()
         await _validate_outreach_candidate(db, data, user)
+        await _validate_outreach_application(db, data, user)
         company_info = user.get('company')
         company = (company_info.get('company_name') if isinstance(company_info, dict) else None) or data.get('company') or 'Efforts Solutions'
         from services.email_branding import render_plain_message
@@ -12565,6 +12600,7 @@ async def send_candidate_email_endpoint(request: Request,
 
     db = get_db_manager()
     await _validate_outreach_candidate(db, data, user)
+    await _validate_outreach_application(db, data, user)
     company_id = _get_company_id(user)
     company_name = None
     if user.get('company') and isinstance(user['company'], dict):
@@ -12627,6 +12663,7 @@ async def send_candidate_email_endpoint(request: Request,
         kind=kind, subject=subject, body=body_html,
         provider=result.get("provider"),
         search_result_id=data.get("search_result_id"),
+        job_application_id=data.get("job_application_id"),
     )
     if not result.get("success"):
         return JSONResponse(status_code=502, content={

@@ -16,7 +16,7 @@
     }
 
     function mount(root) {
-        let disposed = false, sequence = 0, pages = [], selectedPage = null, noticeTimer = null;
+        let disposed = false, sequence = 0, pages = [], selectedPage = null, selectedOffset = 0, noticeTimer = null;
         root.classList.add('recruiter-workspace', 'job-applications-view');
         root.innerHTML = '<header class="workspace-header"><div><h2>Job Applications</h2><p class="workspace-muted">Create a role page and review applications in one place.</p></div><button type="button" data-create class="workspace-button is-primary"><i class="fas fa-plus" aria-hidden="true"></i>Create job page</button></header><div data-notice role="status" aria-live="polite"></div><div data-content class="workspace-table-region"></div>';
         const content = root.querySelector('[data-content]');
@@ -167,8 +167,9 @@
         }
 
         function renderApplications(page, applications, total, offset) {
+            selectedOffset = offset;
             content.innerHTML = '<div class="job-applications-heading"><button type="button" data-back class="workspace-button"><i class="fas fa-arrow-left" aria-hidden="true"></i>Job pages</button><div><h3>' + esc(page.title) + '</h3><p class="workspace-muted">' + Number(total).toLocaleString() + ' applications</p></div><a class="workspace-button" href="/api/job-application-pages/' + Number(page.id) + '/applications.csv"><i class="fas fa-download" aria-hidden="true"></i>Export CSV</a></div>' +
-                (applications.length ? '<table class="workspace-table job-candidates-table"><thead><tr><th scope="col">Candidate</th><th scope="col">Experience</th><th scope="col">CV</th><th scope="col">Status</th><th scope="col">Received</th></tr></thead><tbody>' + applications.map(row => {
+                (applications.length ? '<table class="workspace-table job-candidates-table"><thead><tr><th scope="col">Candidate</th><th scope="col">Experience</th><th scope="col">CV</th><th scope="col">Interview</th><th scope="col">Status</th><th scope="col">Received</th><th scope="col">Actions</th></tr></thead><tbody>' + applications.map(row => {
                     const answerRows = Object.entries(row.answers || {}).map(([key, answer]) => '<div><strong>Question ' + (Number(key) + 1) + ':</strong> ' + esc(answer) + '</div>').join('');
                     const received = row.created_at ? new Date(row.created_at).toLocaleDateString() : 'Unavailable';
                     return '<tr><td data-label="Candidate"><strong>' + esc(row.candidate_name) + '</strong><div><a href="mailto:' + esc(row.normalized_email) + '">' + esc(row.normalized_email) + '</a></div>' +
@@ -177,8 +178,11 @@
                         '<td data-label="Experience">' + (row.years_experience == null ? 'Not provided' : esc(row.years_experience) + ' years') + '</td>' +
                         '<td data-label="CV">' + (row.resume_upload_id ? '<a class="workspace-icon-button" href="/api/resume-library/' + Number(row.resume_upload_id) + '/document" target="_blank" rel="noopener noreferrer" aria-label="Open CV for ' + esc(row.candidate_name) + '" title="Open CV"><i class="fas fa-file-alt" aria-hidden="true"></i></a>' +
                             '<div class="workspace-muted">' + (row.vector_indexed ? 'Indexed' : 'Received; indexing pending') + '</div>' : 'Unavailable') + '</td>' +
+                        '<td data-label="Interview">' + (row.interview_id ? '<span class="workspace-status ' + (row.interview_status === 'scheduled' ? 'is-active' : '') + '">' + esc(row.interview_status) + '</span><div class="workspace-muted">' + esc(row.interview_date || '') + (row.interview_time ? ' · ' + esc(String(row.interview_time).slice(0,5)) : '') + '</div>' : '<span class="workspace-muted">Not scheduled</span>') + '</td>' +
                         '<td data-label="Status"><select data-application-status="' + Number(row.id) + '" data-version="' + Number(row.version) + '" aria-label="Status for ' + esc(row.candidate_name) + '">' + statuses.map(status => '<option value="' + status + '" ' + (row.status === status ? 'selected' : '') + '>' + status.replace(/^./, value => value.toUpperCase()) + '</option>').join('') + '</select></td>' +
-                        '<td data-label="Received"><time datetime="' + esc(row.created_at) + '">' + esc(received) + '</time></td></tr>';
+                        '<td data-label="Received"><time datetime="' + esc(row.created_at) + '">' + esc(received) + '</time></td>' +
+                        '<td data-label="Actions" class="workspace-row-actions"><button type="button" data-email-applicant="' + Number(row.id) + '" class="workspace-icon-button" aria-label="Compose email to ' + esc(row.candidate_name) + '" title="Compose email"><i class="fas fa-envelope" aria-hidden="true"></i></button>' +
+                        '<button type="button" data-schedule-applicant="' + Number(row.id) + '" class="workspace-icon-button" aria-label="Schedule interview with ' + esc(row.candidate_name) + '" title="Schedule interview"><i class="fas fa-calendar-plus" aria-hidden="true"></i></button></td></tr>';
                 }).join('') + '</tbody></table>' : '<div class="workspace-empty"><span class="workspace-empty-icon"><i class="fas fa-inbox" aria-hidden="true"></i></span><h3>No applications yet</h3><p>Share the published application link to receive candidates for this role.</p></div>');
             if (applications.length) {
                 const footer = document.createElement('footer'); footer.className = 'workspace-pagination';
@@ -190,6 +194,18 @@
                 content.append(footer);
             }
             content.querySelector('[data-back]').onclick = loadPages;
+            content.querySelectorAll('[data-email-applicant]').forEach(button => button.addEventListener('click', () => {
+                const row = applications.find(item => Number(item.id) === Number(button.dataset.emailApplicant));
+                if (!row?.normalized_email) { notify('No valid applicant email is available.', 'error'); return; }
+                window.RecruiterOutreach?.open({useSearch:false,candidateName:row.candidate_name,candidateEmail:row.normalized_email,
+                    position:page.title,location:page.location || '',jobApplicationId:String(row.id)});
+            }));
+            content.querySelectorAll('[data-schedule-applicant]').forEach(button => button.addEventListener('click', () => {
+                const row = applications.find(item => Number(item.id) === Number(button.dataset.scheduleApplicant));
+                if (!row) return;
+                window.scheduleInterview?.(row.candidate_name,row.normalized_email || '',
+                    {position:page.title,jobApplicationId:String(row.id),jobApplicationPageId:String(page.id)});
+            }));
             content.querySelectorAll('[data-application-status]').forEach(select => select.addEventListener('change', async () => {
                 const previous = select.querySelector('option[selected]')?.value || 'received'; select.disabled = true;
                 try {
@@ -204,8 +220,14 @@
         }
 
         root.querySelector('[data-create]').onclick = () => pageForm();
+        const onInterviewScheduled = event => {
+            if (selectedPage && Number(event.detail?.pageId) === Number(selectedPage.id) && root.isConnected) {
+                loadApplications(selectedPage, selectedOffset);
+            }
+        };
+        window.addEventListener('job-application-interview-scheduled', onInterviewScheduled);
         loadPages();
-        return () => { disposed = true; sequence++; document.querySelectorAll('[data-job-page-dialog]').forEach(modal => modal.remove()); };
+        return () => { disposed = true; sequence++; window.removeEventListener('job-application-interview-scheduled', onInterviewScheduled); document.querySelectorAll('[data-job-page-dialog]').forEach(modal => modal.remove()); };
     }
 
     async function initPublicApplicationPage(root) {

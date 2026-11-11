@@ -11,16 +11,16 @@ async function run(){
  w.searchResultsData={job_title:'Position',query:'Networks and Information Security Team Lead onsite in Riyadh, KSA with 5 years experience. Salary SAR 7000-10000/month'};
  const notices=[];w.showNotification=(...v)=>notices.push(v);
  const status={success:true,microsoft:{connected:true,reconnect_required:false,capabilities:{email:true,calendar:true},account_email:'hr@example.invalid'},google:{connected:false,capabilities:{email:false,calendar:false}},smtp:{configured:false}};
- let posts=0,failSend=false;
+ let posts=0,failSend=false,previewPayload=null,sendPayload=null;
  w.fetch=async(url,options={})=>{
   if(url==='/api/integrations/status')return{ok:true,json:async()=>status};
-  if(url==='/api/preview-candidate-email')return{ok:true,json:async()=>({success:true,body_html:'<p>Fictional branded preview</p>'})};
-  if(url==='/api/send-candidate-email'){posts++;if(failSend)throw new TypeError('Synthetic uncertain transport');return{ok:true,json:async()=>({success:true})};}
+  if(url==='/api/preview-candidate-email'){previewPayload=JSON.parse(options.body);return{ok:true,json:async()=>({success:true,body_html:'<p>Fictional branded preview</p>'})};}
+  if(url==='/api/send-candidate-email'){sendPayload=JSON.parse(options.body);posts++;if(failSend)throw new TypeError('Synthetic uncertain transport');return{ok:true,json:async()=>({success:true})};}
   throw new Error('Unexpected network call '+url);
  };
  w.eval(source.slice(source.indexOf('function bindScheduleDialog('),source.indexOf('function closeInterviewModal()')));
  w.eval(moduleSource);
- const ctx=w.RecruiterOutreach.context({candidateName:'Fictional Candidate',candidateEmail:'fixture@example.invalid',searchResultId:'23'});
+ const ctx=w.RecruiterOutreach.context({candidateName:'Fictional Candidate',candidateEmail:'fixture@example.invalid',searchResultId:'23',jobApplicationId:'314'});
  assert.equal(ctx.position,'Networks and Information Security Team Lead');
  assert.equal(ctx.location,'Riyadh, KSA');
  assert.equal(ctx.recruiter,'Recruitment Team');
@@ -47,9 +47,11 @@ async function run(){
  assert(form.elements.message.value.includes('following up'));
  modal.querySelector('[data-preview]').click();await flush();
  assert.equal(modal.querySelector('[data-send]').disabled,false);
+ assert.equal(previewPayload.job_application_id,'314');
  form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
  form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await flush();
  assert.equal(posts,1,'Pending send must not be submitted twice');
+ assert.equal(sendPayload.job_application_id,'314');
  assert.equal(modal.querySelector('[data-send]').disabled,true,'Accepted exact draft must not resend');
  modal.querySelector('[data-close]').click();await flush();
  w.RecruiterOutreach.open(ctx);await flush();

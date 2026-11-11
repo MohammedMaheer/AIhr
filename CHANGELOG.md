@@ -5,6 +5,32 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.11.2 - 2026-11-11
+
+### Link Applications To Recruiter Workflows
+
+- Connect each job application to the existing recruiter email and interview
+  actions. Applicant identity and role are resolved from the tenant-owned
+  application record; cross-company IDs are rejected. The applications view
+  shows linked interview status/date, and refreshes after scheduling.
+- Record application IDs on interview and email audit rows with additive,
+  indexed database links. Preserve the existing candidate search/result flow;
+  application submissions do not receive fabricated search scores or decisions.
+- Pass 961 backend tests in each provider mode (97 skipped), 13 isolated
+  PostgreSQL application API tests, 1,058 isolated workflow/queue tests and all
+  20 frontend suites. Verify 105 synthetic ranking fixtures against 7,851
+  tenant vectors: identical embeddings/scores and zero top-10 mismatches, with
+  zero AI API calls. Scan 102 runtime packages: no known vulnerabilities.
+- Rehearse the additive migration against a restored database, preserving all
+  7,862 resume records and 7,852 vectors. Deploy `clean-20261111t082053z`;
+  SmartHR and document preview are healthy, business counts and existing
+  interview/email/OAuth data are preserved, and no unrelated containers changed.
+- Verify public HTTPS endpoints and confirm deep health skips AI. No live
+  candidate application, mailbox scrape, email, or calendar notification was
+  triggered. Browser visual control remained disabled, so visual QA is still
+  outstanding. Search ranking stability is verified, but labeled human-relevance
+  data is needed to quantify actual hiring accuracy.
+
 ## v2026.11.11.1 - 2026-11-11
 
 ### Recruitment Pages, Search Scope And Scoring Reliability

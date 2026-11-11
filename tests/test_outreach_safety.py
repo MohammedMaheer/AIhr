@@ -188,11 +188,12 @@ def outreach_db(state_db, monkeypatch):
             interview_type VARCHAR(100), interview_date DATE, interview_time TIME,
             duration_minutes INTEGER, location VARCHAR(500), interviewer VARCHAR(500), notes TEXT,
             created_by TEXT, company_id INTEGER, status TEXT, meeting_provider TEXT,
-            meeting_join_url TEXT, meeting_event_id TEXT, search_result_id INTEGER);
+            meeting_join_url TEXT, meeting_event_id TEXT, search_result_id INTEGER,
+            job_application_id BIGINT);
             CREATE TABLE interview_emails_sent (id SERIAL PRIMARY KEY, company_id INTEGER,
             sent_by_user_id INTEGER, recipient_email TEXT, candidate_name TEXT, kind TEXT,
             subject TEXT, body TEXT, provider TEXT, status TEXT, error_message TEXT,
-            search_result_id INTEGER, interview_id INTEGER);''')
+            search_result_id INTEGER, interview_id INTEGER, job_application_id BIGINT);''')
         migration = Path('deploy/vps/migrations/20261105_outreach_location.sql').read_text()
         cur.execute(migration)
         cur.execute(Path('deploy/vps/migrations/20261105_workspace_lifecycle.sql').read_text())

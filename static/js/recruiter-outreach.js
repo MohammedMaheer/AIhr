@@ -107,7 +107,8 @@
         if (document.querySelector('[data-email-composer]')) return;
         const ctx = context(input);
         const identity = JSON.stringify([window.currentUser?.id, window.currentUser?.company]);
-        const key = JSON.stringify([identity, ctx.searchResultId || ctx.candidateEmail, ctx.query]);
+        const key = JSON.stringify([identity, ctx.jobApplicationId || ctx.searchResultId || ctx.candidateEmail,
+            ctx.position, ctx.query]);
         const saved = drafts.get(key);
         const modal = document.createElement('div');
         modal.dataset.emailComposer = '';
@@ -153,7 +154,9 @@
             return {candidate_name: ctx.candidateName, candidate_email: field('recipient').value.trim(),
                 position: field('position').value.trim(), company: field('company').value.trim(),
                 message_subject: field('subject').value, message_body: field('message').value,
-                search_result_id: ctx.searchResultId || null, kind: 'custom', prefer: field('transport').value || 'auto'};
+                search_result_id: ctx.searchResultId || null,
+                job_application_id: ctx.jobApplicationId || null,
+                kind: 'custom', prefer: field('transport').value || 'auto'};
         }
         function state() { return JSON.stringify(payload()); }
         function syncSend() { send.disabled = busy || uncertain || !field('transport').value || reviewed !== state() || accepted === state(); }

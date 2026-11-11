@@ -8545,6 +8545,8 @@ function showInterviewScheduleModal(candidateName, candidateEmail, context = {})
     const form = document.getElementById('interview-form');
     if (form) {
         if (/^[1-9]\d*$/.test(context.searchResultId || '')) form.dataset.searchResultId = context.searchResultId;
+        if (/^[1-9]\d*$/.test(String(context.jobApplicationId || ''))) form.dataset.jobApplicationId = String(context.jobApplicationId);
+        if (/^[1-9]\d*$/.test(String(context.jobApplicationPageId || ''))) form.dataset.jobApplicationPageId = String(context.jobApplicationPageId);
         form.addEventListener('submit', (event) => saveInterviewSchedule(event, candidateName, candidateEmail));
     }
     bindScheduleDialog(modal, 'Schedule interview');
@@ -8616,6 +8618,7 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
         position: document.getElementById('interview-position').value.trim(),
         company: document.getElementById('interview-company').value.trim(),
         search_result_id: form.dataset.searchResultId || null,
+        job_application_id: form.dataset.jobApplicationId || null,
         interview_type: document.getElementById('interview-type').value,
         interview_date: document.getElementById('interview-date').value,
         interview_time: document.getElementById('interview-time').value,
@@ -8671,6 +8674,12 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
                 showNotification('Invite email accepted for sending.', 'success');
             }
             if (result?.email?.audit_warning) showNotification(result.email.audit_warning, 'warning');
+            if (formData.job_application_id) {
+                window.dispatchEvent(new CustomEvent('job-application-interview-scheduled', {
+                    detail: {applicationId: Number(formData.job_application_id),
+                        pageId: Number(form.dataset.jobApplicationPageId), interviewId: result.interview_id}
+                }));
+            }
 
             // Scheduling a future interview does not mark it as completed.
 

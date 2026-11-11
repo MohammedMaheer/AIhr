@@ -59,7 +59,44 @@ async function run() {
     assert.equal(root.querySelector('[role="status"] strong').textContent, 'Application received');
     assert.equal(document.activeElement, root.querySelector('[role="status"]'));
     dom.window.close();
-    console.log('Candidate application page passed: safe rendering, transparent consent, custom questions and accessible success state.');
+
+    const managerDom = new JSDOM('<main id="job-applications-workspace"></main>', {
+        url: 'https://app.example.invalid/#/jobApplications', runScripts: 'outside-only'
+    });
+    const manager = managerDom.window;
+    manager.escapeHtml = escape;
+    manager.escapeAttr = escape;
+    let emailContext, interviewContext;
+    manager.RecruiterOutreach = { open: context => { emailContext = context; } };
+    manager.scheduleInterview = (name, email, context) => { interviewContext = { name, email, ...context }; };
+    const applications = [{ id: 21, candidate_name: '<img src=x onerror=alert(1)> Candidate',
+        normalized_email: 'candidate@example.invalid', phone: '', location: 'Remote', years_experience: 5,
+        answers: {}, status: 'received', version: 1, vector_indexed: true, resume_upload_id: 42,
+        created_at: '2026-11-11T00:00:00Z', interview_id: null }];
+    manager.fetch = async url => {
+        const payload = String(url).includes('/applications?')
+            ? { success: true, applications, total: 1 }
+            : { success: true, pages: [{ id: 11, title: 'Platform Engineer', location: 'Remote',
+                employment_type: 'Full-time', status: 'published', version: 1, public_url: '/apply/' + 'b'.repeat(42),
+                applicant_count: 1 }] };
+        return { ok: true, headers: { get: () => 'application/json' }, json: async () => payload };
+    };
+    manager.eval(source);
+    const workspace = manager.document.getElementById('job-applications-workspace');
+    const dispose = manager.JobApplications.mount(workspace);
+    await flush();
+    workspace.querySelector('[data-applicants="11"]').click();
+    await flush();
+    assert.equal(workspace.querySelectorAll('img').length, 0);
+    workspace.querySelector('[data-email-applicant="21"]').click();
+    workspace.querySelector('[data-schedule-applicant="21"]').click();
+    assert.equal(emailContext.jobApplicationId, '21');
+    assert.equal(emailContext.candidateEmail, 'candidate@example.invalid');
+    assert.equal(interviewContext.jobApplicationId, '21');
+    assert.equal(interviewContext.jobApplicationPageId, '11');
+    dispose();
+    managerDom.window.close();
+    console.log('Application flows passed: public validation, safe rendering, linked recruiter email/interview actions and accessible success state.');
 }
 
 run().catch(error => { console.error(error); process.exitCode = 1; });

@@ -21,7 +21,7 @@ def records(queue_db, monkeypatch):
             CREATE TABLE scheduled_interviews(id SERIAL PRIMARY KEY,candidate_name TEXT,candidate_email TEXT,
                 interview_type TEXT,interview_date DATE,interview_time TIME,duration_minutes INTEGER,
                 location TEXT,interviewer TEXT,notes TEXT,created_by TEXT,company_id INTEGER,status TEXT,
-                meeting_provider TEXT,meeting_join_url TEXT,meeting_event_id TEXT);
+                meeting_provider TEXT,meeting_join_url TEXT,meeting_event_id TEXT,job_application_id BIGINT);
             CREATE TABLE audit_logs(user_id INTEGER,company_id INTEGER,action TEXT,entity_type TEXT,
                 entity_id INTEGER,old_values JSONB,new_values JSONB);
         ''')

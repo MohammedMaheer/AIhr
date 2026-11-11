@@ -8,7 +8,43 @@ function setup(html='<div id="root"></div>'){
     w.escapeHtml=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     w.currentUser={id:7,company:{company_id:1}};return dom;
 }
+async function quickTags(){
+    const dom=setup(),w=dom.window,root=w.document.getElementById('root');let calls=0;
+    w.fetch=async url=>{calls++;assert.equal(url,'/api/resume-folders');return{ok:true,json:async()=>({success:true,supported:true,
+        folders:[{bucket:'one',path:'Mailbox 2026',total:4}],tags:['UI design','Management'],
+        tag_counts:{'UI design':{searchable:3},Management:{searchable:0}}})};};
+    w.eval(moduleSource('resume-folders'));const dispose=w.ResumeFolders.mount(root,{quickTags:true});await flush();
+    const picker=root.querySelector('[data-tag-choice]');
+    assert(picker,'The main search must expose its tag selector');
+    assert.equal(picker.closest('details'),null,'Tag selection must be visible without opening advanced filters');
+    assert(picker.closest('label').textContent.includes('Search by tag'));
+    assert.equal(picker.querySelector('[value="Management"]').textContent,'Management (0)');
+    assert.equal(picker.querySelector('[value="Management"]').disabled,false,'A zero-count tag must remain an explicit empty scope');
+    root.querySelector('[data-folder="0"]').click();
+    for(const [selector,value] of [['[data-from]','2026-01-01'],['[data-to]','2026-12-31'],['[data-basis]','received']]){
+        const field=root.querySelector(selector);field.value=value;field.dispatchEvent(new w.Event('change'));
+    }
+    picker.value='UI design';picker.dispatchEvent(new w.Event('change'));
+    assert.deepEqual(JSON.parse(JSON.stringify(w.ResumeFolders.getFilters())),{
+        tags:['UI design'],date_from:'2026-01-01',date_to:'2026-12-31',date_basis:'received'});
+    assert(root.querySelector('[data-tag="UI design"]').checked);
+    assert.equal(w.ResumeFolders.getSelection()[0].path,'Mailbox 2026');
+    root.querySelector('[data-tag="Management"]').click();
+    assert.equal(picker.value,'__multiple__');assert.equal(picker.selectedOptions[0].textContent,'2 tags selected');
+    assert.equal(w.ResumeFolders.getFilters().tags.length,2,'Rendering a multiple selection must not silently widen or narrow it');
+    root.querySelector('[data-remove="tag"][data-value="Management"]').click();assert.equal(picker.value,'UI design');
+    picker.value='Management';picker.dispatchEvent(new w.Event('change'));
+    assert.deepEqual(Array.from(w.ResumeFolders.getFilters().tags),['Management']);
+    assert.equal(root.querySelector('[data-tag="UI design"]').checked,false);
+    picker.value='';picker.dispatchEvent(new w.Event('change'));
+    assert.equal(w.ResumeFolders.getFilters().tags,undefined);
+    assert.equal(w.ResumeFolders.getFilters().date_basis,'received');
+    assert.equal(w.ResumeFolders.getSelection()[0].path,'Mailbox 2026','All tags must not clear folder/date scope');
+    root.querySelector('[data-reset]').click();assert.equal(picker.value,'');assert.equal(calls,1,'Selecting tags must not call AI or refetch inventory');
+    dispose();dom.window.close();
+}
 async function run(){
+    await quickTags();
     const dom=setup(),w=dom.window,d=w.document,root=d.getElementById('root');let calls=0;
     w.fetch=async()=>{calls++;return{ok:true,json:async()=>({success:true,supported:true,folders:[
         {bucket:'one',path:'New CVs',total:100},{bucket:'one',path:'<img src=x onerror=bad()>',total:5}],tags:['UI design','Management']})};};

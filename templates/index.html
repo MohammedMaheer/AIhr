@@ -151,6 +151,11 @@
                         <div class="w-7 h-7 bg-gray-100 rounded-md flex items-center justify-center mr-2"><i class="fas fa-folder-open text-gray-600 text-xs" aria-hidden="true"></i></div>
                         <div><div class="font-medium text-xs">Resume Library</div><div class="text-xs text-gray-400">Uploaded files & folders</div></div>
                     </a>
+                    <a href="#/jobApplications" id="job-applications-link" hidden
+                        class="nav-link hidden group flex items-center px-2 py-2 text-gray-600 rounded-lg hover:bg-gray-50 transition-all duration-200">
+                        <div class="w-7 h-7 bg-gray-100 rounded-md flex items-center justify-center mr-2"><i class="fas fa-briefcase text-gray-600 text-xs" aria-hidden="true"></i></div>
+                        <div><div class="font-medium text-xs">Job Applications</div><div class="text-xs text-gray-400">Pages & applicants</div></div>
+                    </a>
                     <a href="#" id="search-resumes-link"
                         class="nav-link group flex items-center px-2 py-2 text-gray-600 rounded-lg hover:bg-gray-50 transition-all duration-200">
                         <div
@@ -255,6 +260,7 @@
     <script src="/static/js/admin-workspace.js?v={{ asset_v.admin_workspace_js }}"></script>
     <script src="/static/js/resume-folders.js?v={{ asset_v.resume_folders_js }}"></script>
     <script src="/static/js/resume-library.js?v={{ asset_v.resume_library_js }}"></script>
+    <script src="/static/js/job-applications.js?v={{ asset_v.job_applications_js }}"></script>
     <script>window.SMART_HR_LIMITS = {{ ui_limits | tojson }};</script>
     <script src="/static/js/main.js?v={{ asset_v.main_js }}"></script>
 </body>

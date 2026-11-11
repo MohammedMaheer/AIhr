@@ -32,6 +32,12 @@ async function checkAuthAndLoadUser() {
             const caption = adminLink.querySelector('[data-admin-caption]');
             if (caption) caption.textContent = user.user_type === 'super_admin' ? 'Companies & users' : 'Team users';
         }
+        const jobPagesLink = document.getElementById('job-applications-link');
+        if (jobPagesLink) {
+            const canManage = !!(user.company?.company_id || user.company?.id);
+            jobPagesLink.hidden = !canManage;
+            jobPagesLink.classList.toggle('hidden', !canManage);
+        }
         return user;
 
     } catch (error) {
@@ -136,6 +142,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const dashboardLink = document.getElementById('dashboard-link');
     const searchResumesLink = document.getElementById('search-resumes-link');
     const resumeLibraryLink = document.getElementById('resume-library-link');
+    const jobApplicationsLink = document.getElementById('job-applications-link');
     const administrationLink = document.getElementById('administration-link');
     const jdBuilderLink = document.getElementById('jd-builder-link');
     const vectorSearchLink = document.getElementById('vector-search-link');
@@ -1031,6 +1038,7 @@ document.addEventListener('DOMContentLoaded', function () {
         `,
         administration: '<section id="administration-workspace" class="max-w-7xl mx-auto"></section>',
         resumeLibrary: '<section id="resume-library-workspace" class="max-w-7xl mx-auto"></section>',
+        jobApplications: '<section id="job-applications-workspace" class="max-w-7xl mx-auto"></section>',
         settings: `
             <div class="p-4 h-full overflow-y-auto bg-gray-50">
                 <div class="max-w-4xl mx-auto">
@@ -1127,7 +1135,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (activePageCleanup) activePageCleanup();
         activePageCleanup = null;
         const links = {dashboard:dashboardLink, searchResumes:searchResumesLink, resumeLibrary:resumeLibraryLink,
-            administration:administrationLink, uploadFiles:uploadFilesLink, history:historyLink,
+            jobApplications:jobApplicationsLink, administration:administrationLink, uploadFiles:uploadFilesLink, history:historyLink,
             jdBuilder:jdBuilderLink, settings:settingsLink};
         if (links[page]) setActiveLink(links[page]);
         if (!options.fromHistory) {
@@ -1151,6 +1159,7 @@ document.addEventListener('DOMContentLoaded', function () {
             dashboard: { title: 'Dashboard', desc: 'Overview & Analytics' },
             searchResumes: { title: 'Search Resumes', desc: 'Find the perfect candidates with AI assistance' },
             resumeLibrary: { title: 'CV Library' },
+            jobApplications: { title: 'Job Applications' },
             administration: { title: 'Administration' },
             jdBuilder: { title: 'JD Builder', desc: 'Create professional job descriptions with AI assistance' },
             vectorSearch: { title: 'Vector Search Test', desc: 'Test the Google Cloud vector store directly' },
@@ -1186,6 +1195,8 @@ document.addEventListener('DOMContentLoaded', function () {
             activePageCleanup = window.AdminWorkspace.mount(document.getElementById('administration-workspace'), options.section);
         } else if (page === 'resumeLibrary') {
             activePageCleanup = window.ResumeLibrary?.mount(document.getElementById('resume-library-workspace')) || null;
+        } else if (page === 'jobApplications') {
+            activePageCleanup = window.JobApplications?.mount(document.getElementById('job-applications-workspace')) || null;
         }
     }
 
@@ -1208,7 +1219,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     window.addEventListener('popstate', restoreWorkspaceRoute);
     window.addEventListener('hashchange', restoreWorkspaceRoute);
-    [[resumeLibraryLink,'resumeLibrary'],[administrationLink,'administration']].forEach(([link,page]) => {
+    [[resumeLibraryLink,'resumeLibrary'],[jobApplicationsLink,'jobApplications'],[administrationLink,'administration']].forEach(([link,page]) => {
         link?.addEventListener('click', event => { event.preventDefault(); loadPage(page); });
     });
 
@@ -1219,7 +1230,7 @@ document.addEventListener('DOMContentLoaded', function () {
             root.id = 'resume-search-filters';
             count.closest('.w-full')?.append(root);
             if (!root.isConnected) count.parentElement.parentElement.parentElement.append(root);
-            const disposeFilters = window.ResumeFolders.mount(root);
+            const disposeFilters = window.ResumeFolders.mount(root, {quickTags: true});
             const filterButton = document.getElementById('result-search-filters');
             const scopeLabel = document.getElementById('result-search-scope');
             const cancelScope = window.ResumeFolders.subscribe(() => {

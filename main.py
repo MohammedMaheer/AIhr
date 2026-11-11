@@ -67,6 +67,7 @@ from docx import Document
 import warnings
 import logging
 import re
+import math
 from database import get_db_manager
 import builtins
 # Email scraping imports
@@ -508,17 +509,26 @@ class LimitUploadSizeMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: StarletteRequest, call_next):
         # Check for upload endpoints that should have size limits
         upload_endpoints = ['/api/upload-files', '/api/configure-gcs']
+        is_public_application_upload = (
+            request.url.path.startswith('/api/public/application-pages/')
+            and request.url.path.endswith('/applications')
+            and request.method.upper() == 'POST'
+        )
 
-        if request.url.path in upload_endpoints and "content-length" in request.headers:
+        if is_public_application_upload and "content-length" not in request.headers:
+            return JSONResponse({"detail": "The application upload could not be size-checked. Please retry."}, status_code=411)
+
+        if (request.url.path in upload_endpoints or is_public_application_upload) and "content-length" in request.headers:
             try:
                 content_length = int(request.headers["content-length"])
-                if content_length > self.max_upload_size:
-                    print(f"🚫 Request blocked: Content length {content_length:,} bytes exceeds limit {self.max_upload_size:,} bytes")
+                request_limit = MAX_FILE_SIZE + 1024 * 1024 if is_public_application_upload else self.max_upload_size
+                if content_length > request_limit:
+                    print(f"🚫 Request blocked: Content length {content_length:,} bytes exceeds limit {request_limit:,} bytes")
                     return JSONResponse(
                         content={
-                            "detail": f"Request too large. Maximum size allowed: {self.max_upload_size // (1024*1024)}MB, received: {content_length // (1024*1024)}MB",
+                            "detail": f"Request too large. Maximum size allowed: {request_limit // (1024*1024)}MB, received: {content_length // (1024*1024)}MB",
                             "error_code": "CONTENT_TOO_LARGE",
-                            "max_size_mb": self.max_upload_size // (1024*1024),
+                            "max_size_mb": request_limit // (1024*1024),
                             "received_size_mb": content_length // (1024*1024)
                         },
                         status_code=413
@@ -596,6 +606,7 @@ def _compute_asset_versions() -> dict[str, str]:
                       ("admin_workspace_js", "static/js/admin-workspace.js"),
                       ("resume_folders_js", "static/js/resume-folders.js"),
                       ("resume_library_js", "static/js/resume-library.js"),
+                      ("job_applications_js", "static/js/job-applications.js"),
                       ("notifications_js", "static/js/notifications.js"),
                       ("outreach_js", "static/js/recruiter-outreach.js"),
                       ("interview_manager_js", "static/js/interview-manager.js"),
@@ -3479,10 +3490,17 @@ def adjust_scorecard_with_keyword_analysis(scorecard_json: Dict[str, Any], keywo
     This ensures that keyword coverage has appropriate weight in the final score calculation.
     """
     try:
-        # Get keyword matching metrics
-        matched_keywords = keyword_analysis.get('jd_keywords_matched', 0)
-        total_keywords = keyword_analysis.get('total_jd_keywords', 1)  # Avoid division by zero
-        keyword_match_percentage = (matched_keywords / total_keywords) * 100 if total_keywords > 0 else 0
+        if not isinstance(scorecard_json, dict) or not isinstance(keyword_analysis, dict):
+            return scorecard_json
+
+        matched_keywords = keyword_analysis.get('jd_keywords_matched')
+        total_keywords = keyword_analysis.get('total_jd_keywords')
+        if (isinstance(matched_keywords, bool) or not isinstance(matched_keywords, (int, float))
+                or isinstance(total_keywords, bool) or not isinstance(total_keywords, (int, float))
+                or not math.isfinite(matched_keywords) or not math.isfinite(total_keywords)
+                or matched_keywords < 0 or total_keywords <= 0 or matched_keywords > total_keywords):
+            return scorecard_json
+        keyword_match_percentage = (matched_keywords / total_keywords) * 100
 
         # Calculate keyword technical match score based on actual matching
         if keyword_match_percentage >= 80:
@@ -3502,43 +3520,46 @@ def adjust_scorecard_with_keyword_analysis(scorecard_json: Dict[str, Any], keywo
         # Update the keyword_technical_match score in breakdown
         score_breakdown = scorecard_json.get('score_breakdown', {})
 
-        # Find the keyword technical match category (it might have different names)
-        keyword_category_key = None
-        for key in score_breakdown.keys():
-            if 'keyword' in key.lower() or 'technical_match' in key.lower():
-                keyword_category_key = key
-                break
+        if not isinstance(score_breakdown, dict):
+            return scorecard_json
 
-        if keyword_category_key:
-            # Update the keyword technical score and comment
-            score_breakdown[keyword_category_key]['score'] = int(keyword_technical_score)
-            score_breakdown[keyword_category_key]['comment'] = f"Matched {matched_keywords}/{total_keywords} required keywords ({keyword_match_percentage:.1f}% coverage). " + \
-                ("Strong keyword alignment with job requirements." if keyword_match_percentage >= 70 else
-                 "Moderate keyword coverage - some key terms missing." if keyword_match_percentage >= 40 else
-                 "Limited keyword coverage - significant gaps in required technical terms.")
+        # Add explicit keyword evidence when the model omitted that category.
+        keyword_category_key = next((key for key in score_breakdown
+            if 'keyword' in key.lower() or 'technical_match' in key.lower()), None)
+        if keyword_category_key is None:
+            keyword_category_key = 'keyword_technical_match'
+            score_breakdown[keyword_category_key] = {}
 
-        # Recalculate overall score with proper weighting
-        scores = []
-        weights = []
+        score_breakdown[keyword_category_key]['score'] = int(keyword_technical_score)
+        score_breakdown[keyword_category_key]['comment'] = f"Matched {matched_keywords}/{total_keywords} required keywords ({keyword_match_percentage:.1f}% coverage). " + \
+            ("Strong keyword alignment with job requirements." if keyword_match_percentage >= 70 else
+             "Moderate keyword coverage - some key terms missing." if keyword_match_percentage >= 40 else
+             "Limited keyword coverage - significant gaps in required technical terms.")
 
+        scored_categories = []
         for category, details in score_breakdown.items():
-            if isinstance(details, dict) and 'score' in details:
-                score = details['score']
-                scores.append(score)
+            if not isinstance(details, dict):
+                continue
+            score = details.get('score')
+            if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
+                continue
+            is_keyword = 'keyword' in category.lower() or 'technical_match' in category.lower()
+            scored_categories.append((min(100.0, max(0.0, float(score))), is_keyword))
 
-                # Give higher weight to keyword matching to ensure it significantly impacts the score
-                if 'keyword' in category.lower() or 'technical_match' in category.lower():
-                    weights.append(0.35)  # 35% weight for keyword matching
-                else:
-                    weights.append(0.65 / (len(score_breakdown) - 1))  # Distribute remaining 65% among other categories
-
-        # Calculate weighted average
-        if scores and weights:
-            weighted_score = sum(score * weight for score, weight in zip(scores, weights))
-            adjusted_overall_score = int(weighted_score)
+        keyword_count = sum(is_keyword for _, is_keyword in scored_categories)
+        other_count = len(scored_categories) - keyword_count
+        if scored_categories:
+            keyword_weight = (1.0 if other_count == 0 else 0.35) / keyword_count if keyword_count else 0.0
+            other_weight = (1.0 if keyword_count == 0 else 0.65) / other_count if other_count else 0.0
+            weighted_score = sum(score * (keyword_weight if is_keyword else other_weight)
+                                 for score, is_keyword in scored_categories)
+            adjusted_overall_score = round(weighted_score)
 
             # Update overall score
             candidate_overview = scorecard_json.get('candidate_overview', {})
+            if not isinstance(candidate_overview, dict):
+                candidate_overview = {}
+                scorecard_json['candidate_overview'] = candidate_overview
             original_score = candidate_overview.get('overall_match_score', 0)
             candidate_overview['overall_match_score'] = adjusted_overall_score
 
@@ -11083,6 +11104,449 @@ async def get_resume_document(upload_id: int, request: Request, user: dict = Dep
     return Response(content, media_type=media_type, headers={
         'Cache-Control':'private, no-store', 'X-Content-Type-Options':'nosniff',
         'Content-Disposition':'inline', 'Content-Security-Policy':"default-src 'none'; sandbox"})
+
+
+# Public job applications deliberately reuse the normal company CV upload and
+# local indexing path. Candidate details are never placed in the public URL.
+def _application_questions(value):
+    if not isinstance(value, list) or len(value) > 6:
+        raise HTTPException(status_code=422, detail='Add no more than six application questions.')
+    questions = []
+    for item in value:
+        question = _sanitize_user_text(item, 180) if isinstance(item, str) else ''
+        if not question:
+            raise HTTPException(status_code=422, detail='Each application question must contain text.')
+        questions.append(question)
+    return questions
+
+
+def _application_page_fields(payload):
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail='Provide valid job-page details.')
+    if any(payload.get(key) is not None and not isinstance(payload.get(key), str)
+           for key in ('title', 'description', 'location', 'employment_type')):
+        raise HTTPException(status_code=422, detail='Job-page details must be text.')
+    title = _sanitize_user_text(payload.get('title'), 180)
+    description = _sanitize_user_text(payload.get('description'), 12000)
+    location = _sanitize_user_text(payload.get('location'), 180)
+    employment_type = _sanitize_user_text(payload.get('employment_type') or 'Full-time', 80)
+    if len(title) < 2 or len(description) < 20:
+        raise HTTPException(status_code=422, detail='Add a job title and a description of at least 20 characters.')
+    return title, description, location, employment_type, _application_questions(payload.get('custom_questions', []))
+
+
+def _application_company_id(user):
+    company_id = _get_company_id(user)
+    if not company_id:
+        raise HTTPException(status_code=403, detail='Choose a company workspace before managing job pages.')
+    return int(company_id)
+
+
+def _application_audit(cursor, user, company_id, action, entity_id, old_values, new_values,
+                       entity_type='job_application_page'):
+    cursor.execute('''INSERT INTO audit_logs(user_id,company_id,action,entity_type,entity_id,old_values,new_values)
+        VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)''',
+        (user['id'], company_id, action, entity_type, entity_id, json.dumps(old_values), json.dumps(new_values)))
+
+
+@app.get('/apply/{public_token}', response_class=HTMLResponse, name='public_job_application')
+async def public_job_application(request: Request, public_token: str):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{32,80}', public_token or ''):
+        raise HTTPException(status_code=404, detail='Application page not found.')
+    return templates.TemplateResponse(request, 'job_application_public.html', {'public_token': public_token})
+
+
+@app.get('/api/public/application-pages/{public_token}')
+@limiter.limit('30/minute')
+async def get_public_application_page(request: Request, public_token: str):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{32,80}', public_token or ''):
+        raise HTTPException(status_code=404, detail='Application page not found.')
+    db = get_db_manager()
+    with db.get_cursor() as (cursor, _conn):
+        cursor.execute('''SELECT p.title,p.description,p.location,p.employment_type,p.custom_questions,
+            c.company_name FROM job_application_pages p JOIN tenant_companies c ON c.id=p.company_id
+            WHERE p.public_token=%s AND p.status='published' AND c.is_active IS DISTINCT FROM FALSE''',
+            (public_token,))
+        page = cursor.fetchone()
+    if not page:
+        raise HTTPException(status_code=404, detail='This application page is unavailable.')
+    return {'success': True, 'page': dict(page)}
+
+
+@app.post('/api/public/application-pages/{public_token}/applications')
+@limiter.limit('5/minute')
+async def submit_public_application(
+    request: Request,
+    public_token: str,
+    file: UploadFile = File(...),
+    candidate_name: str = Form(...),
+    email: str = Form(...),
+    phone: str = Form(''),
+    location: str = Form(''),
+    years_experience: str = Form(''),
+    linkedin_url: str = Form(''),
+    answers: str = Form('{}'),
+    consent: bool = Form(False),
+    company_website: str = Form(''),
+):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{32,80}', public_token or ''):
+        raise HTTPException(status_code=404, detail='This application page is unavailable.')
+    # Bots that fill the hidden field get a neutral receipt without storing data.
+    if company_website.strip():
+        return {'success': True, 'message': 'Your application has been received.'}
+    name = _sanitize_user_text(candidate_name, 160)
+    email_value = _sanitize_user_text(email, 254).lower()
+    phone_value = _sanitize_user_text(phone, 40)
+    location_value = _sanitize_user_text(location, 180)
+    linkedin_value = _sanitize_user_text(linkedin_url, 500)
+    if len(name) < 2 or not re.fullmatch(r"[^\s@<>]{1,64}@[^\s@<>.]+(?:\.[^\s@<>.]+)+", email_value):
+        raise HTTPException(status_code=422, detail='Enter your name and a valid email address.')
+    if not consent:
+        raise HTTPException(status_code=422, detail='Please confirm how your application information will be used.')
+    if linkedin_value:
+        try:
+            parsed_linkedin = urlparse(linkedin_value)
+            valid_linkedin = (parsed_linkedin.scheme == 'https'
+                and parsed_linkedin.hostname in {'linkedin.com', 'www.linkedin.com'}
+                and parsed_linkedin.path.startswith('/in/'))
+        except ValueError:
+            valid_linkedin = False
+        if not valid_linkedin:
+            raise HTTPException(status_code=422, detail='Use a valid LinkedIn profile link or leave it blank.')
+    experience = None
+    if years_experience.strip():
+        try:
+            experience = float(years_experience)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail='Enter experience as a number of years.')
+        if not np.isfinite(experience) or not 0 <= experience <= 80:
+            raise HTTPException(status_code=422, detail='Experience must be between 0 and 80 years.')
+        if abs(experience * 2 - round(experience * 2)) > 1e-7:
+            raise HTTPException(status_code=422, detail='Experience must use half-year increments.')
+    try:
+        supplied_answers = json.loads(answers)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail='Review your answers and submit again.')
+    if not isinstance(supplied_answers, dict) or len(supplied_answers) > 6:
+        raise HTTPException(status_code=422, detail='Review your answers and submit again.')
+
+    db = get_db_manager()
+    with db.get_cursor() as (cursor, _conn):
+        cursor.execute('''SELECT p.id,p.company_id,p.created_by_user_id,p.custom_questions,c.company_code,
+            c.gcs_bucket_name FROM job_application_pages p JOIN tenant_companies c ON c.id=p.company_id
+            WHERE p.public_token=%s AND p.status='published' AND c.is_active IS DISTINCT FROM FALSE''',
+            (public_token,))
+        page = cursor.fetchone()
+    if not page:
+        raise HTTPException(status_code=404, detail='This application page is unavailable.')
+    questions = page.get('custom_questions') or []
+    if set(supplied_answers) - {str(i) for i in range(len(questions))}:
+        raise HTTPException(status_code=422, detail='Review your answers and submit again.')
+    clean_answers = {}
+    for key, question in enumerate(questions):
+        answer = _sanitize_user_text(supplied_answers.get(str(key), ''), 1000)
+        if answer:
+            clean_answers[str(key)] = answer
+    original_name = _sanitize_user_text(Path((file.filename or '').replace('\\', '/')).name, 200)
+    extension = Path(original_name).suffix.lower()
+    if extension not in {'.pdf', '.doc', '.docx'}:
+        raise HTTPException(status_code=422, detail='Upload a PDF or Word CV.')
+    content = await file.read(MAX_FILE_SIZE + 1)
+    if not content or len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail=f'Your CV must be smaller than {MAX_FILE_SIZE // (1024 * 1024)} MB.')
+    is_valid, validation_message = validate_resume_payload(original_name, content)
+    if not is_valid:
+        raise HTTPException(status_code=422, detail=validation_message)
+
+    company_id = int(page['company_id'])
+    await _check_resume_upload_limit(db, company_id, 1)
+    bucket_name = page.get('gcs_bucket_name') or get_company_gcs_bucket(page.get('company_code'))
+    if not bucket_name:
+        raise HTTPException(status_code=503, detail='The company application inbox is temporarily unavailable.')
+    safe_extension = extension
+    blob_name = f"Applications/{int(page['id'])}/{uuid.uuid4().hex}{safe_extension}"
+    from psycopg2 import IntegrityError
+    try:
+        with db.get_cursor() as (cursor, _conn):
+            cursor.execute('''INSERT INTO job_applications(page_id,company_id,candidate_name,normalized_email,
+                phone,location,years_experience,linkedin_url,answers,consent_at,status)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NOW(),'processing') RETURNING id''',
+                (page['id'], company_id, name, email_value, phone_value, location_value, experience,
+                 linkedin_value, json.dumps(clean_answers)))
+            application_id = cursor.fetchone()['id']
+    except IntegrityError as exc:
+        if getattr(getattr(exc, 'diag', None), 'constraint_name', '') == 'idx_job_applications_unique_email':
+            return {'success': True, 'message': 'Your application has been received.'}
+        raise HTTPException(status_code=503, detail='Your application could not be completed. Please retry shortly.')
+    try:
+        indexed = await _run_resume_upload(db, bucket_name=bucket_name, blob_name=blob_name,
+            filename=original_name, content=content,
+            content_type=mimetypes.guess_type(original_name)[0] or 'application/octet-stream',
+            user_id=page['created_by_user_id'], company_id=company_id,
+            company_code=page.get('company_code'))
+        with db.get_cursor() as (cursor, _conn):
+            cursor.execute('''SELECT id FROM resume_uploads WHERE company_id=%s AND file_path=%s
+                ORDER BY id DESC LIMIT 1''', (company_id, blob_name))
+            upload = cursor.fetchone()
+            if not upload:
+                raise RuntimeError('Resume upload record was not created')
+            cursor.execute('''UPDATE job_applications SET resume_upload_id=%s,vector_indexed=%s,
+                status='received',updated_at=NOW() WHERE id=%s AND company_id=%s AND status='processing' ''',
+                (upload['id'], bool(indexed), application_id, company_id))
+            if cursor.rowcount != 1:
+                raise RuntimeError('Application reservation could not be finalized')
+    except Exception as exc:
+        try:
+            blob = _get_storage_client().bucket(bucket_name).blob(blob_name)
+            if blob.exists():
+                blob.delete()
+        except Exception as cleanup_exc:
+            logger.warning('Application upload cleanup needs follow-up: %s', type(cleanup_exc).__name__)
+        try:
+            folder, _, stored_filename = blob_name.rpartition('/')
+            with db.get_cursor() as (cursor, _conn):
+                cursor.execute('''DELETE FROM resume_embeddings WHERE storage_bucket=%s AND folder=%s
+                    AND filename=%s AND company_id=%s''', (bucket_name, folder, stored_filename, company_id))
+                cursor.execute('DELETE FROM resume_uploads WHERE company_id=%s AND file_path=%s', (company_id, blob_name))
+                cursor.execute("DELETE FROM job_applications WHERE id=%s AND company_id=%s AND status='processing'",
+                               (application_id, company_id))
+        except Exception as cleanup_exc:
+            logger.warning('Application record cleanup needs follow-up: %s', type(cleanup_exc).__name__)
+        logger.warning('Public job application could not be persisted: %s', type(exc).__name__)
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(status_code=503, detail='Your application could not be completed. Please retry shortly.')
+    return {'success': True, 'message': 'Your application has been received.'}
+
+
+@app.get('/api/job-application-pages')
+@limiter.limit('60/minute')
+async def list_job_application_pages(request: Request, user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user)
+    db = get_db_manager()
+    with db.get_cursor() as (cursor, _conn):
+        cursor.execute('''SELECT p.id,p.title,p.description,p.location,p.employment_type,p.custom_questions,
+            p.status,p.version,p.public_token,p.published_at,p.created_at,p.updated_at,
+            COUNT(a.id) FILTER (WHERE a.status NOT IN ('erased','processing')) AS applicant_count,
+            COUNT(a.id) FILTER (WHERE a.status NOT IN ('erased','processing') AND NOT a.vector_indexed) AS indexing_pending
+            FROM job_application_pages p LEFT JOIN job_applications a ON a.page_id=p.id
+            WHERE p.company_id=%s GROUP BY p.id ORDER BY p.updated_at DESC,p.id DESC''', (company_id,))
+        rows = [dict(row) for row in cursor.fetchall()]
+    for row in rows:
+        row['public_url'] = '/apply/' + row.pop('public_token') if row['status'] == 'published' else None
+        for key in ('published_at', 'created_at', 'updated_at'):
+            row[key] = row[key].isoformat() if row[key] else None
+    return {'success': True, 'pages': rows}
+
+
+@app.post('/api/job-application-pages')
+@limiter.limit('20/minute')
+async def create_job_application_page(request: Request, user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user)
+    payload = await request.json()
+    title, description, location, employment_type, questions = _application_page_fields(payload)
+    status = payload.get('status', 'draft')
+    if not isinstance(status, str) or status not in {'draft', 'published'}:
+        raise HTTPException(status_code=422, detail='A new page must be a draft or published.')
+    token = secrets.token_urlsafe(32)
+    db = get_db_manager()
+    with db.get_cursor() as (cursor, _conn):
+        cursor.execute('''INSERT INTO job_application_pages(company_id,created_by_user_id,title,description,
+            location,employment_type,custom_questions,public_token,status,published_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,CASE WHEN %s='published' THEN NOW() END)
+            RETURNING id,version,created_at,updated_at,published_at''',
+            (company_id, user['id'], title, description, location, employment_type,
+             json.dumps(questions), token, status, status))
+        row = dict(cursor.fetchone())
+        _application_audit(cursor, user, company_id, 'CREATE_JOB_APPLICATION_PAGE', row['id'], {},
+                           {'status': status, 'title': title, 'version': row['version']})
+    return {'success': True, 'page': {**row, 'title': title, 'description': description, 'location': location,
+            'employment_type': employment_type, 'custom_questions': questions, 'status': status,
+            'public_url': '/apply/' + token if status == 'published' else None}}
+
+
+@app.put('/api/job-application-pages/{page_id}')
+@limiter.limit('30/minute')
+async def update_job_application_page(page_id: int, request: Request, user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user)
+    payload = await request.json()
+    title, description, location, employment_type, questions = _application_page_fields(payload)
+    version = payload.get('version')
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        raise HTTPException(status_code=422, detail='Refresh this page before saving your changes.')
+    db = get_db_manager()
+    with db.get_cursor() as (cursor, _conn):
+        cursor.execute('''SELECT status,version FROM job_application_pages WHERE id=%s AND company_id=%s FOR UPDATE''',
+                       (page_id, company_id))
+        old = cursor.fetchone()
+        if not old:
+            raise HTTPException(status_code=404, detail='Job page not found.')
+        if old['version'] != version:
+            raise HTTPException(status_code=409, detail='This page changed in another session. Refresh and try again.')
+        cursor.execute('''UPDATE job_application_pages SET title=%s,description=%s,location=%s,
+            employment_type=%s,custom_questions=%s::jsonb,version=version+1,updated_at=NOW()
+            WHERE id=%s AND company_id=%s RETURNING version,updated_at,status,public_token,published_at''',
+            (title, description, location, employment_type, json.dumps(questions), page_id, company_id))
+        row = dict(cursor.fetchone())
+        public_token = row.pop('public_token')
+        _application_audit(cursor, user, company_id, 'EDIT_JOB_APPLICATION_PAGE', page_id,
+            {'status': old['status'], 'version': old['version']}, {'status': row['status'], 'version': row['version']})
+    row['updated_at'] = row['updated_at'].isoformat()
+    row['published_at'] = row['published_at'].isoformat() if row['published_at'] else None
+    return {'success': True, 'page': {**row, 'title': title, 'description': description, 'location': location,
+            'employment_type': employment_type, 'custom_questions': questions,
+            'public_url': '/apply/' + public_token if row['status'] == 'published' else None}}
+
+
+@app.patch('/api/job-application-pages/{page_id}/status')
+@limiter.limit('30/minute')
+async def set_job_application_page_status(page_id: int, request: Request, user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user)
+    payload = await request.json()
+    status, version = payload.get('status'), payload.get('version')
+    if not isinstance(status, str) or status not in {'draft', 'published', 'paused', 'closed'} or isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        raise HTTPException(status_code=422, detail='Choose a valid page status and refresh before saving.')
+    db = get_db_manager()
+    with db.get_cursor() as (cursor, _conn):
+        cursor.execute('''SELECT status,version FROM job_application_pages WHERE id=%s AND company_id=%s FOR UPDATE''',
+                       (page_id, company_id))
+        old = cursor.fetchone()
+        if not old:
+            raise HTTPException(status_code=404, detail='Job page not found.')
+        if old['version'] != version:
+            raise HTTPException(status_code=409, detail='This page changed in another session. Refresh and try again.')
+        cursor.execute('''UPDATE job_application_pages SET status=%s,version=version+1,updated_at=NOW(),
+            published_at=CASE WHEN %s='published' THEN COALESCE(published_at,NOW()) ELSE published_at END
+            WHERE id=%s AND company_id=%s RETURNING status,version,public_token,published_at''',
+            (status, status, page_id, company_id))
+        row = dict(cursor.fetchone())
+        _application_audit(cursor, user, company_id, 'CHANGE_JOB_APPLICATION_PAGE_STATUS', page_id,
+            {'status': old['status'], 'version': old['version']}, {'status': status, 'version': row['version']})
+    public_token = row.pop('public_token')
+    row['published_at'] = row['published_at'].isoformat() if row['published_at'] else None
+    row['public_url'] = '/apply/' + public_token if status == 'published' else None
+    return {'success': True, 'page': row}
+
+
+@app.delete('/api/job-application-pages/{page_id}')
+@limiter.limit('20/minute')
+async def delete_empty_job_application_page(page_id: int, request: Request, user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user)
+    payload = await request.json()
+    version = payload.get('version') if isinstance(payload, dict) else None
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        raise HTTPException(status_code=422, detail='Refresh this page before deleting it.')
+    db = get_db_manager()
+    with db.get_cursor() as (cursor, _conn):
+        cursor.execute('''SELECT status,version,title FROM job_application_pages
+            WHERE id=%s AND company_id=%s FOR UPDATE''', (page_id, company_id))
+        page = cursor.fetchone()
+        if not page:
+            raise HTTPException(status_code=404, detail='Job page not found.')
+        if page['version'] != version:
+            raise HTTPException(status_code=409, detail='This page changed in another session. Refresh and try again.')
+        if page['status'] == 'published':
+            raise HTTPException(status_code=409, detail='Pause or close this page before deleting it.')
+        cursor.execute('SELECT 1 FROM job_applications WHERE page_id=%s LIMIT 1', (page_id,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=409, detail='This page has candidate records. Close it to retain their applications and audit history.')
+        _application_audit(cursor, user, company_id, 'DELETE_EMPTY_JOB_APPLICATION_PAGE', page_id,
+            {'status': page['status'], 'version': page['version']}, {'deleted': True, 'title': page['title']})
+        cursor.execute('DELETE FROM job_application_pages WHERE id=%s AND company_id=%s', (page_id, company_id))
+    return {'success': True}
+
+
+@app.get('/api/job-application-pages/{page_id}/applications.csv')
+@limiter.limit('20/minute')
+async def export_job_applications_csv(page_id: int, request: Request, user: dict = Depends(require_auth)):
+    import csv
+    company_id = _application_company_id(user)
+    db = get_db_manager()
+    with db.get_cursor() as (cursor, _conn):
+        cursor.execute('''SELECT title FROM job_application_pages WHERE id=%s AND company_id=%s''', (page_id, company_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail='Job page not found.')
+    def csv_safe(value):
+        if isinstance(value, str) and re.match(r'^[\s\x00-\x1f]*[=+\-@]', value):
+            return "'" + value
+        return value
+
+    def csv_stream():
+        output = io.StringIO(newline='')
+        writer = csv.writer(output)
+        writer.writerow(['Name','Email','Phone','Location','Experience (years)','LinkedIn','Status','CV indexed','Received'])
+        yield output.getvalue()
+        output.seek(0); output.truncate(0)
+        with db.get_cursor() as (cursor, conn):
+            try:
+                cursor.execute('''SELECT candidate_name,normalized_email,phone,location,years_experience,linkedin_url,
+                    status,vector_indexed,created_at FROM job_applications WHERE page_id=%s AND company_id=%s
+                    AND status NOT IN ('erased','processing') ORDER BY created_at DESC''', (page_id, company_id))
+                while rows := cursor.fetchmany(500):
+                    for row in rows:
+                        writer.writerow([csv_safe(row['candidate_name']),csv_safe(row['normalized_email']),csv_safe(row['phone']),csv_safe(row['location']),
+                            row['years_experience'],csv_safe(row['linkedin_url']),row['status'],row['vector_indexed'],row['created_at'].isoformat()])
+                    yield output.getvalue()
+                    output.seek(0); output.truncate(0)
+            finally:
+                # A disconnected browser must not return an open transaction to the pool.
+                conn.rollback()
+
+    return StreamingResponse(csv_stream(), media_type='text/csv; charset=utf-8',
+        headers={'Content-Disposition': f'attachment; filename="job-applications-{page_id}.csv"',
+                 'Cache-Control':'private, no-store', 'X-Content-Type-Options':'nosniff'})
+
+
+@app.get('/api/job-application-pages/{page_id}/applications')
+@limiter.limit('60/minute')
+async def list_job_applications(page_id: int, request: Request, limit: int = 100,
+                                offset: int = 0, user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user)
+    if not 1 <= limit <= 200 or offset < 0:
+        raise HTTPException(status_code=422, detail='Choose a valid page of applications.')
+    db = get_db_manager()
+    with db.get_cursor() as (cursor, _conn):
+        cursor.execute('SELECT id FROM job_application_pages WHERE id=%s AND company_id=%s', (page_id, company_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail='Job page not found.')
+        cursor.execute('''SELECT COUNT(*) AS total FROM job_applications WHERE page_id=%s AND company_id=%s AND status NOT IN ('erased','processing') ''',
+                       (page_id, company_id))
+        total = cursor.fetchone()['total']
+        cursor.execute('''SELECT a.id,a.candidate_name,a.normalized_email,a.phone,a.location,a.years_experience,
+            a.linkedin_url,a.answers,a.status,a.version,a.vector_indexed,a.created_at,a.resume_upload_id,
+            u.file_name FROM job_applications a LEFT JOIN resume_uploads u ON u.id=a.resume_upload_id
+            WHERE a.page_id=%s AND a.company_id=%s AND a.status NOT IN ('erased','processing')
+            ORDER BY a.created_at DESC,a.id DESC LIMIT %s OFFSET %s''', (page_id, company_id, limit, offset))
+        rows = [dict(row) for row in cursor.fetchall()]
+    for row in rows:
+        row['created_at'] = row['created_at'].isoformat()
+    return {'success': True, 'applications': rows, 'total': total, 'limit': limit, 'offset': offset}
+
+
+@app.patch('/api/job-applications/{application_id}/status')
+@limiter.limit('60/minute')
+async def set_job_application_status(application_id: int, request: Request, user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user)
+    payload = await request.json()
+    status, version = payload.get('status'), payload.get('version')
+    if not isinstance(status, str) or status not in {'received', 'reviewing', 'shortlisted', 'rejected', 'hired', 'withdrawn'} or isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        raise HTTPException(status_code=422, detail='Choose a valid application status and refresh before saving.')
+    db = get_db_manager()
+    with db.get_cursor() as (cursor, _conn):
+        cursor.execute('''SELECT status,version,page_id FROM job_applications WHERE id=%s AND company_id=%s
+            AND status <> 'erased' FOR UPDATE''', (application_id, company_id))
+        old = cursor.fetchone()
+        if not old:
+            raise HTTPException(status_code=404, detail='Application not found.')
+        if old['version'] != version:
+            raise HTTPException(status_code=409, detail='This application changed in another session. Refresh and try again.')
+        cursor.execute('''UPDATE job_applications SET status=%s,version=version+1,updated_at=NOW()
+            WHERE id=%s AND company_id=%s RETURNING status,version''', (status, application_id, company_id))
+        row = dict(cursor.fetchone())
+        _application_audit(cursor, user, company_id, 'CHANGE_JOB_APPLICATION_STATUS', application_id,
+            {'status': old['status'], 'version': old['version']}, {'status': status, 'version': row['version']},
+            entity_type='job_application')
+    return {'success': True, 'application': {'id': application_id, **row}}
 
 @app.post("/api/candidate-action")
 @limiter.limit("60/minute")

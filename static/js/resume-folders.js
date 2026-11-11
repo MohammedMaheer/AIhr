@@ -68,6 +68,10 @@
                 return '<label class="cv-tag-option"><input type="checkbox" data-tag="'+esc(tag)+'"><span>'+esc(tag)+'</span>'+
                     (Number.isSafeInteger(count)&&count>=0?'<small title="Searchable CVs in this workspace">'+count.toLocaleString()+'</small>':'')+'</label>';
             }).join('');
+            const tagPicker=options.quickTags?'<label class="cv-tag-picker"><span><i class="fas fa-tags" aria-hidden="true"></i>Search by tag</span><select data-tag-choice><option value="">All tags</option><option value="__multiple__" data-multiple-tags disabled hidden></option>'+(data.tags||[]).map(tag=>{
+                const count=data.tag_counts?.[tag]?.searchable;
+                return '<option value="'+esc(tag)+'">'+esc(tag)+(Number.isSafeInteger(count)&&count>=0?' ('+count.toLocaleString()+')':'')+'</option>';
+            }).join('')+'</select></label>':'';
             const controls='<div class="cv-filter-columns"><fieldset><legend>Folders</legend>'+
                 '<label class="cv-folder-all"><input type="checkbox" data-all><i class="fas fa-folder-open" aria-hidden="true"></i><span>All folders</span></label>'+
                 '<label class="workspace-search cv-folder-search"><i class="fas fa-search" aria-hidden="true"></i><input type="search" data-folder-query aria-label="Find a folder" placeholder="Find a folder" autocomplete="off"></label>'+
@@ -76,8 +80,8 @@
                 '<fieldset class="cv-date-fields"><legend>Date range</legend><label>Date type<select data-basis aria-label="Date type"><option value="uploaded">Uploaded</option><option value="received">Email received</option></select></label>'+
                 '<label>Period<select data-range aria-label="Period"><option value="any">Any time</option><option value="30">Last 30 days</option><option value="3">Last 3 months</option><option value="6">Last 6 months</option><option value="custom">Custom range</option></select></label>'+
                 '<label>From<input data-from type="date" aria-label="From"></label><label>To<input data-to type="date" aria-label="To"></label></fieldset>';
-            root.innerHTML=(options.expanded?'<div class="cv-filter-body">'+controls+'</div>':
-                '<details class="cv-filter-disclosure"><summary><span class="cv-filter-title"><i class="fas fa-sliders-h" aria-hidden="true"></i>CV filters</span><span data-summary></span><i class="fas fa-chevron-down cv-filter-chevron" aria-hidden="true"></i></summary><div class="cv-filter-body">'+controls+'</div></details>')+
+            root.innerHTML=tagPicker+(options.expanded?'<div class="cv-filter-body">'+controls+'</div>':
+                '<details class="cv-filter-disclosure"><summary><span class="cv-filter-title"><i class="fas fa-sliders-h" aria-hidden="true"></i>Folders, tags &amp; dates</span><span data-summary></span><i class="fas fa-chevron-down cv-filter-chevron" aria-hidden="true"></i></summary><div class="cv-filter-body">'+controls+'</div></details>')+
                 '<div class="cv-filter-footer"><div data-chips class="cv-filter-chips" aria-label="Active CV filters"></div><button type="button" data-reset class="workspace-icon-button" aria-label="Clear CV filters" title="Clear CV filters"><i class="fas fa-undo" aria-hidden="true"></i></button></div><p data-filter-error class="workspace-inline-error" role="alert" tabindex="-1" hidden></p>';
             const all=root.querySelector('[data-all]');
             root.querySelector('[data-folder-empty]').hidden=folders.length>0;
@@ -93,6 +97,12 @@
                 root.querySelectorAll('[data-tag]').forEach(input=>{
                     input.checked=(filters.tags||[]).includes(input.dataset.tag);input.closest('label').classList.toggle('is-selected',input.checked);
                 });
+                const picker=root.querySelector('[data-tag-choice]');
+                if(picker){
+                    const tags=filters.tags||[],multiple=picker.querySelector('[data-multiple-tags]');
+                    multiple.hidden=tags.length<2;multiple.textContent=tags.length+' tags selected';
+                    picker.value=tags.length>1?'__multiple__':tags[0]||'';
+                }
                 root.querySelector('[data-from]').value=filters.date_from||'';
                 root.querySelector('[data-to]').value=filters.date_to||'';
                 root.querySelector('[data-basis]').value=filters.date_basis||'uploaded';
@@ -114,6 +124,11 @@
                 });
             }
             all.onchange=()=>{selected=all.checked?null:[];announce();};
+            const picker=root.querySelector('[data-tag-choice]');
+            if(picker)picker.onchange=()=>{
+                if(picker.value && !(data.tags||[]).includes(picker.value))return;
+                filters.tags=picker.value?[picker.value]:[];announce();
+            };
             root.querySelectorAll('[data-folder]').forEach(input=>input.onchange=()=>{
                 const item=folders[Number(input.dataset.folder)];
                 selected=(selected||[]).filter(f=>!(f.bucket===item.bucket&&f.path===item.path));

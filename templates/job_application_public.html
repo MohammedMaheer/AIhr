@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <title>Apply for a role | Efforts Solutions</title>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ asset_v.style_css }}">
+    <style>
+        :root { color-scheme: light; }
+        body { margin:0; background:#f4f6f8; color:#18202b; font:16px/1.5 Inter,Arial,sans-serif; }
+        .application-brand { min-height:96px; display:flex; align-items:center; padding:0 max(24px,calc((100vw - 1080px)/2)); background:#171c25; }
+        .application-brand img { width:min(220px,58vw); height:auto; display:block; }
+        .application-main { width:min(100% - 32px,760px); margin:32px auto 64px; }
+        .application-heading { padding:28px 30px; background:white; border:1px solid #dfe4ea; border-bottom:0; border-radius:8px 8px 0 0; }
+        .application-eyebrow { margin:0 0 6px; color:#526174; font-size:14px; font-weight:600; }
+        .application-heading h1 { margin:0; font-size:30px; line-height:1.2; overflow-wrap:anywhere; }
+        .application-meta { margin:12px 0 0; color:#526174; }
+        .application-description { padding:20px 30px; background:white; border:1px solid #dfe4ea; border-top:1px solid #eef0f3; white-space:pre-wrap; overflow-wrap:anywhere; }
+        .application-form { padding:26px 30px 30px; background:white; border:1px solid #dfe4ea; border-top:0; border-radius:0 0 8px 8px; }
+        .application-form h2 { margin:0 0 18px; font-size:20px; }
+        .application-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+        .application-field { display:grid; gap:6px; min-width:0; margin-bottom:16px; }
+        .application-field label,.application-field .field-label { font-size:14px; font-weight:600; }
+        .application-field input,.application-field textarea { width:100%; min-width:0; box-sizing:border-box; padding:11px 12px; border:1px solid #bfc8d3; border-radius:6px; font:inherit; background:#fff; color:#18202b; }
+        .application-field input:focus,.application-field textarea:focus { outline:3px solid #b7d0ff; border-color:#2463eb; }
+        .application-field input[type=file] { padding:9px; }
+        .application-help { margin:0; color:#5b6675; font-size:13px; }
+        .application-question { margin:0 0 16px; }
+        .application-consent { display:grid; grid-template-columns:20px 1fr; gap:10px; align-items:start; margin:10px 0 20px; font-size:14px; }
+        .application-consent input { width:18px; height:18px; margin:2px 0 0; accent-color:#136b50; }
+        .application-submit { min-height:44px; padding:10px 18px; border:0; border-radius:6px; background:#126b52; color:white; font-family:inherit; font-size:15px; font-weight:600; cursor:pointer; }
+        .application-submit:hover { background:#0e5944; }
+        .application-submit:disabled { opacity:.65; cursor:wait; }
+        .application-alert { padding:12px 14px; margin:0 0 18px; border-radius:6px; }
+        .application-alert[hidden] { display:none; }
+        .application-alert.is-error { background:#fff1f0; color:#992b26; border:1px solid #f2b8b5; }
+        .application-alert.is-success { background:#e9f8f1; color:#14563e; border:1px solid #a4d9bd; }
+        .application-loading,.application-unavailable { padding:32px; background:white; border:1px solid #dfe4ea; border-radius:8px; }
+        .application-honeypot { position:absolute; left:-10000px; width:1px; height:1px; overflow:hidden; }
+        @media(max-width:600px) {
+            .application-brand { min-height:76px; padding:0 18px; }
+            .application-main { width:calc(100% - 20px); margin:16px auto 36px; }
+            .application-heading,.application-description,.application-form { padding:20px 18px; }
+            .application-heading h1 { font-size:24px; }
+            .application-grid { grid-template-columns:minmax(0,1fr); gap:0; }
+            .application-submit { width:100%; }
+        }
+        @media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto !important; animation-duration:.01ms !important; transition-duration:.01ms !important; } }
+    </style>
+</head>
+<body>
+    <header class="application-brand"><img src="/static/review/efforts-solutions-logo.png" alt="Efforts Solutions"></header>
+    <main class="application-main" id="candidate-application" data-public-token="{{ public_token }}">
+        <div class="application-loading" role="status">Loading job details...</div>
+    </main>
+    <script src="/static/js/job-applications.js?v={{ asset_v.job_applications_js }}" defer></script>
+</body>
+</html>

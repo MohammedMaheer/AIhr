@@ -5,6 +5,40 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.11.1 - 2026-11-11
+
+### Recruitment Pages, Search Scope And Scoring Reliability
+
+- Add a recruiter-facing job application page manager with create, edit, publish,
+  pause, close, preview, copy-link, application review/status updates and CSV export.
+  Public links accept validated candidate details and CV files, and send uploads
+  through the existing local ingestion/indexing flow. Public submissions are not
+  automatically scored; managers remain responsible for hiring decisions.
+- Enforce company ownership, published-only public access, upload limits, rate
+  limiting, duplicate-safe responses, consent disclosure, audit history and
+  optimistic edits. Deletion is blocked when applications exist, preserving
+  candidate and audit records.
+- Add folder, tag and date scoping to AI resume search. Normalize scorecard weights
+  across configured metrics and safely ignore invalid metric values.
+- Pass 961 backend tests in each supported provider configuration (95 skipped),
+  11 isolated PostgreSQL application-flow tests, 1,056 fresh-database tests and
+  20 frontend suites. Check 105 runtime fixtures and 7,851 production vectors:
+  zero top-10 ranking mismatches. Audit 102 runtime packages with zero reported
+  vulnerabilities.
+- Deploy `clean-20261111t072708z`; SmartHR and preview health checks passed, no
+  unrelated containers changed, and no paid AI calls were made. Public page and
+  static asset routes respond; unauthenticated manager access is rejected.
+- Recheck all 7,862 resume records: 7,852 have local MiniLM vectors and 10 PDF
+  records do not. Network-disabled local OCR/parser review found 2 likely
+  supporting documents, 6 low-confidence OCR cases and 2 parser failures. No
+  production rows or original files were changed; all 10 remain for human review.
+- Email message bodies are not stored or embedded for resume search; mailbox
+  processing uses message content transiently to identify relevant attachments.
+  Desktop/mobile browser visual verification remains outstanding because browser
+  control was unavailable. No candidate application was submitted in production.
+- GitHub Actions are not represented as green: the account's workflow billing
+  restriction prevented a hosted run. Local and VPS checks above are separate.
+
 ## v2026.11.10.3 - 2026-11-10
 
 ### Search Statistics And Local Tag Repair

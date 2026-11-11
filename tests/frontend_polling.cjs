@@ -83,11 +83,12 @@ async function run(){
         {bucket:'fixture',path:'Campaign/Network',total:1}],tags:['UI design','Management']});
     w.eval(fs.readFileSync('static/js/resume-folders.js','utf8'));
     const controls=w.document.getElementById('scope-controls');
-    const dispose=w.ResumeFolders.mount(controls);
+    const dispose=w.ResumeFolders.mount(controls,{quickTags:true});
     await new Promise(resolve=>setImmediate(resolve));
     controls.querySelector('[data-folder="0"]').click();
     controls.querySelector('[data-folder="1"]').click();
-    controls.querySelector('[data-tag="UI design"]').click();
+    const tagChoice=controls.querySelector('[data-tag-choice]');
+    tagChoice.value='UI design';tagChoice.dispatchEvent(new w.Event('change'));
     for(const [selector,value] of [['[data-from]','2026-04-01'],['[data-to]','2026-04-30'],['[data-basis]','received']]){
         const field=controls.querySelector(selector);field.value=value;field.dispatchEvent(new w.Event('change'));
     }
@@ -102,6 +103,7 @@ async function run(){
     controls.querySelector('[data-folder="1"]').click();
     const differentFolder=w.submitSearch('Scoped unchanged requirements');
     controls.querySelector('[data-tag="Management"]').click();
+    assert.equal(tagChoice.value,'__multiple__');
     const differentTags=w.submitSearch('Scoped unchanged requirements');
     controls.querySelector('[data-to]').value='2026-05-01';
     controls.querySelector('[data-to]').dispatchEvent(new w.Event('change'));

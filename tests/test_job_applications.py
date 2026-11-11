@@ -33,7 +33,7 @@ def job_app_flow(queue_db, tmp_path, monkeypatch):
             CREATE TABLE resume_embeddings(id SERIAL PRIMARY KEY,storage_bucket TEXT,folder TEXT,filename TEXT,
                 company_id INTEGER);
             CREATE TABLE audit_logs(user_id INTEGER,company_id INTEGER,action TEXT,entity_type TEXT,
-                entity_id INTEGER,old_values JSONB,new_values JSONB);
+                entity_id INTEGER,old_values JSONB,new_values JSONB,ip_address TEXT,user_agent TEXT);
             CREATE TABLE scheduled_interviews(id SERIAL PRIMARY KEY,candidate_name TEXT NOT NULL,
                 candidate_email TEXT,interview_type TEXT NOT NULL,interview_date DATE NOT NULL,
                 interview_time TIME,duration_minutes INTEGER DEFAULT 60,location TEXT,interviewer TEXT,
@@ -47,11 +47,11 @@ def job_app_flow(queue_db, tmp_path, monkeypatch):
         cursor.execute(migration.read_text(encoding='utf-8'))
         workflow_migration = Path(__file__).resolve().parents[1] / 'deploy/vps/migrations/20261111_job_application_workflow.sql'
         cursor.execute(workflow_migration.read_text(encoding='utf-8'))
-    monkeypatch.setattr(db, 'get_company_by_id', lambda company_id: {
+    monkeypatch.setattr(db, 'get_company_by_id', lambda company_id: ({
         'id': company_id, 'company_code': 'jobs-one' if company_id == 1 else 'jobs-two',
         'company_name': 'Fictional Hiring Co' if company_id == 1 else 'Other Company',
         'gcs_bucket_name': 'jobs-one-bucket' if company_id == 1 else 'jobs-two-bucket',
-        'datastore_id': 'fixture-store'})
+        'datastore_id': 'fixture-store'} if company_id in (1, 2) else None))
     monkeypatch.setattr(main, 'get_db_manager', lambda: db)
     monkeypatch.setattr(main.limiter, 'enabled', False)
     monkeypatch.setattr(main, '_check_resume_upload_limit', AsyncMock(return_value=None))
@@ -247,8 +247,9 @@ def test_applicant_email_preview_is_canonical_and_auditable(job_app_flow):
     submitted = submit(flow, '/api/public/application-pages/' + page['public_url'].rsplit('/',1)[1] + '/applications')
     assert submitted.status_code == 200, submitted.text
     applicant = flow.client.get(f"/api/job-application-pages/{page['id']}/applications").json()['applications'][0]
+    flow.actor['user'] = {'id':7,'email':'manager@example.invalid','user_type':'super_admin','company':None}
     response = flow.client.post('/api/preview-candidate-email', json={
-        'job_application_id': applicant['id'], 'candidate_name':'Spoofed Name',
+        'job_application_id': applicant['id'], 'company_id':1, 'candidate_name':'Spoofed Name',
         'candidate_email':'attacker@example.invalid', 'position':'Wrong Role',
         'message_subject':'Application update', 'message_body':'A reviewed message.'})
     assert response.status_code == 200, response.text
@@ -272,9 +273,11 @@ def test_applicant_interview_is_tenant_checked_and_linked_to_application(job_app
     applicant = flow.client.get(f"/api/job-application-pages/{page['id']}/applications").json()['applications'][0]
     payload = {'job_application_id':applicant['id'],'candidate_name':'Spoofed Name',
         'candidate_email':'spoofed@example.invalid','position':'Wrong Role','company':'Fictional Hiring Co',
+        'company_id':1,
         'interview_type':'video','interview_date':(date.today()+timedelta(days=30)).isoformat(),
         'interview_time':'10:00','time_zone':'Asia/Kolkata','duration':30,'meeting_provider':'none',
         'send_invite_email':False,'interviewer':'Fictional Manager','location':'Video call'}
+    flow.actor['user'] = {'id':7,'email':'manager@example.invalid','user_type':'super_admin','company':None}
     response = flow.client.post('/api/schedule-interview', json=payload)
     assert response.status_code == 200, response.text
     interview_id = response.json()['interview_id']
@@ -285,16 +288,36 @@ def test_applicant_interview_is_tenant_checked_and_linked_to_application(job_app
     assert interview['candidate_name'] == 'Fictional Candidate'
     assert interview['candidate_email'] == 'candidate@example.invalid'
     assert interview['position'] == 'Platform Engineer' and interview['job_application_id'] == applicant['id']
-    listed = flow.client.get(f"/api/job-application-pages/{page['id']}/applications").json()['applications'][0]
+    listed = flow.client.get(f"/api/job-application-pages/{page['id']}/applications?company_id=1").json()['applications'][0]
     assert listed['interview_id'] == interview_id and listed['interview_status'] == 'scheduled'
 
     flow.actor['user'] = {'id':8,'email':'other@example.invalid','user_type':'tenant_admin',
                           'company':{'company_id':2,'company_code':'jobs-two'}}
     rejected = flow.client.post('/api/schedule-interview', json=payload)
-    assert rejected.status_code == 404
+    assert rejected.status_code == 403
     with flow.db.get_cursor() as (cursor, _):
         cursor.execute('SELECT COUNT(*) AS count FROM scheduled_interviews')
         assert cursor.fetchone()['count'] == 1
+
+
+def test_super_admin_can_select_company_without_weakening_tenant_scope(job_app_flow):
+    flow = job_app_flow
+    flow.actor['user'] = {'id':7,'email':'manager@example.invalid','user_type':'super_admin','company':None}
+    response = flow.client.get('/api/job-application-pages?company_id=2')
+    assert response.status_code == 200 and response.json()['pages'] == []
+    response = flow.client.post('/api/job-application-pages', json={
+        **page_payload(title='Other Company Role'), 'company_id':2})
+    assert response.status_code == 200, response.text
+    page_id = response.json()['page']['id']
+    with flow.db.get_cursor() as (cursor, _):
+        cursor.execute('SELECT company_id FROM job_application_pages WHERE id=%s', (page_id,))
+        assert cursor.fetchone()['company_id'] == 2
+    assert flow.client.get('/api/job-application-pages?company_id=999').status_code == 404
+    assert flow.client.get('/api/job-application-pages?company_id=0').status_code == 403
+
+    flow.actor['user'] = {'id':7,'email':'manager@example.invalid','user_type':'tenant_admin',
+                          'company':{'company_id':1,'company_code':'jobs-one'}}
+    assert flow.client.get('/api/job-application-pages?company_id=2').status_code == 403
 
 
 def test_application_creator_requires_company_context_and_authenticated_manager(job_app_flow):

@@ -96,6 +96,45 @@ async function run() {
     assert.equal(interviewContext.jobApplicationPageId, '11');
     dispose();
     managerDom.window.close();
+
+    const adminDom = new JSDOM('<main id="job-applications-workspace"></main>', {
+        url: 'https://app.example.invalid/#/jobApplications', runScripts: 'outside-only'
+    });
+    const admin = adminDom.window;
+    admin.currentUser = {user_type:'super_admin', company:null};
+    admin.escapeHtml = escape;
+    admin.escapeAttr = escape;
+    const adminCalls = [];
+    admin.fetch = async (url, options = {}) => {
+        adminCalls.push({url:String(url), options});
+        const data = String(url) === '/api/companies'
+            ? {companies:[{id:1,company_name:'Fictional One',is_active:true},{id:2,company_name:'Fictional Two',is_active:true}]}
+            : {success:true,pages:[]};
+        return {ok:true,headers:{get:()=> 'application/json'},json:async()=>data};
+    };
+    admin.eval(source);
+    const adminRoot = admin.document.getElementById('job-applications-workspace');
+    admin.JobApplications.mount(adminRoot);
+    await flush();
+    const companyPicker = adminRoot.querySelector('[aria-label="Company workspace for job applications"]');
+    assert(companyPicker);
+    assert.equal(companyPicker.options.length,3);
+    assert.equal(adminRoot.querySelector('[data-create]').disabled,true);
+    companyPicker.value = '2';
+    companyPicker.dispatchEvent(new admin.Event('change', {bubbles:true}));
+    await flush();
+    assert(adminCalls.some(call => call.url === '/api/job-application-pages?company_id=2'));
+    assert.equal(adminRoot.querySelector('[data-create]').disabled,false);
+    adminRoot.querySelector('[data-create]').click();
+    const pageForm = admin.document.querySelector('[data-job-page-dialog] form');
+    pageForm.elements.title.value = 'Fictional Role';
+    pageForm.elements.description.value = 'A sufficiently detailed fictional role description.';
+    pageForm.dispatchEvent(new admin.Event('submit', {bubbles:true,cancelable:true}));
+    await flush();
+    const createCall = adminCalls.find(call => call.options.method === 'POST');
+    assert(createCall);
+    assert.equal(JSON.parse(createCall.options.body).company_id,2);
+    adminDom.window.close();
     console.log('Application flows passed: public validation, safe rendering, linked recruiter email/interview actions and accessible success state.');
 }
 

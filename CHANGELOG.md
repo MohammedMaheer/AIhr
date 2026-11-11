@@ -5,6 +5,25 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.11.3 - 2026-11-11
+
+### Show Job Applications To Super Admins
+
+- Keep Job Applications visible for super-admin accounts without a default
+  company, and add an explicit company workspace selector to the manager.
+- Scope page, applicant, export, status, email and interview operations to the
+  selected company. Enforce the selection server-side; tenant accounts remain
+  restricted to their assigned company.
+- Pass 961 backend tests per provider mode (98 skipped), 14 isolated application
+  API tests, 1,059 queue/workflow tests and all 20 frontend suites. Recheck 105
+  search fixtures against 7,851 stored vectors with identical ranking; no paid
+  AI calls. Runtime scan found no known vulnerabilities across 102 packages.
+- Deploy `clean-20261111t090441z`; service healthy, business data preserved and
+  no unrelated containers changed. Public assets return 200 and include the
+  super-admin navigation rule and company selector. Deep health skips AI.
+- Visual browser control remains unavailable; the role-specific UI is covered
+  by automated DOM tests, but a manual screenshot check remains outstanding.
+
 ## v2026.11.11.2 - 2026-11-11
 
 ### Link Applications To Recruiter Workflows

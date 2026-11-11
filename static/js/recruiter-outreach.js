@@ -156,6 +156,7 @@
                 message_subject: field('subject').value, message_body: field('message').value,
                 search_result_id: ctx.searchResultId || null,
                 job_application_id: ctx.jobApplicationId || null,
+                company_id: ctx.companyId || null,
                 kind: 'custom', prefer: field('transport').value || 'auto'};
         }
         function state() { return JSON.stringify(payload()); }

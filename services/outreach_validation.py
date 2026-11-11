@@ -74,7 +74,7 @@ def validate_interview(data):
     data['email_prefer'] = data['email_prefer'] or 'auto'
     if data['email_prefer'] not in TRANSPORTS:
         raise ValueError('Unknown email transport')
-    for field in ('email_template_id', 'search_result_id', 'job_application_id'):
+    for field in ('email_template_id', 'search_result_id', 'job_application_id', 'company_id'):
         data[field] = optional_id(data.get(field), field)
     return data
 
@@ -92,7 +92,7 @@ def validate_email(data):
     data['prefer'] = data['prefer'] or 'auto'
     if data['prefer'] not in TRANSPORTS:
         raise ValueError('Unknown email transport')
-    for field in ('template_id', 'search_result_id', 'job_application_id'):
+    for field in ('template_id', 'search_result_id', 'job_application_id', 'company_id'):
         data[field] = optional_id(data.get(field), field)
     if data['meeting_join_url']:
         from services.email_branding import safe_url

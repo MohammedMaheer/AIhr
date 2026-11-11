@@ -11135,28 +11135,42 @@ def _application_page_fields(payload):
     return title, description, location, employment_type, _application_questions(payload.get('custom_questions', []))
 
 
-def _application_company_id(user):
-    company_id = _get_company_id(user)
-    if not company_id:
+def _application_company_id(user, requested_company_id=None):
+    assigned_company_id = _get_company_id(user)
+    if user.get('user_type') != 'super_admin':
+        if not assigned_company_id:
+            raise HTTPException(status_code=403, detail='Your account is not assigned to a company workspace.')
+        if requested_company_id is not None and str(requested_company_id) != str(assigned_company_id):
+            raise HTTPException(status_code=403, detail='You can only manage applications in your own workspace.')
+        return int(assigned_company_id)
+
+    if requested_company_id is None:
+        requested_company_id = assigned_company_id
+    if isinstance(requested_company_id, bool) or not str(requested_company_id or '').isdigit():
         raise HTTPException(status_code=403, detail='Choose a company workspace before managing job pages.')
-    return int(company_id)
+    company_id = int(requested_company_id)
+    if company_id <= 0 or not get_db_manager().get_company_by_id(company_id):
+        raise HTTPException(status_code=404, detail='Company workspace not found.')
+    return company_id
 
 
 async def _validate_outreach_application(db, data, user):
     application_id = data.get('job_application_id')
     if application_id is None:
         return None
-    company_id = _application_company_id(user)
+    company_id = _application_company_id(user, data.get('company_id'))
     with db.get_cursor() as (cursor, _conn):
         cursor.execute('''SELECT a.id,a.company_id,a.candidate_name,a.normalized_email,
-            p.title AS position,p.location FROM job_applications a
+            p.title AS position,p.location,c.company_name FROM job_applications a
             JOIN job_application_pages p ON p.id=a.page_id AND p.company_id=a.company_id
+            JOIN tenant_companies c ON c.id=a.company_id
             WHERE a.id=%s AND a.company_id=%s AND a.status NOT IN ('erased','processing')''',
             (application_id, company_id))
         application = cursor.fetchone()
     if not application:
         raise HTTPException(status_code=404, detail='Application not found in this workspace.')
     application = dict(application)
+    data['company_id'] = application['company_id']
     data['candidate_name'] = application['candidate_name']
     data['candidate_email'] = application['normalized_email']
     data['position'] = application['position']
@@ -11342,8 +11356,9 @@ async def submit_public_application(
 
 @app.get('/api/job-application-pages')
 @limiter.limit('60/minute')
-async def list_job_application_pages(request: Request, user: dict = Depends(require_auth)):
-    company_id = _application_company_id(user)
+async def list_job_application_pages(request: Request, company_id: Optional[int] = None,
+                                     user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user, company_id)
     db = get_db_manager()
     with db.get_cursor() as (cursor, _conn):
         cursor.execute('''SELECT p.id,p.title,p.description,p.location,p.employment_type,p.custom_questions,
@@ -11363,8 +11378,8 @@ async def list_job_application_pages(request: Request, user: dict = Depends(requ
 @app.post('/api/job-application-pages')
 @limiter.limit('20/minute')
 async def create_job_application_page(request: Request, user: dict = Depends(require_auth)):
-    company_id = _application_company_id(user)
     payload = await request.json()
+    company_id = _application_company_id(user, payload.get('company_id'))
     title, description, location, employment_type, questions = _application_page_fields(payload)
     status = payload.get('status', 'draft')
     if not isinstance(status, str) or status not in {'draft', 'published'}:
@@ -11388,8 +11403,9 @@ async def create_job_application_page(request: Request, user: dict = Depends(req
 
 @app.put('/api/job-application-pages/{page_id}')
 @limiter.limit('30/minute')
-async def update_job_application_page(page_id: int, request: Request, user: dict = Depends(require_auth)):
-    company_id = _application_company_id(user)
+async def update_job_application_page(page_id: int, request: Request, company_id: Optional[int] = None,
+                                     user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user, company_id)
     payload = await request.json()
     title, description, location, employment_type, questions = _application_page_fields(payload)
     version = payload.get('version')
@@ -11421,8 +11437,9 @@ async def update_job_application_page(page_id: int, request: Request, user: dict
 
 @app.patch('/api/job-application-pages/{page_id}/status')
 @limiter.limit('30/minute')
-async def set_job_application_page_status(page_id: int, request: Request, user: dict = Depends(require_auth)):
-    company_id = _application_company_id(user)
+async def set_job_application_page_status(page_id: int, request: Request, company_id: Optional[int] = None,
+                                         user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user, company_id)
     payload = await request.json()
     status, version = payload.get('status'), payload.get('version')
     if not isinstance(status, str) or status not in {'draft', 'published', 'paused', 'closed'} or isinstance(version, bool) or not isinstance(version, int) or version < 1:
@@ -11451,8 +11468,9 @@ async def set_job_application_page_status(page_id: int, request: Request, user: 
 
 @app.delete('/api/job-application-pages/{page_id}')
 @limiter.limit('20/minute')
-async def delete_empty_job_application_page(page_id: int, request: Request, user: dict = Depends(require_auth)):
-    company_id = _application_company_id(user)
+async def delete_empty_job_application_page(page_id: int, request: Request, company_id: Optional[int] = None,
+                                            user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user, company_id)
     payload = await request.json()
     version = payload.get('version') if isinstance(payload, dict) else None
     if isinstance(version, bool) or not isinstance(version, int) or version < 1:
@@ -11479,9 +11497,10 @@ async def delete_empty_job_application_page(page_id: int, request: Request, user
 
 @app.get('/api/job-application-pages/{page_id}/applications.csv')
 @limiter.limit('20/minute')
-async def export_job_applications_csv(page_id: int, request: Request, user: dict = Depends(require_auth)):
+async def export_job_applications_csv(page_id: int, request: Request, company_id: Optional[int] = None,
+                                      user: dict = Depends(require_auth)):
     import csv
-    company_id = _application_company_id(user)
+    company_id = _application_company_id(user, company_id)
     db = get_db_manager()
     with db.get_cursor() as (cursor, _conn):
         cursor.execute('''SELECT title FROM job_application_pages WHERE id=%s AND company_id=%s''', (page_id, company_id))
@@ -11521,8 +11540,9 @@ async def export_job_applications_csv(page_id: int, request: Request, user: dict
 @app.get('/api/job-application-pages/{page_id}/applications')
 @limiter.limit('60/minute')
 async def list_job_applications(page_id: int, request: Request, limit: int = 100,
-                                offset: int = 0, user: dict = Depends(require_auth)):
-    company_id = _application_company_id(user)
+                                offset: int = 0, company_id: Optional[int] = None,
+                                user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user, company_id)
     if not 1 <= limit <= 200 or offset < 0:
         raise HTTPException(status_code=422, detail='Choose a valid page of applications.')
     db = get_db_manager()
@@ -11553,8 +11573,9 @@ async def list_job_applications(page_id: int, request: Request, limit: int = 100
 
 @app.patch('/api/job-applications/{application_id}/status')
 @limiter.limit('60/minute')
-async def set_job_application_status(application_id: int, request: Request, user: dict = Depends(require_auth)):
-    company_id = _application_company_id(user)
+async def set_job_application_status(application_id: int, request: Request, company_id: Optional[int] = None,
+                                     user: dict = Depends(require_auth)):
+    company_id = _application_company_id(user, company_id)
     payload = await request.json()
     status, version = payload.get('status'), payload.get('version')
     if not isinstance(status, str) or status not in {'received', 'reviewing', 'shortlisted', 'rejected', 'hired', 'withdrawn'} or isinstance(version, bool) or not isinstance(version, int) or version < 1:
@@ -12252,18 +12273,19 @@ async def schedule_interview(request: Request, user: dict = Depends(require_auth
             data['candidate_name'] = application['candidate_name']
             data['candidate_email'] = application['normalized_email']
             data['position'] = application['position']
+            data['company'] = application['company_name']
 
         # Add user and company info
         data['created_by'] = user['id']
-        company_id = None
-        company_name = None
+        company_id = application['company_id'] if application else None
+        company_name = application['company_name'] if application else None
         if user.get('company'):
             if isinstance(user['company'], dict):
-                company_id = user['company'].get('company_id') or user['company'].get('id')
-                company_name = user['company'].get('company_name') or user['company'].get('name')
+                company_id = company_id or user['company'].get('company_id') or user['company'].get('id')
+                company_name = company_name or user['company'].get('company_name') or user['company'].get('name')
             else:
-                company_id = getattr(user['company'], 'id', None)
-                company_name = getattr(user['company'], 'name', None)
+                company_id = company_id or getattr(user['company'], 'id', None)
+                company_name = company_name or getattr(user['company'], 'name', None)
         data['company_id'] = company_id
         company_name = company_name or data.get('company') or 'Efforts Solutions'
 
@@ -12560,9 +12582,9 @@ async def preview_candidate_email(request: Request, user: dict = Depends(require
         validate_email(data)
         db = get_db_manager()
         await _validate_outreach_candidate(db, data, user)
-        await _validate_outreach_application(db, data, user)
+        application = await _validate_outreach_application(db, data, user)
         company_info = user.get('company')
-        company = (company_info.get('company_name') if isinstance(company_info, dict) else None) or data.get('company') or 'Efforts Solutions'
+        company = (application or {}).get('company_name') or (company_info.get('company_name') if isinstance(company_info, dict) else None) or data.get('company') or 'Efforts Solutions'
         from services.email_branding import render_plain_message
         subject, body = render_plain_message(data['message_subject'], data['message_body'], company=company)
     except (ValueError, TypeError) as exc:
@@ -12600,11 +12622,11 @@ async def send_candidate_email_endpoint(request: Request,
 
     db = get_db_manager()
     await _validate_outreach_candidate(db, data, user)
-    await _validate_outreach_application(db, data, user)
-    company_id = _get_company_id(user)
-    company_name = None
+    application = await _validate_outreach_application(db, data, user)
+    company_id = application['company_id'] if application else _get_company_id(user)
+    company_name = application['company_name'] if application else None
     if user.get('company') and isinstance(user['company'], dict):
-        company_name = user['company'].get('company_name') or user['company'].get('name')
+        company_name = company_name or user['company'].get('company_name') or user['company'].get('name')
 
     subj_tpl = data.get('message_subject') if plain_mode else data.get("raw_subject")
     body_tpl = data.get('message_body') if plain_mode else data.get("raw_body")

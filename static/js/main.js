@@ -34,7 +34,7 @@ async function checkAuthAndLoadUser() {
         }
         const jobPagesLink = document.getElementById('job-applications-link');
         if (jobPagesLink) {
-            const canManage = !!(user.company?.company_id || user.company?.id);
+            const canManage = user.user_type === 'super_admin' || !!(user.company?.company_id || user.company?.id);
             jobPagesLink.hidden = !canManage;
             jobPagesLink.classList.toggle('hidden', !canManage);
         }
@@ -8547,6 +8547,7 @@ function showInterviewScheduleModal(candidateName, candidateEmail, context = {})
         if (/^[1-9]\d*$/.test(context.searchResultId || '')) form.dataset.searchResultId = context.searchResultId;
         if (/^[1-9]\d*$/.test(String(context.jobApplicationId || ''))) form.dataset.jobApplicationId = String(context.jobApplicationId);
         if (/^[1-9]\d*$/.test(String(context.jobApplicationPageId || ''))) form.dataset.jobApplicationPageId = String(context.jobApplicationPageId);
+        if (/^[1-9]\d*$/.test(String(context.companyId || ''))) form.dataset.jobApplicationCompanyId = String(context.companyId);
         form.addEventListener('submit', (event) => saveInterviewSchedule(event, candidateName, candidateEmail));
     }
     bindScheduleDialog(modal, 'Schedule interview');
@@ -8619,6 +8620,7 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
         company: document.getElementById('interview-company').value.trim(),
         search_result_id: form.dataset.searchResultId || null,
         job_application_id: form.dataset.jobApplicationId || null,
+        company_id: form.dataset.jobApplicationCompanyId || null,
         interview_type: document.getElementById('interview-type').value,
         interview_date: document.getElementById('interview-date').value,
         interview_time: document.getElementById('interview-time').value,

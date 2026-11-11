@@ -17,10 +17,63 @@
 
     function mount(root) {
         let disposed = false, sequence = 0, pages = [], selectedPage = null, selectedOffset = 0, noticeTimer = null;
+        const isSuperAdmin = window.currentUser?.user_type === 'super_admin';
+        let selectedCompanyId = window.currentUser?.company?.company_id || window.currentUser?.company?.id || '';
         root.classList.add('recruiter-workspace', 'job-applications-view');
         root.innerHTML = '<header class="workspace-header"><div><h2>Job Applications</h2><p class="workspace-muted">Create a role page and review applications in one place.</p></div><button type="button" data-create class="workspace-button is-primary"><i class="fas fa-plus" aria-hidden="true"></i>Create job page</button></header><div data-notice role="status" aria-live="polite"></div><div data-content class="workspace-table-region"></div>';
         const content = root.querySelector('[data-content]');
         const alive = id => !disposed && root.isConnected && id === sequence;
+        const pageAddress = url => !isSuperAdmin || !selectedCompanyId || url === '/api/companies' ? url
+            : url + (url.includes('?') ? '&' : '?') + 'company_id=' + encodeURIComponent(selectedCompanyId);
+        const scopedRequest = (url, options) => request(pageAddress(url), options);
+        const createButton = root.querySelector('[data-create]');
+
+        if (isSuperAdmin) {
+            const label = document.createElement('label');
+            label.className = 'job-company-picker';
+            label.innerHTML = '<span>Company workspace</span>';
+            const picker = document.createElement('select');
+            picker.setAttribute('aria-label', 'Company workspace for job applications');
+            picker.append(new Option('Loading companies…', ''));
+            label.append(picker);
+            root.querySelector('.workspace-header').insertBefore(label, createButton);
+            createButton.disabled = true;
+            picker.addEventListener('change', () => {
+                selectedCompanyId = picker.value;
+                createButton.disabled = !selectedCompanyId;
+                selectedPage = null;
+                pages = [];
+                if (selectedCompanyId) loadPages();
+                else showCompanyPrompt();
+            });
+            loadCompanies(picker);
+        }
+
+        async function loadCompanies(picker) {
+            try {
+                const data = await request('/api/companies');
+                if (disposed || !root.isConnected) return;
+                if (!Array.isArray(data.companies)) throw new Error('The company list is temporarily unavailable.');
+                picker.replaceChildren(new Option('Choose a company', ''));
+                data.companies.forEach(company => picker.add(new Option(
+                    company.company_name + (company.is_active ? '' : ' (inactive)'), String(company.id))));
+                const available = new Set(data.companies.map(company => String(company.id)));
+                if (!available.has(String(selectedCompanyId))) selectedCompanyId = data.companies.length === 1 ? String(data.companies[0].id) : '';
+                picker.value = String(selectedCompanyId || '');
+                createButton.disabled = !selectedCompanyId;
+                if (selectedCompanyId) loadPages();
+                else showCompanyPrompt();
+            } catch (error) {
+                if (!disposed) {
+                    picker.replaceChildren(new Option('Companies unavailable', ''));
+                    content.innerHTML = '<div class="workspace-empty is-error" role="alert"><h3>Company list unavailable</h3><p>' + esc(error.message) + '</p></div>';
+                }
+            }
+        }
+
+        function showCompanyPrompt() {
+            content.innerHTML = '<div class="workspace-empty"><span class="workspace-empty-icon"><i class="fas fa-building" aria-hidden="true"></i></span><h3>Choose a company</h3><p>Select a company workspace above to manage its job pages and applicants.</p></div>';
+        }
 
         function notify(message, kind = 'success') {
             const notice = root.querySelector('[data-notice]');
@@ -35,7 +88,7 @@
             content.setAttribute('aria-busy', 'true');
             content.innerHTML = '<div class="workspace-loading" role="status"><i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>Loading job pages...</div>';
             try {
-                const data = await request('/api/job-application-pages');
+                const data = await scopedRequest('/api/job-application-pages');
                 if (!alive(id)) return;
                 if (!Array.isArray(data.pages)) throw new Error('Job pages are temporarily unavailable.');
                 pages = data.pages;
@@ -105,9 +158,10 @@
                 const questions = form.elements.questions.value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
                 const payload = {title:form.elements.title.value, location:form.elements.location.value,
                     employment_type:form.elements.employment_type.value, description:form.elements.description.value,
-                    custom_questions:questions, ...(editing ? {version:page.version} : {status:'draft'})};
+                    custom_questions:questions, ...(isSuperAdmin ? {company_id:Number(selectedCompanyId)} : {}),
+                    ...(editing ? {version:page.version} : {status:'draft'})};
                 try {
-                    await request(editing ? '/api/job-application-pages/' + Number(page.id) : '/api/job-application-pages',
+                    await scopedRequest(editing ? '/api/job-application-pages/' + Number(page.id) : '/api/job-application-pages',
                         {method:editing ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
                     modal.remove(); notify(editing ? 'Job page updated.' : 'Draft saved. Publish it when it is ready.'); await loadPages();
                 } catch (error) {
@@ -121,7 +175,7 @@
             if (!page) return;
             const status = explicitStatus || (page.status === 'published' ? 'paused' : page.status === 'closed' ? 'draft' : 'published');
             try {
-                const data = await request('/api/job-application-pages/' + Number(page.id) + '/status',
+                const data = await scopedRequest('/api/job-application-pages/' + Number(page.id) + '/status',
                     {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status,version:page.version})});
                 notify(status === 'published' ? 'Application page published.' : status === 'paused' ? 'Applications paused; existing records are retained.' : 'Page reopened as a draft.');
                 await loadPages();
@@ -132,7 +186,7 @@
         async function deletePage(page) {
             if (!page || !window.confirm('Delete this empty job page? A page with candidate applications cannot be deleted.')) return;
             try {
-                await request('/api/job-application-pages/' + Number(page.id), {method:'DELETE',
+                await scopedRequest('/api/job-application-pages/' + Number(page.id), {method:'DELETE',
                     headers:{'Content-Type':'application/json'}, body:JSON.stringify({version:page.version})});
                 notify('Empty job page deleted. The audit record is retained.'); await loadPages();
             } catch (error) { notify(error.message, 'error'); }
@@ -158,7 +212,7 @@
             content.setAttribute('aria-busy','true');
             content.innerHTML = '<div class="workspace-loading" role="status"><i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>Loading applications...</div>';
             try {
-                const data = await request('/api/job-application-pages/' + Number(page.id) + '/applications?limit=50&offset=' + pageOffset);
+                const data = await scopedRequest('/api/job-application-pages/' + Number(page.id) + '/applications?limit=50&offset=' + pageOffset);
                 if (!alive(id) || selectedPage !== page) return;
                 renderApplications(page, data.applications, data.total, pageOffset);
             } catch (error) {
@@ -168,7 +222,7 @@
 
         function renderApplications(page, applications, total, offset) {
             selectedOffset = offset;
-            content.innerHTML = '<div class="job-applications-heading"><button type="button" data-back class="workspace-button"><i class="fas fa-arrow-left" aria-hidden="true"></i>Job pages</button><div><h3>' + esc(page.title) + '</h3><p class="workspace-muted">' + Number(total).toLocaleString() + ' applications</p></div><a class="workspace-button" href="/api/job-application-pages/' + Number(page.id) + '/applications.csv"><i class="fas fa-download" aria-hidden="true"></i>Export CSV</a></div>' +
+            content.innerHTML = '<div class="job-applications-heading"><button type="button" data-back class="workspace-button"><i class="fas fa-arrow-left" aria-hidden="true"></i>Job pages</button><div><h3>' + esc(page.title) + '</h3><p class="workspace-muted">' + Number(total).toLocaleString() + ' applications</p></div><a class="workspace-button" href="' + esc(pageAddress('/api/job-application-pages/' + Number(page.id) + '/applications.csv')) + '"><i class="fas fa-download" aria-hidden="true"></i>Export CSV</a></div>' +
                 (applications.length ? '<table class="workspace-table job-candidates-table"><thead><tr><th scope="col">Candidate</th><th scope="col">Experience</th><th scope="col">CV</th><th scope="col">Interview</th><th scope="col">Status</th><th scope="col">Received</th><th scope="col">Actions</th></tr></thead><tbody>' + applications.map(row => {
                     const answerRows = Object.entries(row.answers || {}).map(([key, answer]) => '<div><strong>Question ' + (Number(key) + 1) + ':</strong> ' + esc(answer) + '</div>').join('');
                     const received = row.created_at ? new Date(row.created_at).toLocaleDateString() : 'Unavailable';
@@ -198,18 +252,19 @@
                 const row = applications.find(item => Number(item.id) === Number(button.dataset.emailApplicant));
                 if (!row?.normalized_email) { notify('No valid applicant email is available.', 'error'); return; }
                 window.RecruiterOutreach?.open({useSearch:false,candidateName:row.candidate_name,candidateEmail:row.normalized_email,
-                    position:page.title,location:page.location || '',jobApplicationId:String(row.id)});
+                    position:page.title,location:page.location || '',jobApplicationId:String(row.id),companyId:String(selectedCompanyId || window.currentUser?.company?.company_id || window.currentUser?.company?.id || '')});
             }));
             content.querySelectorAll('[data-schedule-applicant]').forEach(button => button.addEventListener('click', () => {
                 const row = applications.find(item => Number(item.id) === Number(button.dataset.scheduleApplicant));
                 if (!row) return;
                 window.scheduleInterview?.(row.candidate_name,row.normalized_email || '',
-                    {position:page.title,jobApplicationId:String(row.id),jobApplicationPageId:String(page.id)});
+                    {position:page.title,jobApplicationId:String(row.id),jobApplicationPageId:String(page.id),
+                        companyId:String(selectedCompanyId || window.currentUser?.company?.company_id || window.currentUser?.company?.id || '')});
             }));
             content.querySelectorAll('[data-application-status]').forEach(select => select.addEventListener('change', async () => {
                 const previous = select.querySelector('option[selected]')?.value || 'received'; select.disabled = true;
                 try {
-                    const data = await request('/api/job-applications/' + Number(select.dataset.applicationStatus) + '/status',
+                    const data = await scopedRequest('/api/job-applications/' + Number(select.dataset.applicationStatus) + '/status',
                         {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:select.value,version:Number(select.dataset.version)})});
                     select.dataset.version = data.application.version;
                     [...select.options].forEach(option => option.defaultSelected = option.value === select.value);
@@ -219,14 +274,17 @@
             }));
         }
 
-        root.querySelector('[data-create]').onclick = () => pageForm();
+        root.querySelector('[data-create]').onclick = () => {
+            if (isSuperAdmin && !selectedCompanyId) { notify('Choose a company workspace first.', 'error'); return; }
+            pageForm();
+        };
         const onInterviewScheduled = event => {
             if (selectedPage && Number(event.detail?.pageId) === Number(selectedPage.id) && root.isConnected) {
                 loadApplications(selectedPage, selectedOffset);
             }
         };
         window.addEventListener('job-application-interview-scheduled', onInterviewScheduled);
-        loadPages();
+        if (!isSuperAdmin) loadPages();
         return () => { disposed = true; sequence++; window.removeEventListener('job-application-interview-scheduled', onInterviewScheduled); document.querySelectorAll('[data-job-page-dialog]').forEach(modal => modal.remove()); };
     }
 

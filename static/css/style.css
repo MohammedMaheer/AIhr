@@ -3000,6 +3000,9 @@ button, input, .glass {
     #app-shell *, #app-shell *::before, #app-shell *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
 .job-applications-view > .workspace-header { align-items:flex-start; gap:16px; }
+.job-company-picker { display:grid; gap:5px; min-width:min(240px,100%); align-self:center; color:#475569; font-size:12px; font-weight:600; }
+.job-company-picker select { width:100%; min-height:38px; border:1px solid #cbd5e1; border-radius:5px; padding:7px 9px; background:#fff; color:#172033; font:inherit; font-size:14px; }
+.job-company-picker select:focus { outline:3px solid #bfdbfe; border-color:#2563eb; }
 .job-applications-view [data-notice]:empty { display:none; }
 .job-application-notice { padding:10px 12px; margin:0 0 12px; border-radius:6px; }
 .job-application-notice.is-success { background:#e8f6ef; color:#14563e; }
@@ -3025,6 +3028,7 @@ button, input, .glass {
 .job-copy-fallback { position:fixed; left:-9999px; }
 @media (max-width:700px) {
     .job-applications-view > .workspace-header { align-items:flex-start; }
+    .job-company-picker { width:100%; align-self:stretch; }
     .job-pages-table thead,.job-candidates-table thead { display:none; }
     .job-pages-table tr,.job-candidates-table tr { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 14px; padding:12px; border-bottom:1px solid #e5e7eb; }
     .job-pages-table td,.job-candidates-table td { display:block; padding:0; border:0; min-width:0; overflow-wrap:anywhere; }

@@ -135,7 +135,8 @@ def test_paperclip_parses_real_fictional_files_without_ai(flow_api, monkeypatch,
 
 
 @pytest.mark.parametrize('name,content,status', [('fixture.exe', b'not allowed', 400),
-    ('fixture.txt', b'', 400), ('fixture.txt', b'x'*(10*1024*1024+1), 400)])
+    ('fixture.txt', b'', 400), ('fixture.txt', b'x'*(10*1024*1024+1), 400)],
+    ids=['unsupported-extension', 'empty-file', 'oversized-file'])
 def test_paperclip_rejects_invalid_files(flow_api, name, content, status):
     client, _db = flow_api
     assert client.post('/api/parse-jd-file', files={'file': (name, content)}).status_code == status

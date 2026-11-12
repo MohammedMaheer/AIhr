@@ -135,6 +135,17 @@ async function run(){
     await assert.rejects(w.submitSearch('Retryable request'),/Synthetic unavailable/);
     await assert.rejects(w.submitSearch('Retryable request'),/Synthetic unavailable/);
     assert.equal(failures,2,'A failed request must release its exact-request guard');
+    const coalescedProgress=[];
+    w.fetch=async()=>new Promise(resolve=>releases.push(()=>resolve(response({task_id:'shared-progress',status:'pending'}))));
+    w.pollHRScorecardTask=async(_task,opts)=>{
+        opts.onProgress({step:'reviewing'});
+        return {results:[]};
+    };
+    const progressFirst=w.submitSearch('Shared progress',status=>coalescedProgress.push('first:'+status.step));
+    const progressSecond=w.submitSearch('Shared progress',status=>coalescedProgress.push('second:'+status.step));
+    releases.splice(0).forEach(release=>release());
+    await Promise.all([progressFirst,progressSecond]);
+    assert.deepEqual(coalescedProgress,['first:reviewing','second:reviewing'],'Each coalesced consumer must receive progress without starting another job');
     dom.window.close();
     console.log('Polling regressions passed: GET recovery, bounded failures, exact-request coalescing, real folder/tag/date controls to POST payloads, scope isolation, validation and retry cleanup.');
 }

@@ -85,7 +85,7 @@ async function jobBuilder() {
 async function scheduling() {
     const {dom,w,d}=setup();
     w.eval(source.slice(source.indexOf('async function submitGeneralScheduleForm('),source.indexOf('function showInterviewScheduleModal(')));
-    w.eval(source.slice(source.indexOf('async function saveInterviewSchedule('),source.indexOf('// GLOBAL HANDLER SAFETY NET')));
+    w.eval(source.slice(source.indexOf('async function saveInterviewSchedule('),source.indexOf('// GLOBAL HANDLER DIAGNOSTIC')));
     w.eval(source.slice(source.indexOf('function openGeneralScheduleModal('),source.indexOf('async function submitGeneralScheduleForm(')));
     w.openGeneralScheduleModal('Fictional Candidate','candidate@example.invalid');
     let form=d.getElementById('general-schedule-form');assert(form.querySelector('.schedule-form-body'));

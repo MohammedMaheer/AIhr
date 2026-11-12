@@ -72,6 +72,30 @@ def test_search_request_makes_tenant_scope_explicit(monkeypatch):
     assert main._local_company_search_filter({"id": 1, "user_type": "super_admin"}) == ""
 
 
+def test_local_request_keeps_original_criteria_separate_from_optimized_semantics(monkeypatch):
+    monkeypatch.setenv('SMARTHR_LOCAL_MODE', '1')
+    original = 'Python developer based in Dubai with 3-6 years experience'
+    user = {'id': 7, 'user_type': 'tenant_user', 'company': {'company_id': 27}}
+    with patch.object(main, 'get_company_resources', return_value=('fixture', 'fixture')):
+        request = main.create_company_search_request('Python developer', user_context=user,
+                                                     criteria_query=original)
+    with patch.object(discovery, '_vector_search', return_value=[]) as vector:
+        discovery.SearchServiceClient().search(request)
+    assert vector.call_args.kwargs['query'] == 'Python developer'
+    assert vector.call_args.kwargs['criteria_query'] == original
+    assert vector.call_args.kwargs['filter_str'] == 'company_id: ANY("27")'
+
+
+def test_profile_ranking_uses_original_requirements_not_rewritten_location():
+    rows = [dict(id=location, score=0.9, lexical_score=0,
+                 candidate_years=5, candidate_location=location,
+                 candidate_languages=[], candidate_skills=['Python'], profile_source='test', text='')
+            for location in ('Paris, France', 'Dubai, UAE')]
+    ranked = discovery._rank_rows(rows, 'Python developer based in Paris', 10,
+                                 criteria_query='Python developer based in Dubai with 3-6 years experience')
+    assert [row['id'] for row in ranked] == ['Dubai, UAE']
+
+
 def test_result_preserves_full_folder_and_bucket():
     result = discovery._row_to_result({"id": "1", "folder": "resume/2026", "filename": "QA.txt",
                                        "storage_bucket": "qa-company-bucket"})

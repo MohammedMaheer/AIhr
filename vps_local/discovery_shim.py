@@ -98,9 +98,11 @@ class SearchRequest:
     def __init__(self, *, serving_config: str = "", query: str = "",
                  page_size: int = 10, content_search_spec=None,
                  query_expansion_spec=None, spell_correction_spec=None,
-                 filter: str = "", folder_filters=None, resume_filters=None, **kwargs):
+                 filter: str = "", folder_filters=None, resume_filters=None,
+                 criteria_query=None, **kwargs):
         self.serving_config = serving_config
         self.query = query
+        self.criteria_query = criteria_query
         self.page_size = page_size
         self.content_search_spec = content_search_spec
         self.query_expansion_spec = query_expansion_spec
@@ -348,8 +350,9 @@ def _row_tuple_to_dict(r) -> Dict[str, Any]:
     }
 
 
-def _rank_rows(rows: list[Dict[str, Any]], query: str, page_size: int) -> list[Dict[str, Any]]:
-    criteria = parse_search_criteria(query)
+def _rank_rows(rows: list[Dict[str, Any]], query: str, page_size: int,
+               criteria_query=None) -> list[Dict[str, Any]]:
+    criteria = parse_search_criteria(query if criteria_query is None else criteria_query)
     if criteria.is_empty():
         return rows[:page_size]
 
@@ -456,8 +459,9 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> Ind
 
     text = _extract_text_from_file(path)
     struct = document.struct_data or {}
-    display_filename = struct.get("filename")
-    filename = Path(display_filename).name if isinstance(display_filename, str) and display_filename else Path(key or path.name).name
+    # This column is storage identity, not a label: metadata joins, conflict keys
+    # and search-result URIs must all refer to the actual stored object.
+    filename = Path(key or path.name).name
     folder = Path(key).parent.as_posix() if key and len(Path(key).parts) > 1 else ""
     storage_bucket = urlparse(uri).netloc
     ctype = (getattr(content, "mime_type", "") if content else "") or mimetypes.guess_type(str(path))[0] or path.suffix.lstrip(".")
@@ -572,7 +576,8 @@ def _tenant_scope(filter_str: str) -> tuple[str, list]:
 
 
 def _vector_search(query: str, page_size: int = 10,
-                   filter_str: str = "", folder_filters=None, resume_filters=None) -> List[Dict[str, Any]]:
+                   filter_str: str = "", folder_filters=None, resume_filters=None,
+                   criteria_query=None) -> List[Dict[str, Any]]:
     """Run pgvector ANN search; return list of dicts shaped like Discovery results."""
     scope_sql, scope_params = _tenant_scope(filter_str)
     from services.resume_folders import folder_sql
@@ -592,7 +597,7 @@ def _vector_search(query: str, page_size: int = 10,
     if not query.strip():
         return []
     qvec = _embed_query(query)
-    criteria = parse_search_criteria(query)
+    criteria = parse_search_criteria(query if criteria_query is None else criteria_query)
     pool_size = _candidate_pool_size(page_size, not criteria.is_empty())
     pool = _get_pool()
     conn = pool.getconn()
@@ -698,7 +703,7 @@ def _vector_search(query: str, page_size: int = 10,
                         rows.append(row)
                         seen_ids.add(row[0])
         row_dicts = [_row_tuple_to_dict(r) for r in rows]
-        return _rank_rows(row_dicts, query, int(page_size or 10))
+        return _rank_rows(row_dicts, query, int(page_size or 10), criteria_query=criteria_query)
     finally:
         conn.rollback()
         pool.putconn(conn)
@@ -743,7 +748,8 @@ class SearchServiceClient:
         rows = _vector_search(query=request.query, page_size=request.page_size,
                               filter_str=getattr(request, "filter", "") or "",
                               folder_filters=getattr(request, 'folder_filters', None),
-                              resume_filters=getattr(request, 'resume_filters', None))
+                              resume_filters=getattr(request, 'resume_filters', None),
+                              criteria_query=getattr(request, 'criteria_query', None))
         return _SearchResponse(
             results=[_row_to_result(r) for r in rows],
             total_size=len(rows),

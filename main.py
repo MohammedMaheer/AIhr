@@ -2525,6 +2525,7 @@ def create_company_search_request(
     user_context: dict = None,
     folder_filters=None,
     resume_filters=None,
+    criteria_query: Optional[str] = None,
 ) -> 'discoveryengine_v1.SearchRequest':
     """
     Create a search request using company-specific datastore for automatic tenant isolation.
@@ -2549,6 +2550,10 @@ def create_company_search_request(
     # Base serving config
     serving_config = f"projects/{PROJECT_ID}/locations/{LOCATION}/collections/default_collection/dataStores/{datastore_id}/servingConfigs/default_config"
 
+    request_options = _folder_request_options(folder_filters, resume_filters)
+    if criteria_query is not None and os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
+        request_options['criteria_query'] = criteria_query
+
     # Create the search request
     request = discoveryengine_v1.SearchRequest(
         serving_config=serving_config,
@@ -2556,7 +2561,7 @@ def create_company_search_request(
         page_size=result_count,
         filter=_local_company_search_filter(user_context),
         content_search_spec=build_discovery_content_search_spec(discoveryengine_v1),
-        **_folder_request_options(folder_filters, resume_filters),
+        **request_options,
     )
 
     print(f"✅ Search will automatically be isolated to company datastore")
@@ -9388,6 +9393,7 @@ async def run_hr_scorecard_task(task_payload):
             user_context=user,
             folder_filters=folder_filters,
             resume_filters=resume_filters,
+            criteria_query=query,
         )
 
         response = await asyncio.to_thread(client.search, request_obj)
@@ -9515,7 +9521,10 @@ async def run_hr_scorecard_task(task_payload):
                             return blob.generation
                         version = await asyncio.to_thread(_resume_version)
                         jd_hash = scorecard_signature(query, job_title, user_bucket,
-                                                      file_path_for_cache, version, HR_SCORECARD_PROMPT)
+                            file_path_for_cache, version, HR_SCORECARD_PROMPT,
+                            keywords=standardized_keywords,
+                            auxiliary_prompts=(ENTITY_EXTRACTION_PROMPT, SCORECARD_PROMPT,
+                                               KEYWORD_MATCHING_PROMPT))
                     except Exception:
                         logging.warning("Resume metadata unavailable; bypassing scorecard cache.")
 

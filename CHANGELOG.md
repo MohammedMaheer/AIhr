@@ -5,6 +5,29 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.13.1 - 2026-11-13
+
+### Correct Recent Search And Indexing Regressions
+
+- Restore storage-key identity in the local resume index. Original filenames
+  remain in upload/library records; unique stored filenames continue to drive
+  vector identities, download paths and received/uploaded-date metadata joins.
+  This prevents same-named CVs from overwriting another CV's index record.
+- Use the recruiter's original query for local hard-criteria preselection and
+  profile ranking, independently of the AI-optimized semantic query. Preserve
+  tenant, folder, tag and date restrictions through both retrieval paths.
+- Bind search results, errors and progress to the originating workspace view.
+  Ignore stale responses after newer searches, navigation or identity changes;
+  retain exact-request coalescing with progress for every waiting consumer.
+- Version cached scorecards against the actual keyword set, auxiliary prompts
+  and normalized provider/model selection. Older cache signatures are bypassed;
+  changed assessment inputs may require fresh paid scoring on the next search.
+- Add real PostgreSQL/file regression coverage for same-named CVs, Graph import
+  dates and original criteria outside the rewritten query's nearest-neighbor
+  pool. Keep oversized fixture IDs bounded and validation tests portable.
+- Verification and deployment status are recorded in the release commit.
+  This is a source-only release, not a live deployment or provider acceptance.
+
 ## v2026.11.11.6 - 2026-11-11
 
 ### Keep The Job Page Form Scrollable

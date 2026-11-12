@@ -2201,9 +2201,13 @@
             container.style.fontFamily = 'Arial, Helvetica, sans-serif';
             container.style.color = '#1f2937';
             container.style.lineHeight = '1.55';
+            const safeTitle = escapeHtml(jobTitle);
+            const safeContent = typeof window.sanitizeGeneratedHtml === 'function'
+                ? window.sanitizeGeneratedHtml(content)
+                : escapeHtml(content);
             container.innerHTML = `
-                <h1 style="font-size:22px;margin:0 0 16px 0;color:#111827;border-bottom:2px solid #6d28d9;padding-bottom:8px;">${jobTitle}</h1>
-                ${content}
+                <h1 style="font-size:22px;margin:0 0 16px 0;color:#111827;border-bottom:2px solid #6d28d9;padding-bottom:8px;">${safeTitle}</h1>
+                ${safeContent}
             `;
 
             const safeName = jobTitle.replace(/[^a-z0-9]/gi, '_') || 'job_description';

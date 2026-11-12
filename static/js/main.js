@@ -1396,6 +1396,56 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    let candidateSearchView = null;
+
+    function beginCandidateSearchView() {
+        const view = {
+            root: document.getElementById('results-area'),
+            identity: JSON.stringify(window.currentUser || null),
+        };
+        candidateSearchView = view;
+        return () => candidateSearchView === view && view.root?.isConnected &&
+            document.getElementById('results-area') === view.root &&
+            JSON.stringify(window.currentUser || null) === view.identity;
+    }
+
+    function renderSearchFailure(container, error) {
+        if (!container) return;
+        const rawMessage = typeof error?.message === 'string' ? error.message : '';
+        const limitReached = rawMessage.toLowerCase().includes('maximum search limit');
+        const escape = window.escapeHtml || ((value) => {
+            const node = document.createElement('div');
+            node.textContent = value == null ? '' : String(value);
+            return node.innerHTML;
+        });
+        const title = limitReached ? 'Search Limit Reached' : 'Oops! Something went wrong';
+        const message = limitReached
+            ? rawMessage
+            : 'We encountered an issue while searching for candidates. Our technical team has been notified and will resolve this shortly.';
+
+        container.innerHTML = `
+            <div class="flex items-center justify-center h-full min-h-[400px]">
+                <div class="text-center max-w-md mx-auto p-8">
+                    <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <i class="fas fa-exclamation-triangle text-red-500 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-4">${escape(title)}</h3>
+                    <p class="text-gray-600 mb-6 leading-relaxed">${escape(message)}</p>
+                    <div class="space-y-3">
+                        <button onclick="location.reload()" class="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">
+                            <i class="fas fa-refresh mr-2"></i>
+                            Try Again
+                        </button>
+                        <p class="text-sm text-gray-500">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            If the problem persists, our support team will be in touch.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
     function handleSendMessage() {
         const countInput = document.getElementById('result-count');
         if (countInput && !countInput.reportValidity()) return;
@@ -1403,6 +1453,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const message = chatInput.value.trim();
 
         if (message) {
+            const isCurrentView = beginCandidateSearchView();
 
             // Show the bottom chat container for new searches
             const bottomChatContainer = document.getElementById('bottom-chat-container');
@@ -1415,6 +1466,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Show results area
             setTimeout(() => {
+                if (!isCurrentView()) return;
                 const resultsArea = document.getElementById('results-area');
                 resultsArea.classList.remove('opacity-0', 'pointer-events-none');
                 resultsArea.classList.add('opacity-100');
@@ -1428,8 +1480,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
                 // Try real search first
-                performRealSearch(message)
+                performRealSearch(message, status => {
+                    if (isCurrentView()) window.updateSearchProgress?.(status);
+                })
                     .then(data => {
+                        if (!isCurrentView()) return;
                         hideLoadingMessage();
 
                         // Check if we have valid data (including empty results array)
@@ -1462,42 +1517,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
                         // Ensure proper scrolling after results are added
                         setTimeout(() => {
-                            resultsArea.scrollTop = resultsArea.scrollHeight;
+                            if (isCurrentView()) resultsArea.scrollTop = resultsArea.scrollHeight;
                         }, 100);
                     })
                     .catch(error => {
+                        if (!isCurrentView()) return;
                         console.error('Search failed:', error);
                         hideLoadingMessage();
 
 
 
-                        // Show proper error message instead of mock results
                         const resultsContainerDiv = document.getElementById('results-container');
-                        resultsContainerDiv.innerHTML = `
-                            <div class="flex items-center justify-center h-full min-h-[400px]">
-                                <div class="text-center max-w-md mx-auto p-8">
-                                    <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                                        <i class="fas fa-exclamation-triangle text-red-500 text-2xl"></i>
-                                    </div>
-                                    <h3 class="text-xl font-semibold text-gray-800 mb-4">
-                                        ${error.message && error.message.includes('maximum search limit') ? 'Search Limit Reached' : 'Oops! Something went wrong'}
-                                    </h3>
-                                    <p class="text-gray-600 mb-6 leading-relaxed">
-                                        ${error.message && error.message.includes('maximum search limit') ? error.message : 'We encountered an issue while searching for candidates. Our technical team has been notified and will resolve this shortly.'}
-                                    </p>
-                                    <div class="space-y-3">
-                                        <button onclick="location.reload()" class="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">
-                                            <i class="fas fa-refresh mr-2"></i>
-                                            Try Again
-                                        </button>
-                                        <p class="text-sm text-gray-500">
-                                            <i class="fas fa-info-circle mr-1"></i>
-                                            If the problem persists, our support team will be in touch.
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                        renderSearchFailure(resultsContainerDiv, error);
 
                         // Log error details for debugging
                         console.error('Search error details:', {
@@ -1520,6 +1551,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const bottomChatInput = document.getElementById('bottom-chat-input');
         const message = bottomChatInput.value.trim();
         if (message) {
+            const isCurrentView = beginCandidateSearchView();
 
             // Ensure the bottom chat container is visible for new searches
             const bottomChatContainer = document.getElementById('bottom-chat-container');
@@ -1533,8 +1565,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
             // Try real search first
-            performRealSearch(message)
+            performRealSearch(message, status => {
+                if (isCurrentView()) window.updateSearchProgress?.(status);
+            })
                 .then(data => {
+                    if (!isCurrentView()) return;
                     hideLoadingMessage();
 
                     // Check if we have valid data (including empty results array)
@@ -1566,44 +1601,20 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Ensure proper scrolling after results are added
                     const resultsScrollArea = document.getElementById('results-area');
                     setTimeout(() => {
-                        if (resultsScrollArea) {
+                        if (isCurrentView() && resultsScrollArea) {
                             resultsScrollArea.scrollTop = resultsScrollArea.scrollHeight;
                         }
                     }, 100);
                 })
                 .catch(error => {
+                    if (!isCurrentView()) return;
                     console.error('Search failed:', error);
                     hideLoadingMessage();
 
 
 
-                    // Show proper error message instead of mock results
                     const resultsArea = document.getElementById('results-container');
-                    resultsArea.innerHTML = `
-                        <div class="flex items-center justify-center h-full min-h-[400px]">
-                            <div class="text-center max-w-md mx-auto p-8">
-                                <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                                    <i class="fas fa-exclamation-triangle text-red-500 text-2xl"></i>
-                                </div>
-                                <h3 class="text-xl font-semibold text-gray-800 mb-4">
-                                    ${error.message && error.message.includes('maximum search limit') ? 'Search Limit Reached' : 'Oops! Something went wrong'}
-                                </h3>
-                                <p class="text-gray-600 mb-6 leading-relaxed">
-                                    ${error.message && error.message.includes('maximum search limit') ? error.message : 'We encountered an issue while searching for candidates. Our technical team has been notified and will resolve this shortly.'}
-                                </p>
-                                <div class="space-y-3">
-                                    <button onclick="location.reload()" class="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">
-                                        <i class="fas fa-refresh mr-2"></i>
-                                        Try Again
-                                    </button>
-                                    <p class="text-sm text-gray-500">
-                                        <i class="fas fa-info-circle mr-1"></i>
-                                        If the problem persists, our support team will be in touch.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    `;
+                    renderSearchFailure(resultsArea, error);
 
                     // Log error details for debugging
                     console.error('Search error details:', {
@@ -1895,7 +1906,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const pendingCandidateSearches = new Map();
 
-    function performRealSearch(query) {
+    function performRealSearch(query, onProgress) {
         let folders = null, filters = {};
         try {
             window.ResumeFolders?.validate();
@@ -1928,9 +1939,14 @@ document.addEventListener('DOMContentLoaded', function () {
             user.id, user.user_type, user.company, query, resultCount, jobTitle, folders, filters
         ]) : null;
         const copyResult = value => JSON.parse(JSON.stringify(value));
+        const progressListener = typeof onProgress === 'function'
+            ? onProgress : status => window.updateSearchProgress?.(status);
         if (key && pendingCandidateSearches.has(key)) {
-            return pendingCandidateSearches.get(key).then(copyResult);
+            const pending = pendingCandidateSearches.get(key);
+            pending.listeners.add(progressListener);
+            return pending.request.then(copyResult);
         }
+        const pending = {listeners: new Set([progressListener]), request: null};
 
         // Use HR scorecard search with keyword analysis (instead of smart-search-stream)
         const request = fetch('/api/hr-scorecard-search', {
@@ -1958,7 +1974,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 // and then fetch results.
                 if (data && data.task_id && (data.status === 'pending' || data.success === true) && !Array.isArray(data.results)) {
                     console.log('HR Scorecard task submitted, polling status:', data.task_id);
-                    return pollHRScorecardTask(data.task_id);
+                    return pollHRScorecardTask(data.task_id, {onProgress: status => {
+                        for (const listener of pending.listeners) {
+                            try { listener(status); } catch (_) { /* A detached view must not stop polling. */ }
+                        }
+                    }});
                 }
 
                 // Legacy/synchronous path
@@ -1980,9 +2000,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 };
             }).then(value => ({...value, query: value.query || query, job_title: value.job_title || jobTitle,
                 folder_filters: folders || [], resume_filters: filters})).finally(() => {
-                if (key && pendingCandidateSearches.get(key) === request) pendingCandidateSearches.delete(key);
+                pending.listeners.clear();
+                if (key && pendingCandidateSearches.get(key) === pending) pendingCandidateSearches.delete(key);
             });
-        if (key && pendingCandidateSearches.size < 16) pendingCandidateSearches.set(key, request);
+        pending.request = request;
+        if (key && pendingCandidateSearches.size < 16) pendingCandidateSearches.set(key, pending);
         return request.then(copyResult);
     }
 
@@ -2052,7 +2074,10 @@ document.addEventListener('DOMContentLoaded', function () {
             return fetchStatus().then(function (status) {
                 const s = status && status.status;
                 console.log('HR Scorecard task status:', s, status && status.progress);
-                try { if (window.updateSearchProgress) window.updateSearchProgress(status); } catch (e) {}
+                try {
+                    if (typeof opts.onProgress === 'function') opts.onProgress(status);
+                    else window.updateSearchProgress?.(status);
+                } catch (_) { /* Progress is optional; keep recovering the backend result. */ }
 
                 if (s === 'completed') {
                     return fetchResults().then(function (data) {
@@ -2301,12 +2326,24 @@ document.addEventListener('DOMContentLoaded', function () {
                     selectCandidate(0, data.results);
                 } else {
                     // Show no results message with specific handling for empty datastore
-                    const isEmptyDatastore = data.empty_datastore || (data.total_results === 0 && data.message && data.message.includes('upload resumes'));
+                    const providerMessage = typeof data.message === 'string' ? data.message : '';
+                    const isEmptyDatastore = data.empty_datastore ||
+                        (data.total_results === 0 && providerMessage.includes('upload resumes'));
                     const iconClass = isEmptyDatastore ? 'fas fa-upload text-blue-600' : 'fas fa-search text-yellow-600';
                     const bgColor = isEmptyDatastore ? 'bg-blue-50 border-blue-200' : 'bg-yellow-50 border-yellow-200';
                     const textColor = isEmptyDatastore ? 'text-blue-800' : 'text-yellow-800';
                     const messageColor = isEmptyDatastore ? 'text-blue-700' : 'text-yellow-700';
                     const actionColor = isEmptyDatastore ? 'text-blue-600' : 'text-yellow-600';
+                    const esc = window.escapeHtml || ((value) => {
+                        const node = document.createElement('div');
+                        node.textContent = value == null ? '' : String(value);
+                        return node.innerHTML;
+                    });
+                    const emptyStateMessage = isEmptyDatastore
+                        ? (providerMessage || 'No resumes have been uploaded to your company datastore yet.')
+                        : (data.results && data.results.length > 0
+                            ? `We found ${data.results.length} candidates but could not process their analysis.`
+                            : 'No resumes found matching your search criteria.');
 
                     resultsContainer.innerHTML = `
                         <div class="${bgColor} border rounded-xl p-6 text-center fade-in-up">
@@ -2317,11 +2354,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 ${isEmptyDatastore ? 'No Resumes Uploaded' : 'No Candidates Found'}
                             </h3>
                             <p class="${messageColor} text-sm mb-4">
-                                ${isEmptyDatastore
-                            ? (data.message || 'No resumes have been uploaded to your company datastore yet.')
-                            : (data.results && data.results.length > 0
-                                ? `We found ${data.results.length} candidates but could not process their analysis.`
-                                : 'No resumes found matching your search criteria.')}
+                                ${esc(emptyStateMessage)}
                             </p>
                             <p class="${actionColor} text-xs">
                                 ${isEmptyDatastore
@@ -6910,6 +6943,9 @@ function initializeJDBuilderPage() {
         const safeTitle = String(jobTitle).replace(/[<>&"']/g, (c) => ({
             '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;'
         })[c]);
+        const safeContent = typeof window.sanitizeGeneratedHtml === 'function'
+            ? window.sanitizeGeneratedHtml(content)
+            : (window.escapeHtml ? window.escapeHtml(content) : '');
         const generatedAt = new Date().toLocaleString();
         const fullDoc = [
             '<!DOCTYPE html>',
@@ -6936,7 +6972,7 @@ function initializeJDBuilderPage() {
             '</style>',
             '</head>',
             '<body>',
-            content,
+            safeContent,
             `<div class="jd-footer">Generated ${generatedAt} · Smart HR JD Builder</div>`,
             '</body>',
             '</html>',
@@ -8730,42 +8766,13 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
 }
 
 // =============================================================================
-// GLOBAL HANDLER SAFETY NET
-// Many onclick="foo(...)" attributes in dynamically-rendered HTML need their
-// targets on `window`. Functions defined inside DOMContentLoaded are NOT
-// global by default. Re-export them defensively here. Also surface a
-// diagnostic for any onclick name that resolves to undefined.
+// GLOBAL HANDLER DIAGNOSTIC
+// Dynamically-rendered markup still contains a few inline onclick handlers.
+// Their functions are explicitly exported near the end of DOMContentLoaded;
+// this audit only reports a missed export. Do not resolve names dynamically
+// here: it would require eval and weaken the page's Content Security Policy.
 // =============================================================================
 (function () {
-    const handlerNames = [
-        'showLoadingMessage', 'hideLoadingMessage', 'updateSearchProgress',
-        'generateEnhancedResults', 'addUserMessage',
-        'pollHRScorecardTask',
-        'exportCandidateReport', 'exportAllCandidatesReport',
-        'downloadResume', 'setCandidateStatus',
-        'editUser', 'refreshSearchHistory',
-        'scheduleInterview', 'closeInterviewModal',
-        'loadPage', 'removeFile', 'closeAnalysisModal', 'removeSkill',
-        'loadSavedSearch', 'showNotification', 'submitInterviewForm',
-        'loadCandidateStatusCounts', 'loadUpcomingEvents',
-        'openCandidatesByStatus', 'renderCandidatesByStatusList',
-        'openGeneralScheduleModal', 'closeGeneralScheduleModal', 'submitGeneralScheduleForm',
-    ];
-    handlerNames.forEach(function (name) {
-        try {
-            // If a closure-scoped binding exists, eval pulls it; if it's
-            // already on window, this is a no-op. Wrapped so a single missing
-            // symbol does not break the rest.
-            // eslint-disable-next-line no-eval
-            const fn = (typeof window[name] === 'function')
-                ? window[name]
-                : (function () { try { return eval(name); } catch (_) { return undefined; } })();
-            if (typeof fn === 'function' && typeof window[name] !== 'function') {
-                window[name] = fn;
-            }
-        } catch (_) { /* noop */ }
-    });
-
     // Diagnostic: log any onclick attribute whose primary identifier is not
     // resolvable on window. Helps catch new buttons that ship broken.
     function auditOnclickHandlers() {

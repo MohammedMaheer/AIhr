@@ -27,3 +27,7 @@ This source version is intended for a code-only SSH deployment to the existing S
 The existing top-left logo, brand assets, search scope, ranking, scorecards, backend APIs and database schema are unchanged. These checks do not certify every authenticated live flow or external provider. GitHub-hosted CI was previously blocked by the account billing lock; direct test evidence must not be described as a successful GitHub Actions run.
 
 To repeat the visual check, generate the normal Tailwind CSS asset, install Playwright in the test environment, and run `node tests/visual_recent_changes.cjs`. Set `UI_BROWSER_CHANNEL=chrome` to use an installed Chrome in a fresh isolated context. The fixture server is stopped automatically.
+
+## Follow-Up: v2026.11.13.3
+
+Final screenshot review identified a clipped status label at a mid-sized desktop width. The applicant status column now reserves enough space for the longest option, while retaining the existing compact layout on smaller screens. A canvas text-measurement assertion checks every status option at all six viewport sizes, including space for padding and the dropdown arrow.

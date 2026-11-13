@@ -66,6 +66,12 @@ async function run() {
             await page.locator('[data-applicants="11"]').click();
             await page.locator('[data-application-status]').first().waitFor();
             await contained('[data-content]');
+            assert(await page.locator('[data-application-status]').evaluateAll(selects => selects.every(select => {
+                const style=getComputedStyle(select), context=document.createElement('canvas').getContext('2d');
+                context.font=style.font || style.fontSize+' '+style.fontFamily;
+                const longest=Math.max(...[...select.options].map(option=>context.measureText(option.text).width));
+                return longest<=select.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight)-20;
+            })), 'Applicant status labels must fit without clipping at '+width);
             if (await page.locator('.job-applications-view').evaluate(el => el.clientWidth <= 1000)) {
                 assert.notEqual(await page.locator('.job-candidates-table td[data-label="Experience"]').first().evaluate(el => getComputedStyle(el,'::before').content), 'none');
             }

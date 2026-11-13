@@ -111,7 +111,7 @@
                 pages.map(page => '<tr><td data-label="Role"><strong>' + esc(page.title) + '</strong><div class="workspace-muted">' + esc([page.location, page.employment_type].filter(Boolean).join(' | ') || 'Location not specified') + '</div></td>' +
                     '<td data-label="Status"><span class="workspace-status ' + (page.status === 'published' ? 'is-active' : '') + '"><span aria-hidden="true"></span>' + esc(page.status) + '</span>' +
                     (Number(page.indexing_pending) ? '<div class="workspace-muted">' + Number(page.indexing_pending).toLocaleString() + (Number(page.indexing_pending) === 1 ? ' CV needs indexing' : ' CVs need indexing') + '</div>' : '') + '</td>' +
-                    '<td data-label="Applications"><button type="button" data-applicants="' + Number(page.id) + '" class="job-page-count">' + Number(page.applicant_count || 0).toLocaleString() + '</button></td>' +
+                    '<td data-label="Applications"><button type="button" data-applicants="' + Number(page.id) + '" class="job-page-count" aria-label="Review applications for ' + esc(page.title) + '">' + Number(page.applicant_count || 0).toLocaleString() + '</button></td>' +
                     '<td data-label="Actions" class="workspace-row-actions"><button type="button" data-edit="' + Number(page.id) + '" class="workspace-icon-button" aria-label="Edit ' + esc(page.title) + '" title="Edit job page"><i class="fas fa-pen" aria-hidden="true"></i></button>' +
                     (page.status === 'published' ? '<button type="button" data-copy="' + Number(page.id) + '" class="workspace-icon-button" aria-label="Copy application link" title="Copy application link"><i class="fas fa-link" aria-hidden="true"></i></button>' : '') +
                     '<a class="workspace-icon-button" href="' + esc(pageAddress('/job-application-pages/' + Number(page.id) + '/preview')) + '" target="_blank" rel="noopener noreferrer" aria-label="Preview ' + esc(page.title) + ' as a candidate" title="Preview candidate page"><i class="fas fa-external-link-alt" aria-hidden="true"></i></a>' +
@@ -145,7 +145,7 @@
             const modal = document.createElement('div');
             modal.className = 'workspace-overlay'; modal.dataset.jobPageDialog = 'true';
             modal.innerHTML = '<section class="workspace-dialog job-page-dialog"><header><h3>' + (editing ? 'Edit job page' : 'Create job page') + '</h3><button type="button" data-close class="workspace-icon-button" aria-label="Close dialog" title="Close dialog"><i class="fas fa-times" aria-hidden="true"></i></button></header>' +
-                '<form><div class="workspace-dialog-body job-page-form"><label>Job title<input name="title" maxlength="180" required value="' + esc(page?.title || '') + '"></label>' +
+                '<form><div class="workspace-dialog-body job-page-form"><label>Job title<input name="title" minlength="2" maxlength="180" required value="' + esc(page?.title || '') + '"></label>' +
                 '<div class="job-page-form-grid"><label>Location<input name="location" maxlength="180" placeholder="e.g. Abu Dhabi" value="' + esc(page?.location || '') + '"></label><label>Employment type<input name="employment_type" list="employment-type-options" maxlength="80" value="' + esc(page?.employment_type || 'Full-time') + '"><datalist id="employment-type-options"><option>Full-time</option><option>Part-time</option><option>Contract</option><option>Temporary</option><option>Internship</option><option>Freelance</option><option>Fixed-term</option></datalist></label></div>' +
                 '<label>Role description<textarea name="description" rows="8" minlength="20" maxlength="12000" required placeholder="Describe the role, responsibilities and essential qualifications.">' + esc(page?.description || '') + '</textarea></label>' +
                 '<section class="job-page-settings"><h4>Job details candidates will see</h4><div class="job-page-form-grid"><label>Work arrangement<select name="work_arrangement"><option value="unspecified">Not specified</option><option value="onsite">On-site</option><option value="hybrid">Hybrid</option><option value="remote">Remote</option></select></label>' +
@@ -166,9 +166,13 @@
             form.elements.work_arrangement.value = settings.work_arrangement || 'unspecified';
             form.elements.resume_policy.value = settings.resume_policy || 'either';
             form.elements.pay_period.value = pay.period || 'month';
-            form.elements.pay_note.addEventListener('input', () => form.elements.pay_note.setCustomValidity(''));
-            form.elements.pay_maximum.addEventListener('input', () => form.elements.pay_maximum.setCustomValidity(''));
+            const clearPayValidity = () => {
+                form.elements.pay_note.setCustomValidity('');
+                form.elements.pay_maximum.setCustomValidity('');
+            };
+            ['pay_note', 'pay_minimum', 'pay_maximum'].forEach(name => form.elements[name].addEventListener('input', clearPayValidity));
             form.elements.show_pay.addEventListener('change', () => {
+                clearPayValidity();
                 modal.querySelector('[data-pay-fields]').hidden = !form.elements.show_pay.checked;
             });
             modal.querySelector('[data-pay-fields]').hidden = !form.elements.show_pay.checked;
@@ -180,7 +184,7 @@
             form.elements.description.addEventListener('input', () => form.elements.description.setCustomValidity(''));
 
             function renderQuestionFields(focusIndex = null) {
-                questionList.innerHTML = questionValues.map((question, index) => '<div class="job-question-row"><label for="job-question-' + index + '"><span>Question ' + (index + 1) + '</span><input id="job-question-' + index + '" type="text" maxlength="180" required value="' + esc(question) + '" data-question-index="' + index + '"><span class="job-question-length" data-question-length="' + index + '">' + esc(String(question).length) + '/180</span></label><button type="button" data-remove-question="' + index + '" class="workspace-icon-button is-danger" aria-label="Remove question ' + (index + 1) + '" title="Remove question"><i class="fas fa-trash" aria-hidden="true"></i></button></div>').join('');
+                questionList.innerHTML = questionValues.map((question, index) => '<div class="job-question-row"><label for="job-question-' + index + '"><span>Question ' + (index + 1) + '</span><textarea id="job-question-' + index + '" rows="2" maxlength="180" required data-question-index="' + index + '">' + esc(question) + '</textarea><span class="job-question-length" data-question-length="' + index + '">' + esc(String(question).length) + '/180</span></label><button type="button" data-remove-question="' + index + '" class="workspace-icon-button is-danger" aria-label="Remove question ' + (index + 1) + '" title="Remove question"><i class="fas fa-trash" aria-hidden="true"></i></button></div>').join('');
                 questionCount.textContent = questionValues.length + ' of 6';
                 addQuestion.disabled = questionValues.length >= 6;
                 if (focusIndex !== null) questionList.querySelector('[data-question-index="' + focusIndex + '"]')?.focus();
@@ -202,6 +206,7 @@
             }
 
             function closeForm() {
+                if (form.dataset.submitting === 'true') return;
                 document.querySelectorAll('[data-question-preview]').forEach(preview => preview.remove());
                 modal.remove();
             }
@@ -350,6 +355,9 @@
             modal.querySelector('[data-generate-questions]').addEventListener('click', openQuestionPreview);
             form.addEventListener('submit', async event => {
                 event.preventDefault();
+                if (form.dataset.submitting === 'true') return;
+                form.elements.title.setCustomValidity(form.elements.title.value.trim().length < 2 ? 'Enter a job title with at least two characters.' : '');
+                form.elements.description.setCustomValidity(form.elements.description.value.trim().length < 20 ? 'Add at least 20 characters of role detail.' : '');
                 form.elements.pay_note.setCustomValidity('');
                 form.elements.pay_maximum.setCustomValidity('');
                 if (!validateQuestionFields()) {
@@ -391,12 +399,20 @@
                     custom_questions:questions, application_settings:applicationSettings,
                     ...(isSuperAdmin ? {company_id:Number(selectedCompanyId)} : {}),
                     ...(editing ? {version:page.version} : {status:'draft'})};
+                form.dataset.submitting = 'true';
+                form.setAttribute('aria-busy', 'true');
+                modal.querySelectorAll('[data-close]').forEach(button => { button.disabled = true; });
                 try {
                     await scopedRequest(editing ? '/api/job-application-pages/' + Number(page.id) : '/api/job-application-pages',
                         {method:editing ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+                    delete form.dataset.submitting;
                     closeForm(); notify(editing ? 'Job page updated.' : 'Draft saved. Publish it when it is ready.'); await loadPages();
                 } catch (error) {
                     const message = modal.querySelector('[data-error]'); message.textContent = error.message; message.classList.remove('hidden');
+                    message.tabIndex = -1; message.focus();
+                    delete form.dataset.submitting;
+                    form.removeAttribute('aria-busy');
+                    modal.querySelectorAll('[data-close]').forEach(button => { button.disabled = false; });
                     submit.disabled = false; submit.innerHTML = '<i class="fas fa-check" aria-hidden="true"></i>' + (editing ? 'Save changes' : 'Save draft');
                 }
             });
@@ -408,7 +424,7 @@
             try {
                 const data = await scopedRequest('/api/job-application-pages/' + Number(page.id) + '/status',
                     {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status,version:page.version})});
-                notify(status === 'published' ? 'Application page published.' : status === 'paused' ? 'Applications paused; existing records are retained.' : 'Page reopened as a draft.');
+                notify(status === 'published' ? 'Application page published.' : status === 'paused' ? 'Applications paused; existing records are retained.' : status === 'closed' ? 'Applications closed; existing records are retained.' : 'Page reopened as a draft.');
                 await loadPages();
                 if (data.page?.public_url) await copyLink(pages.find(item => Number(item.id) === Number(page.id)), false);
             } catch (error) { notify(error.message, 'error'); }
@@ -447,7 +463,10 @@
                 if (!alive(id) || selectedPage !== page) return;
                 renderApplications(page, data.applications, data.total, pageOffset);
             } catch (error) {
-                if (alive(id)) content.innerHTML = '<div class="workspace-empty is-error" role="alert"><h3>Applications unavailable</h3><p>' + esc(error.message) + '</p><button type="button" data-back class="workspace-button">Back to job pages</button></div>';
+                if (alive(id)) {
+                    content.innerHTML = '<div class="workspace-empty is-error" role="alert"><h3>Applications unavailable</h3><p>' + esc(error.message) + '</p><button type="button" data-back class="workspace-button">Back to job pages</button></div>';
+                    content.querySelector('[data-back]').onclick = loadPages;
+                }
             } finally { if (alive(id)) content.setAttribute('aria-busy','false'); }
         }
 
@@ -610,19 +629,27 @@
                 wrapper.append(label, input); questionHost.append(wrapper);
             });
             const form = root.querySelector('[data-form]'), errorBox = root.querySelector('[data-alert]');
+            const validateResume = () => {
+                const file = uploadInput.files?.[0];
+                let message = '';
+                if (file && !/\.(pdf|doc|docx)$/i.test(file.name)) message = 'Choose a PDF or Word CV (.pdf, .doc or .docx).';
+                else if (file && file.size > 10 * 1024 * 1024) message = 'Choose a CV smaller than or equal to 10 MB.';
+                else if (resumePolicy === 'either' && !file && !linkInput.value.trim()) message = 'Upload a CV or provide a resume link.';
+                uploadInput.setCustomValidity(message);
+            };
+            uploadInput.addEventListener('change', validateResume);
+            linkInput.addEventListener('input', validateResume);
             if (previewMode) {
                 form.querySelectorAll('input,textarea,select,button').forEach(control => { control.disabled = true; });
                 form.querySelector('[type="submit"]').textContent = 'Preview only';
             }
             form.addEventListener('submit', async event => {
                 event.preventDefault(); errorBox.hidden = true;
-                if (previewMode) return;
-                uploadInput.setCustomValidity('');
-                if (resumePolicy === 'either' && !uploadInput.files?.length && !linkInput.value.trim()) {
-                    uploadInput.setCustomValidity('Upload a CV or provide a resume link.');
-                }
+                if (previewMode || form.dataset.submitting === 'true') return;
+                validateResume();
                 if (!form.reportValidity()) return;
                 const submit = form.querySelector('[type=submit]');
+                form.dataset.submitting = 'true'; form.setAttribute('aria-busy','true');
                 submit.disabled = true; submit.textContent = 'Submitting…';
                 const formData = new FormData(form);
                 const candidateAnswers = {};
@@ -641,6 +668,8 @@
                 } catch (failure) {
                     errorBox.textContent = failure.message || 'Your application could not be sent. Please try again.';
                     errorBox.className = 'application-alert is-error'; errorBox.hidden = false;
+                    errorBox.tabIndex = -1; errorBox.focus();
+                    delete form.dataset.submitting; form.removeAttribute('aria-busy');
                     submit.disabled = false; submit.textContent = 'Submit application';
                 }
             });

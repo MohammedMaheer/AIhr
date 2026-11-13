@@ -64,6 +64,18 @@ async function run() {
     pending[3].resolve({query:'Identity changed', results:[]});
     await flush();
     assert.deepEqual(rendered, ['Second request'], 'A changed workspace must not receive the previous identity response');
+    const warnings = [];
+    w.showNotification = (message, type) => warnings.push({message, type});
+    w.ResumeFolders = {validate: () => {throw new Error('Choose at least one folder.');}};
+    for (const [field, handler] of [['chat-input', w.handleSendMessage], ['bottom-chat-input', w.handleBottomSendMessage]]) {
+        d.getElementById(field).value = 'Keep my draft';
+        handler();
+        assert.equal(d.getElementById(field).value, 'Keep my draft');
+    }
+    assert.equal(pending.length, 4, 'Invalid scope must not start an API request');
+    assert.equal(animations.length, 0, 'Invalid scope must not animate away the search form');
+    assert.equal(warnings.length, 2);
+    assert(warnings.every(item => item.type === 'warning' && item.message.includes('Choose at least one')));
     dom.window.close();
     console.log('Search view isolation passed: out-of-order responses, stale progress/errors, navigation before submit and changed workspace identity.');
 }

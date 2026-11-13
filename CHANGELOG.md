@@ -5,6 +5,27 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.14.1 - 2026-11-14
+
+### Reuse Exact Job Preparation And Preserve Invalid Search Drafts
+
+- Reuse successful keyword/query preparation across verified recruiters in the
+  same company for an identical complete job description and provider/model.
+  Keep the existing bounded 15-minute in-process cache and per-user boundaries
+  for documents, candidate matching and super-admin preparation. Repeated team
+  searches can avoid two preparation calls; candidate scoring is unchanged.
+- Validate folder/tag/date scope before starting search animations or clearing
+  either composer. Invalid selections retain the query and editable form instead
+  of replacing them with a generic search failure. Backend validation remains.
+- Add an opt-in desktop/mobile browser-to-API-to-worker-to-PostgreSQL scope test
+  using real fictional DOCX ingestion, mocked Graph/provider responses and local
+  deterministic vectors. Cover received/uploaded dates, multi-folder/tag scope,
+  filter-dialog follow-up searches, empty results and invalid selections.
+- Verify ten read-only live retrieval cohorts without model inference or paid
+  AI calls. No logo, layout, ranking, scoring prompt, threshold or schema change.
+  See `docs/SEARCH_SCOPE_VERIFICATION_2026-11-14.md` for evidence and boundaries;
+  actual deployment and full runtime results are recorded in GitHub PR #1.
+
 ## v2026.11.13.1 - 2026-11-13
 
 ### Correct Recent Search And Indexing Regressions

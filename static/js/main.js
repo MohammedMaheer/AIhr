@@ -1446,9 +1446,20 @@ document.addEventListener('DOMContentLoaded', function () {
         `;
     }
 
+    function validateCandidateSearchScope() {
+        try {
+            window.ResumeFolders?.validate();
+            return true;
+        } catch (error) {
+            showNotification(error.message, 'warning');
+            return false;
+        }
+    }
+
     function handleSendMessage() {
         const countInput = document.getElementById('result-count');
         if (countInput && !countInput.reportValidity()) return;
+        if (!validateCandidateSearchScope()) return;
         const chatInput = document.getElementById('chat-input');
         const message = chatInput.value.trim();
 
@@ -1548,6 +1559,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function handleBottomSendMessage() {
         const countInput = document.getElementById('result-count');
         if (countInput && !countInput.reportValidity()) return;
+        if (!validateCandidateSearchScope()) return;
         const bottomChatInput = document.getElementById('bottom-chat-input');
         const message = bottomChatInput.value.trim();
         if (message) {

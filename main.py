@@ -726,7 +726,7 @@ def _prepare_search_input(operation: str, query: str, user: dict,
     compute = functions[operation]
     expected_field = "all_keywords" if operation == "keywords" else "optimized_query"
     return _jd_preparation_cache.get_or_compute(
-        PreparationCache.key(operation, query, user),
+        PreparationCache.key(operation, query, user, company_preparation=True),
         lambda: compute(query, token_tracker),
         lambda value: (isinstance(value, dict) and value.get("success") is True
                        and not value.get("fallback_used") and bool(value.get(expected_field))),

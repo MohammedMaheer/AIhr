@@ -5169,6 +5169,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Global function to show analysis modal
     window.showAnalysisModal = function (candidateName, analysisData) {
+        if (document.getElementById('analysisModal')) return;
         const esc = window.escapeHtml || ((value) => {
             const div = document.createElement('div');
             div.textContent = value == null ? '' : String(value);
@@ -5186,7 +5187,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <h2 class="text-xl font-bold text-gray-900">Complete AI Analysis</h2>
                                 <p class="text-gray-600 text-sm">${esc(candidateName)}</p>
                             </div>
-                            <button onclick="closeAnalysisModal()" class="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors">
+                            <button type="button" onclick="closeAnalysisModal()" aria-label="Close candidate analysis" title="Close analysis" class="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors">
                                 <i class="fas fa-times text-gray-600"></i>
                             </button>
                         </div>
@@ -5203,8 +5204,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Add modal to body
         document.body.insertAdjacentHTML('beforeend', modalHTML);
 
-        // Prevent body scroll
-        document.body.style.overflow = 'hidden';
+        bindScheduleDialog(document.getElementById('analysisModal'), 'Complete candidate analysis');
     };
 
     // Global function to close analysis modal
@@ -5212,7 +5212,6 @@ document.addEventListener('DOMContentLoaded', function () {
         const modal = document.getElementById('analysisModal');
         if (modal) {
             modal.remove();
-            document.body.style.overflow = 'auto';
         }
     };
 
@@ -8059,8 +8058,8 @@ async function openCandidatesByStatus(status) {
 
     // Render shell with loading state immediately
     mainContent.innerHTML = `
-        <div class="p-6 max-w-7xl mx-auto">
-            <div class="mb-6 flex items-start justify-between">
+        <div class="candidate-status-view p-6 max-w-7xl mx-auto">
+            <div class="candidate-status-header mb-6 flex items-start justify-between">
                 <div class="flex items-center space-x-4">
                     <div class="w-12 h-12 flex items-center justify-center rounded-xl bg-${meta.color}-100">
                         <i class="fas ${meta.icon} text-${meta.color}-600 text-2xl"></i>
@@ -8085,16 +8084,23 @@ async function openCandidatesByStatus(status) {
         </div>
     `;
 
+    const viewBody = document.getElementById('candidates-by-status-body');
+    const identity = JSON.stringify(window.currentUser || null);
+    const currentView = () => viewBody?.isConnected && document.getElementById('candidates-by-status-body') === viewBody
+        && JSON.stringify(window.currentUser || null) === identity;
+
     try {
         const resp = await fetch(`/api/candidates-by-status?status=${encodeURIComponent(status)}`, {
             credentials: 'same-origin',
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
+        if (!currentView()) return;
         renderCandidatesByStatusList(data.candidates || [], status, meta);
     } catch (err) {
         console.error('openCandidatesByStatus failed:', err);
-        const body = document.getElementById('candidates-by-status-body');
+        if (!currentView()) return;
+        const body = viewBody;
         if (body) {
             body.innerHTML = `
                 <div class="text-center py-12 text-gray-500">
@@ -8144,17 +8150,17 @@ function renderCandidatesByStatusList(candidates, status, meta) {
         const srcId = c.search_id ? String(Number(c.search_id)) : '';
         return `
             <tr class="hover:bg-gray-50">
-                <td class="py-3 px-3">
+                <td data-label="Candidate" class="py-3 px-3">
                     <div class="font-semibold text-gray-900">${escFn(c.candidate_name)}</div>
                     <div class="text-xs text-gray-500 mt-0.5">${contactBits.join(' &nbsp;·&nbsp; ')}</div>
                 </td>
-                <td class="py-3 px-3 text-sm text-gray-700">${escFn(c.position_applied || '—')}</td>
-                <td class="py-3 px-3">
+                <td data-label="Position" class="py-3 px-3 text-sm text-gray-700">${escFn(c.position_applied || '—')}</td>
+                <td data-label="Score" class="py-3 px-3">
                     <span class="${scoreBadge} px-2 py-1 rounded-full text-xs font-medium">${score}%</span>
                 </td>
-                <td class="py-3 px-3 text-xs text-gray-500">${escFn(actioned)}</td>
-                <td class="py-3 px-3 text-right">
-                    <div class="inline-flex items-center space-x-2">
+                <td data-label="Actioned" class="py-3 px-3 text-xs text-gray-500">${escFn(actioned)}</td>
+                <td data-label="Actions" class="py-3 px-3 text-right">
+                    <div class="candidate-status-actions inline-flex items-center">
                         ${srcId ? `<button type="button" class="text-blue-600 hover:text-blue-800 text-xs font-medium" data-action="source" data-search-id="${attrFn(srcId)}" data-search-query="${attrFn(c.search_query || '')}" title="Open source search"><i class="fas fa-external-link-alt mr-1"></i>Source</button>` : ''}
                         ${fileBase ? `<button type="button" class="text-gray-600 hover:text-gray-900 text-xs font-medium" data-action="resume" data-file="${attrFn(fileBase)}" title="Download resume"><i class="fas fa-download mr-1"></i>Resume</button>` : ''}
                         <button type="button" class="text-emerald-700 hover:text-emerald-900 text-xs font-medium" data-action="schedule" data-name="${attrFn(c.candidate_name || '')}" data-email="${attrFn(c.candidate_email || '')}" title="Schedule with this candidate"><i class="fas fa-calendar-plus mr-1"></i>Schedule</button>
@@ -8169,7 +8175,7 @@ function renderCandidatesByStatusList(candidates, status, meta) {
             <p class="text-sm text-gray-600">${candidates.length} candidate${candidates.length === 1 ? '' : 's'}</p>
         </div>
         <div class="overflow-x-auto">
-            <table class="w-full">
+            <table class="candidate-status-table w-full">
                 <thead>
                     <tr class="border-b border-gray-200">
                         <th class="text-left py-3 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Candidate</th>
@@ -8626,7 +8632,16 @@ function bindScheduleDialog(modal, label, returnFocus = document.activeElement) 
     invite?.addEventListener('change', syncRequired);
     syncRequired();
     const shell = document.getElementById('app-shell');
-    const wasInert = shell?.inert || false;
+    const shellStates = bindScheduleDialog.shellStates || (bindScheduleDialog.shellStates = new WeakMap());
+    let shellState;
+    if (shell) {
+        shellState = shellStates.get(shell);
+        if (!shellState) {
+            shellState = {wasInert:shell.inert || false, modals:new Set()};
+            shellStates.set(shell, shellState);
+        }
+        shellState.modals.add(modal);
+    }
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-label', label);
     modal.setAttribute('aria-modal', 'true');
@@ -8641,7 +8656,7 @@ function bindScheduleDialog(modal, label, returnFocus = document.activeElement) 
     modal.addEventListener('keydown', event => {
         if (event.key === 'Escape') {
             event.preventDefault();
-            if (!modal.querySelector('form[data-submitting="true"]')) modal.remove();
+            if (!modal.matches('[data-submitting="true"]') && !modal.querySelector('[data-submitting="true"]')) modal.remove();
             return;
         }
         if (event.key !== 'Tab') return;
@@ -8652,8 +8667,16 @@ function bindScheduleDialog(modal, label, returnFocus = document.activeElement) 
     const observer = new MutationObserver(() => {
         if (modal.isConnected) return;
         observer.disconnect();
-        if (shell) shell.inert = wasInert;
-        if (previous?.isConnected) previous.focus();
+        shellState?.modals.delete(modal);
+        const currentState = shell && shellStates.get(shell);
+        const remaining = [...(currentState?.modals || [])].filter(dialog => dialog.isConnected);
+        if (shell && currentState === shellState) {
+            shell.inert = remaining.length ? true : shellState.wasInert;
+            if (!remaining.length) shellStates.delete(shell);
+        }
+        const topDialog = remaining[remaining.length - 1];
+        if (previous?.isConnected && (topDialog ? topDialog.contains(previous) : !shell?.inert)) previous.focus();
+        else if (topDialog) topDialog.querySelector('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]')?.focus();
     });
     observer.observe(document.body, {childList:true});
 }

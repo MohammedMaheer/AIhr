@@ -125,6 +125,9 @@ const server = http.createServer((request,response)=>{
         response.writeHead(200,{'Content-Type':extension==='txt'?'text/plain; charset=utf-8':'application/pdf','Cache-Control':'no-store'});return response.end(fs.readFileSync(target));
     }
     if(url.pathname==='/api/dashboard-stats')return json(response,{success:true,candidate_stats:{selected:1,rejected:0,shortlisted:2,interviewed:0},activity_stats:{total_resumes:63,total_searches:12}});
+    if(url.pathname==='/api/candidates-by-status')return json(response,{success:true,candidates:[{candidate_name:'Fictional Candidate With A Long Professional Name',
+        candidate_email:'fictional.candidate.with.long.address@example.invalid',candidate_location:'Riyadh, Saudi Arabia',position_applied:'Senior Network and Information Security Team Lead',
+        match_score:82,actioned_at:'2026-11-12T10:30:00Z',search_id:1,search_query:'Network engineer in Riyadh',file_path:uploads[0].file_path}]});
     if(url.pathname==='/api/search-history'){
         const page=Math.max(1,Number(url.searchParams.get('page'))||1),page_size=Math.max(1,Math.min(100,Number(url.searchParams.get('page_size')||url.searchParams.get('limit'))||25));
         return json(response,{success:true,history:history.slice((page-1)*page_size,page*page_size),total:history.length,page,page_size});

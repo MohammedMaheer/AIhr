@@ -186,7 +186,7 @@
             for (const name of ['recipient','position','company','location','recruiter','template','subject','message']) value[name] = field(name).value;
             drafts.set(key, {...value, authorization: field('authorization').checked, currentSalary: field('currentSalary').checked, uncertain, accepted});
         }
-        const close = () => { if (busy) return; remember(); modal.remove(); };
+        const close = () => { if (busy || modal.querySelector('[data-template-manager][data-submitting="true"]')) return; remember(); modal.remove(); };
         modal.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', close));
         modal.addEventListener('keydown', event => {if (event.key === 'Escape' && busy) event.stopImmediatePropagation();});
         window.bindScheduleDialog(modal, 'Compose candidate email');
@@ -261,28 +261,39 @@
         if(modal.querySelector('[data-template-manager]'))return;
         const body=modal.querySelector('.outreach-body'),footer=modal.querySelector('.outreach-footer');
         body.hidden=true;footer.hidden=true;
-        const panel=document.createElement('section');panel.className='outreach-body';panel.dataset.templateManager='';
-        panel.innerHTML=`<h3 class="text-lg font-semibold mb-4">Saved email templates</h3>
+        const panel=document.createElement('section');panel.className='outreach-template-editor';panel.dataset.templateManager='';
+        panel.innerHTML=`<div class="outreach-body"><h3 class="text-lg font-semibold mb-4">Saved email templates</h3>
             <label>Choose template<select data-choice><option value="">New template</option></select></label>
             <label>Name<input data-name maxlength="200" required></label>
             <label>Subject<input data-subject maxlength="998" required></label>
             <label>Message<textarea data-message rows="12" maxlength="32768" required></textarea></label>
             <label>Insert field<select data-insert><option value="">Select field</option><option value="candidate_name">Candidate name</option><option value="position">Job title</option><option value="company">Company</option><option value="recruiter_name">Recruiter name</option><option value="job_location">Work location</option></select></label>
             <div data-delete-confirm hidden><p>Delete this saved template? Existing emails and candidate records will remain unchanged.</p><button type="button" data-keep-template>Keep template</button><button type="button" data-confirm-delete>Delete template</button></div>
-            <p data-feedback role="status" aria-live="polite"></p>
+            <p data-feedback role="status" aria-live="polite"></p></div>
             <div class="outreach-footer"><button type="button" data-back>Back to message</button><button type="button" data-discard hidden>Discard changes</button><button type="button" data-use disabled>Use template</button><button type="button" data-delete disabled aria-label="Delete saved template" title="Delete saved template"><i class="fas fa-trash" aria-hidden="true"></i></button><button type="button" data-save>Save template</button></div>`;
         body.after(panel);
         const choice=panel.querySelector('[data-choice]'),name=panel.querySelector('[data-name]'),subject=panel.querySelector('[data-subject]'),messageField=panel.querySelector('[data-message]'),feedback=panel.querySelector('[data-feedback]');
         const save=panel.querySelector('[data-save]'),use=panel.querySelector('[data-use]'),remove=panel.querySelector('[data-delete]');
-        let records=[],current=null,dirty=false,busy=false;
+        let records=[],current=null,dirty=false,busy=false,loadVersion=0;
+        function setBusy(value){
+            busy=value;
+            if(value)panel.dataset.submitting='true';else delete panel.dataset.submitting;
+            panel.setAttribute('aria-busy',String(value));
+            panel.querySelectorAll('input,select,textarea,button').forEach(control=>{control.disabled=value;});
+            modal.querySelector('.outreach-header [data-close]').disabled=value;
+            if(!value){use.disabled=!current||dirty;remove.disabled=!current;}
+        }
         const back=()=>{if(busy)return;panel.remove();body.hidden=false;footer.hidden=false;modal.querySelector('[data-manage-templates]').focus();};
         function populate(record){current=record;name.value=record?.name||'';subject.value=record?.subject??initial.subject;messageField.value=record?.message??initial.message;dirty=false;use.disabled=remove.disabled=!current;}
-        async function refresh(selected){
+        async function refresh(selected,preserveDraft=false){
+            const version=++loadVersion;
             const response=await fetch('/api/outreach-templates');const data=await response.json();
             if(!response.ok)throw new Error(data.detail||'Templates could not be loaded.');
+            if(!panel.isConnected||version!==loadVersion)return;
             records=data.templates||[];choice.replaceChildren(new Option('New template',''));
             for(const record of records)choice.add(new Option(record.name,String(record.id)));
-            choice.value=selected?String(selected):'';populate(records.find(row=>String(row.id)===choice.value));
+            choice.value=selected?String(selected):'';
+            if(!preserveDraft||!dirty)populate(records.find(row=>String(row.id)===choice.value));
         }
         choice.addEventListener('change',()=>{
             if(dirty){choice.value=current?String(current.id):'';feedback.textContent='Save your changes before choosing another template.';return;}
@@ -301,33 +312,33 @@
         panel.querySelector('[data-discard]').addEventListener('click',back);
         save.addEventListener('click',async()=>{
             if(busy||![name,subject,messageField].every(field=>field.reportValidity()))return;
-            busy=true;save.disabled=true;
+            setBusy(true);
             try{
                 const payload={name:name.value,subject:subject.value,message:messageField.value,...(current?{version:current.version}:{})};
                 const response=await fetch('/api/outreach-templates'+(current?'/'+current.id:''),{method:current?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
                 const data=await response.json();if(!response.ok||!data.success)throw new Error(data.detail||'Template was not saved.');
                 await refresh(data.template.id);feedback.textContent='Template saved.';
-            }catch(error){feedback.textContent=humanError(error,'The template save could not be confirmed. Reopen saved templates before trying again.');}finally{busy=false;save.disabled=false;}
+            }catch(error){feedback.textContent=humanError(error,'The template save could not be confirmed. Reopen saved templates before trying again.');feedback.tabIndex=-1;feedback.focus();}finally{setBusy(false);}
         });
         remove.addEventListener('click',()=>{panel.querySelector('[data-delete-confirm]').hidden=false;});
         panel.querySelector('[data-keep-template]').addEventListener('click',()=>{panel.querySelector('[data-delete-confirm]').hidden=true;});
         panel.querySelector('[data-confirm-delete]').addEventListener('click',async()=>{
-            if(busy||!current)return;busy=true;
+            if(busy||!current)return;setBusy(true);
             try{
                 const response=await fetch('/api/outreach-templates/'+current.id,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:current.version})});
                 const data=await response.json();if(!response.ok||!data.success)throw new Error(data.detail||'Template was not deleted.');
                 await refresh();panel.querySelector('[data-delete-confirm]').hidden=true;feedback.textContent='Template deleted.';
-            }catch(error){feedback.textContent=humanError(error,'The template deletion could not be confirmed. Reopen saved templates to check.');}finally{busy=false;}
+            }catch(error){feedback.textContent=humanError(error,'The template deletion could not be confirmed. Reopen saved templates to check.');feedback.tabIndex=-1;feedback.focus();}finally{setBusy(false);}
         });
         use.addEventListener('click',async()=>{
-            if(busy||!current||dirty)return;busy=true;use.disabled=true;
+            if(busy||!current||dirty)return;setBusy(true);
             try{
                 const response=await fetch('/api/outreach-templates/'+current.id+'/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidate_name:ctx.candidateName,position:ctx.position,company:ctx.company,recruiter_name:ctx.recruiter,job_location:ctx.location})});
                 const data=await response.json();if(!response.ok||!data.success)throw new Error(data.detail||'Template could not be applied.');
-                apply(data);busy=false;back();
-            }catch(error){feedback.textContent=humanError(error,'The template could not be loaded. Please try again.');}finally{busy=false;use.disabled=!current;}
+                apply(data);setBusy(false);back();
+            }catch(error){feedback.textContent=humanError(error,'The template could not be loaded. Please try again.');feedback.tabIndex=-1;feedback.focus();}finally{setBusy(false);}
         });
-        populate();refresh().catch(error=>{feedback.textContent=humanError(error,'Saved templates are temporarily unavailable. Please reopen this view.');});choice.focus();
+        populate();refresh(undefined,true).catch(error=>{if(panel.isConnected)feedback.textContent=humanError(error,'Saved templates are temporarily unavailable. Please reopen this view.');});choice.focus();
     }
     window.RecruiterOutreach = {context, configureSchedule, open, message, ready};
 }());

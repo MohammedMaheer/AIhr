@@ -9,6 +9,20 @@ from vps_local.discovery_shim import _rank_rows
 from vps_local.profile_extractor import merge_profiles, parse_years, profile_from_analysis, profile_to_analysis
 
 
+@pytest.mark.parametrize('role',['HR Recruiter','Designer','Consultant','Nurse'])
+def test_location_followed_by_experience_is_not_the_job_title(role):
+    criteria=parse_search_criteria(role+' based in Dubai with 3-5 years of experience. Required skills: Python.')
+    assert criteria.location=='dubai'
+    assert (criteria.min_years,criteria.max_years)==(3,5)
+    assert criteria.required_skills==['python']
+    assert evaluate_criteria(analysis(location='Chennai',skills=['Python']),criteria)['hard_fail']
+
+
+@pytest.mark.parametrize('clause',['location: Dubai','must be in Dubai','located in Dubai','in the Dubai'])
+def test_explicit_location_ends_before_numeric_qualification(clause):
+    assert parse_search_criteria('Recruiter '+clause+' with 3-5 years.').location=='dubai'
+
+
 def analysis(location='', skills=None, languages=None):
     return {'hr_scorecard': {
         'candidate_overview': {'location': location, 'skills': skills or []},

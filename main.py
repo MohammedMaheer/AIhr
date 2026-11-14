@@ -628,6 +628,7 @@ def _compute_asset_versions() -> dict[str, str]:
                       ("job_applications_js", "static/js/job-applications.js"),
                       ("notifications_js", "static/js/notifications.js"),
                       ("outreach_js", "static/js/recruiter-outreach.js"),
+                      ("similar_candidates_js", "static/js/similar-candidates.js"),
                       ("interview_manager_js", "static/js/interview-manager.js"),
                       ("components_css", "static/css/components.css"),
                       ("candidate_state_js", "static/js/candidate-state.js"),
@@ -6670,6 +6671,53 @@ async def get_config(user: dict = Depends(require_auth)):
             "default_folder": config.get("gcs", {}).get("default_folder", ""),
         },
     }
+
+@app.post('/api/similar-candidates')
+@limiter.limit('10/minute')
+async def similar_candidates(
+    request: Request,
+    query: str = Form(...),
+    result_count: int = Form(10),
+    folders: Annotated[Optional[str], Form()] = None,
+    filters: Annotated[Optional[str], Form()] = None,
+    user: dict = Depends(require_auth),
+):
+    query = _sanitize_user_text(query, max_len=4000)
+    if not query.strip():
+        raise HTTPException(status_code=400, detail='Enter candidate requirements.')
+    if len(parse_search_criteria(query).required_skills) > 32:
+        raise HTTPException(status_code=422, detail='Use no more than 32 explicit required skills for similar profiles.')
+    selected = _parse_search_folders(folders)
+    filtering = _parse_resume_filters(filters)
+    count = clamp_result_count(result_count, default=10, max_value=MAX_HR_SCORECARD_RESULTS)
+    tenant = _local_company_search_filter(user)
+    if os.getenv('SMARTHR_LOCAL_MODE', '').lower() not in {'1', 'true', 'yes', 'on'}:
+        raise HTTPException(status_code=501, detail='Similar candidate previews are unavailable.')
+    db = get_db_manager()
+    if not db:
+        raise HTTPException(status_code=503, detail='Candidate search is temporarily unavailable.')
+    try:
+        company_id = _get_company_id(user)
+        if company_id:
+            await asyncio.to_thread(db.check_search_limit, company_id)
+        from services.resume_folders import searchable_count
+        from services.similar_candidates import search
+        results = []
+        if await asyncio.to_thread(searchable_count, db, user, selected, filtering):
+            results = await asyncio.to_thread(search, query, count, tenant, selected, filtering)
+        return {'success': True, 'query': query, 'match_mode': 'similar',
+                'verification': 'indexed_profile_only', 'paid_ai_calls': 0,
+                'requested_result_count': count, 'total_results': len(results),
+                'folder_filters': selected or [], 'resume_filters': filtering,
+                'results': results}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if 'maximum search limit' in str(exc).lower():
+            raise HTTPException(status_code=400, detail='Your company has reached its maximum search limit.') from None
+        logging.warning('Similar candidate preview failed: %s', type(exc).__name__)
+        raise HTTPException(status_code=503, detail='Similar candidates could not be loaded. Please try again.') from None
+
 
 @app.post("/api/search-vector")
 async def search_vector(

@@ -5,6 +5,27 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.14.6 - 2026-11-14
+
+### Scoped Similar Profiles And Stricter Location Parsing
+
+- Offer an explicit "Search for similar candidates" action after a genuine
+  zero-result exact search. Show local indexed profile suggestions separately,
+  label them unverified, and list unmet or unconfirmed requirements. Never pad
+  exact results or invent verified scorecards or match percentages.
+- Retain the original company, folders, tags and received/uploaded date scope.
+  Support all authorized folders without submitting an invalid empty selection;
+  fail closed for explicit empty selections. No paid AI calls for suggestions.
+- Correct location parsing before numeric experience requirements and stop
+  treating a role preceding "based in" as a location. Treat recognized legacy
+  address-parser job-duty artifacts as unknown, not as proof of a wrong city.
+  Retain final full-document eligibility checks and ranking weights.
+- Add scope, authentication, CSRF, validation, escaping, stale-response,
+  desktop/mobile and SQL regressions. Preserve the logo, existing search UI,
+  candidate data, original files and core scoring functionality.
+- Verification and deployment evidence are recorded in
+  `docs/STRICT_SEARCH_SIMILAR_ACCEPTANCE_2026-11-14.md`.
+
 ## v2026.11.14.5 - 2026-11-14
 
 ### Clear Stale Search Actions And Clean Outreach Role Prefills

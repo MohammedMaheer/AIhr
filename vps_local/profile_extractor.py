@@ -106,6 +106,9 @@ def clean_location(value: Any) -> str:
     normed = _norm(cleaned)
     if normed in UNKNOWN_LOCATION_VALUES:
         return ""
+    # Older unbounded address matching captured job-duty fragments as places.
+    if re.search(r'^(?:ed\s+employee|ing(?:\s|$)|ventory\s+management|queries\s+related\s+to|overdue\s+accounts)\b', normed):
+        return ""
     return normed
 
 
@@ -203,8 +206,9 @@ def extract_languages_from_text(text: str) -> list[str]:
 def extract_location_from_text(text: str) -> str:
     head = (text or "")[:5000]
     for pat in (
-        r"(?:current\s+)?location\s*[:\-]\s*([A-Za-z][A-Za-z .,\-]{2,80})",
-        r"(?:address|residence|based\s+in|located\s+in|residing\s+in)\s*[:\-]?\s*([A-Za-z][A-Za-z .,\-]{2,80})",
+        r"\b(?:current\s+)?location\b\s*[:\-]\s*([A-Za-z][A-Za-z .,\-]{2,80})",
+        r"\b(?:address|residence)\b\s*[:\-]\s*([A-Za-z][A-Za-z .,\-]{2,80})",
+        r"\b(?:based\s+in|located\s+in|residing\s+in)\b\s*[:\-]?\s*([A-Za-z][A-Za-z .,\-]{2,80})",
     ):
         m = re.search(pat, head, re.IGNORECASE)
         if m:
@@ -214,9 +218,10 @@ def extract_location_from_text(text: str) -> str:
 
     lower = head.lower()
     places = sorted(KNOWN_PLACES, key=len, reverse=True)
-    for place in places:
-        if re.search(rf"\b{re.escape(place)}\b", lower):
-            return _norm(place)
+    mentions = [(match.start(), -len(place), _norm(place)) for place in places
+                if (match := re.search(rf"\b{re.escape(place)}\b", lower))]
+    if mentions:
+        return min(mentions)[2]
     return ""
 
 

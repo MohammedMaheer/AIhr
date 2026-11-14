@@ -2022,7 +2022,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     top_scorecard: data.top_scorecard || null
                 };
             }).then(value => ({...value, query: value.query || query, job_title: value.job_title || jobTitle,
-                folder_filters: folders || [], resume_filters: filters})).finally(() => {
+                folder_filters: folders || [], resume_filters: filters,
+                requested_result_count: value.requested_result_count || resultCount})).finally(() => {
                 pending.listeners.clear();
                 if (key && pendingCandidateSearches.get(key) === pending) pendingCandidateSearches.delete(key);
             });
@@ -2394,6 +2395,9 @@ document.addEventListener('DOMContentLoaded', function () {
                             ` : ''}
                         </div>
                     `;
+                    if (!isEmptyDatastore && data.results.length === 0) {
+                        window.SimilarCandidates?.offer(resultsContainer, data);
+                    }
                 }
             }
             return;

@@ -13,6 +13,22 @@ from vps_local.discovery_shim import _rank_rows
 
 
 class ProfileExtractorTests(unittest.TestCase):
+    def test_legacy_address_job_duties_are_unknown_not_wrong_locations(self):
+        for value in ['ed employee queries regarding policies', 'queries related to employment',
+                      'ventory management, stock reconciliation', 'overdue accounts to minimize delays in payments', 'ing']:
+            self.assertEqual(clean_location(value), '')
+        self.assertEqual(clean_location('Mangalore, India'), 'mangalore, india')
+        profile=profile_from_row({'candidate_location':'ed employee grievances and supported employee relations',
+                                  'candidate_years':4,'candidate_skills':['Recruitment']})
+        evaluation,status=evaluate_profile(profile,parse_search_criteria('Recruiter based in Dubai with 3-5 years. Required skills: Recruitment'))
+        self.assertEqual(status,'unknown')
+        self.assertFalse(evaluation.get('hard_fail'))
+
+    def test_addressed_duties_do_not_override_earlier_contact_location(self):
+        profile=profile_from_text('Dubai, UAE\nHR specialist\nAddressed employee grievances in Abu Dhabi.')
+        self.assertEqual(profile['candidate_location'],'dubai')
+        self.assertEqual(profile_from_text('Current Location: Chennai, India\nAddressed queries')['candidate_location'],'chennai, india')
+
     def test_requested_skill_evidence_supplements_partial_index_without_mutating_it(self):
         row = {'candidate_skills': ['Excel'], 'text': 'Skills: Adobe Illustrator and Photoshop.'}
         profile = profile_from_row(row, required_skills=['adobe illustrator'])

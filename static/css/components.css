@@ -108,3 +108,15 @@ body:has(.workspace-overlay:not(.hidden)) > .app-notifications { display: none; 
     .schedule-history-table th:nth-child(3) {width:70px;}
 }
 @media(prefers-reduced-motion:reduce) { .outreach-dialog,.ai-search-symbol i,.ai-search-track.is-indeterminate>div {animation:none;} .ai-search-track>div {transition:none;} }
+.similar-candidates-action { margin: 16px auto 0; }
+.workspace-dialog.similar-candidates-dialog { max-width: 760px; }
+.similar-candidates-note { margin: 0 0 12px; color: #334155; font-weight: 600; }
+.similar-candidates-query { white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 20px; }
+.similar-candidates-list { list-style: none; margin: 0; padding: 0; }
+.similar-candidates-list > li { padding: 16px 0; border-bottom: 1px solid #e2e8f0; }
+.similar-candidates-list > li:last-child { border-bottom: 0; }
+.similar-candidates-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.similar-candidates-row strong { min-width: 0; overflow-wrap: anywhere; }
+.similar-candidates-row a { flex: 0 0 auto; }
+.similar-candidates-gap { font-size: 13px; margin-top: 10px; color: #92400e; }
+.similar-candidates-list ul { margin: 4px 0 0; padding-left: 20px; font-size: 13px; overflow-wrap: anywhere; }

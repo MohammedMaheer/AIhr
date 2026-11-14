@@ -5,6 +5,35 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.14.5 - 2026-11-14
+
+### Clear Stale Search Actions And Clean Outreach Role Prefills
+
+- Replace an old result count with a pending label and remove its export action
+  when a new search starts. Clear the candidate-list progress state on failure;
+  preserve actual counts/results during repeated cleanup and restore export
+  normally when new verified results arrive.
+- Stop copying explicit skills/requirements clauses into outreach job titles,
+  subjects and generated template text. Preserve literal role punctuation such
+  as .NET, Node.js and Sr., the complete original query and manually edited drafts.
+- Preserve complete role names in the title helper and bound fallback keywords
+  to actual words: Data Analyst must not become Data, and required/recruitment
+  must not accidentally classify an HR search as UI/UX. Preserve punctuation in
+  framework names. No role requirement, score weight or eligibility rule changes.
+- Add DOM regressions for loading, failure cleanup, detached views and prefills.
+  No search, scoring, ranking, filtering, token limit, logo or layout changes.
+- Extend controlled real-provider acceptance to HR recruitment (ten exact
+  matches), data analysis (four) and sales management (one), each requesting ten
+  candidates. Retain truthful shortfalls and private source evidence. Runtime
+  gates and post-deploy observations are recorded in
+  `docs/EXPANDED_ROLE_DESKTOP_ACCEPTANCE_2026-11-14.md`.
+- Deployed final source `1d881e2` after 1,152 backend tests passed in each runtime
+  configuration, 25 frontend suites and verified 23-table restore/restart gates.
+  Real corrected-role searches returned 10/4/1 exact matches, all within scope;
+  the identical ten-result HR repeat reused all scores in 2.60 seconds. Empty
+  folder/date scopes blocked cached results without AI calls. Original logo,
+  layout, CVs, business records and unrelated applications were preserved.
+
 ## v2026.11.14.4 - 2026-11-14
 
 ### Recover Explicit Skills From Partial Search Profiles

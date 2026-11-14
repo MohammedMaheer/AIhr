@@ -1693,6 +1693,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Make showLoadingMessage available globally
     window.showLoadingMessage = function () {
+        const candidateCount = document.getElementById('candidate-count');
+        if (candidateCount) {
+            candidateCount.textContent = 'Searching...';
+            candidateCount.setAttribute('aria-busy', 'true');
+        }
+        document.getElementById('export-all-btn')?.remove();
+
         // Show loading in the candidate list
         const candidateList = document.getElementById('candidate-list');
         if (candidateList) {
@@ -1825,8 +1832,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Make hideLoadingMessage available globally
     window.hideLoadingMessage = function () {
-        // In split view, loading is handled by the generateEnhancedResults function
-        // No need to hide loading messages as they are replaced by actual content
+        const candidateCount = document.getElementById('candidate-count');
+        if (candidateCount?.getAttribute('aria-busy') === 'true') {
+            candidateCount.textContent = '0 results';
+            candidateCount.removeAttribute('aria-busy');
+        }
+        document.querySelector('#candidate-list .ai-search-state')?.remove();
     }
 
     // Make showFinalResultsNotification available globally
@@ -1848,12 +1859,12 @@ document.addEventListener('DOMContentLoaded', function () {
             // Direct matches
             /(?:looking for|seeking|hiring|need|want)\s+(?:a\s+|an\s+)?([^.;,]+?)(?:\s+with|\s+having|\s+who|\s+that|$)/i,
             /(?:position|role|job)(?:\s+of|\s+for)?\s*:?\s*([^.;,]+?)(?:\s+with|\s+having|\s+who|\s+that|$)/i,
-            /([a-zA-Z\s]+?)\s+(?:developer|engineer|analyst|manager|specialist|coordinator|director|lead|senior|junior|intern)/i,
+            /(?<![\w.])((?:[a-zA-Z]|\.NET\b)[a-zA-Z0-9.+#/\s-]*?\s+(?:developer|engineer|analyst|manager|specialist|coordinator|director|lead|senior|junior|intern|recruiter|accountant|designer|consultant|administrator|technician|nurse))\b/i,
             /(senior|junior|lead|principal|staff)\s+([a-zA-Z\s]+?)(?:\s+with|\s+having|\s+who|\s+that|$)/i,
             /([a-zA-Z\s]+?)\s+(?:with|having)\s+\d+\+?\s*years/i,
 
             // Common job titles
-            /(data scientist|software engineer|full stack developer|backend developer|frontend developer|devops engineer|product manager|business analyst|machine learning engineer|ai engineer|cloud architect|technical lead|scrum master|qa engineer|mobile developer|web developer|ui\/ux designer|systems administrator|network engineer|database administrator|security analyst|project manager)/i
+            /\b(data scientist|software engineer|full stack developer|backend developer|frontend developer|devops engineer|product manager|business analyst|machine learning engineer|ai engineer|cloud architect|technical lead|scrum master|qa engineer|mobile developer|web developer|ui\/ux designer|systems administrator|network engineer|database administrator|security analyst|project manager|accountant|recruiter)\b/i
         ];
 
         // Try to match patterns
@@ -1907,7 +1918,7 @@ document.addEventListener('DOMContentLoaded', function () {
         };
 
         for (const [keyword, title] of Object.entries(roleKeywords)) {
-            if (lowerQuery.includes(keyword)) {
+            if (new RegExp(`\\b${keyword}\\b`, 'i').test(lowerQuery)) {
                 return title;
             }
         }

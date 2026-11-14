@@ -12,7 +12,8 @@
         const query = clean(values.query ?? result.query);
         const prefix = query.replace(/^(?:please\s+)?(?:find|show|search for|looking for|i need|we need)\s+/i, '')
             .replace(/^(?:me\s+)?(?:\d+\s+)?(?:candidates?|profiles?|resumes?)\s+(?:for\s+)?/i, '')
-            .split(/\b(?:with|who|based|located|having|in|from|onsite|on-site)\b|[;\n]/i)[0].trim();
+            .split(/\b(?:with|who|based|located|having|in|from|onsite|on-site)\b|\b(?:required|mandatory|preferred|essential|must[- ]have)\s+skills?\s*[:=]|\b(?:skills?|requirements|qualifications|languages?|salary|location)\s*[:=]|[;\n]/i)[0]
+            .trim().replace(/[.!?]+$/, '').trim();
         const literalRole = prefix.length <= 120 && /\b(engineer|developer|analyst|manager|architect|accountant|designer|consultant|lead|specialist|administrator|recruiter|technician|nurse)\b/i.test(prefix) ? prefix : '';
         const position = literalRole || (!generic(result.job_title) ? result.job_title : '') || (!generic(values.position) ? values.position : '');
         const location = query.match(/\b(?:location\s*[:=]\s*|(?:based|located|onsite|on-site)\s+in\s+)([A-Za-z][A-Za-z ,.-]{1,70}?)(?=[;\n]|\s+(?:with|who|and|salary|experience)\b|$)/i)

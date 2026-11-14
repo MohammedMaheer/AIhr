@@ -340,7 +340,7 @@ def merge_profiles(primary: dict[str, Any], fallback: dict[str, Any]) -> dict[st
     return merged
 
 
-def profile_from_row(row: dict[str, Any]) -> dict[str, Any]:
+def profile_from_row(row: dict[str, Any], required_skills: Optional[list[str]] = None) -> dict[str, Any]:
     years = row.get("candidate_years")
     if isinstance(years, Decimal):
         years = float(years)
@@ -355,6 +355,14 @@ def profile_from_row(row: dict[str, Any]) -> dict[str, Any]:
     }
     if not any(profile.get(k) for k in ("candidate_years", "candidate_location", "candidate_languages", "candidate_skills")):
         profile = profile_from_text(row.get("text") or "", source="text_runtime")
+    # Indexed skills are a partial vocabulary, not proof that a CV lacks a skill.
+    # Supplement only explicit query terms; the full scorecard still verifies fit.
+    text = row.get("text") or ""
+    if text and required_skills:
+        profile["candidate_skills"] = _dedupe(profile["candidate_skills"] + [
+            skill for skill in required_skills
+            if re.search(_skill_pattern(skill), text, re.IGNORECASE)
+        ])
     return profile
 
 

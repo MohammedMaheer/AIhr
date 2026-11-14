@@ -317,15 +317,15 @@ def _criteria_sql_where(criteria) -> tuple[str, list[Any]]:
             clauses.append("%s = ANY(candidate_languages)")
             params.append(language)
 
-    skill_sql="EXISTS (SELECT 1 FROM unnest(candidate_skills) s WHERE s ~* %s)"
+    skill_sql = "(EXISTS (SELECT 1 FROM unnest(candidate_skills) s WHERE s ~* %s) OR extracted_text ~* %s)"
     if criteria.skill_expression is not None:
         clause,values=requirements_logic.sql(criteria.skill_expression,
-            lambda term:(skill_sql,[_skill_pattern(term)]))
+            lambda term:(skill_sql,[_skill_pattern(term), _skill_pattern(term)]))
         clauses.append(clause);params.extend(values)
     else:
         for skill in criteria.required_skills:
             clauses.append(skill_sql)
-            params.append(_skill_pattern(skill))
+            params.extend([_skill_pattern(skill), _skill_pattern(skill)])
 
     return " AND ".join(clauses), params
 
@@ -358,7 +358,7 @@ def _rank_rows(rows: list[Dict[str, Any]], query: str, page_size: int,
 
     ranked = []
     for row in rows:
-        profile = profile_from_row(row)
+        profile = profile_from_row(row, required_skills=criteria.required_skills)
         ev, status = evaluate_profile(profile, criteria)
         row["candidate_profile"] = profile
         row["criteria_match_preview"] = ev

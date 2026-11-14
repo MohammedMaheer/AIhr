@@ -5,6 +5,33 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.14.4 - 2026-11-14
+
+### Recover Explicit Skills From Partial Search Profiles
+
+- A controlled real design search reproduced a false negative: a CV explicitly
+  listed Adobe Illustrator, but its partial indexed skill vocabulary omitted it.
+- Supplement retrieval profiles with only explicitly requested skills found in
+  the existing CV text using the shared bounded skill matcher. Apply the same
+  evidence fallback in scoped PostgreSQL supplemental retrieval so those CVs do
+  not depend solely on the initial semantic pool. No reindexing or paid AI is
+  required for this check; full-document AI verification still decides eligibility.
+- Preserve boolean requirements, location/experience rejection, tenant/folder/
+  tag/date scope, score weights, result-count shortfalls, logo and UI.
+- Add partial-index, boolean, token-boundary, final-verification and real SQL
+  parity regressions. Local checks: 108 focused tests, 30 PostgreSQL tests and
+  the opt-in desktop/mobile search workflow passed. Full runtime and deployment
+  acceptance are recorded in
+  `docs/AI_MULTIROLE_TEN_CANDIDATE_ACCEPTANCE_2026-11-14.md`.
+- Real accounting acceptance returned ten supported matches; its cached repeat
+  retained all ten scores and reduced measured tokens from 77,343 to 1,138.
+  These are bounded sample measurements, not population-wide accuracy claims.
+- Deployed code `49e4f85` after 1,152 tests passed in each production-runtime
+  provider configuration and a verified 23-table backup restore. The real design
+  rerun recovered the intended match. Accounting retained ten identical cached
+  scorecards after restart and on mobile; post-deploy exclusions still returned
+  zero. Original files, unrelated apps, logo, layout and scoring rules preserved.
+
 ## v2026.11.14.3 - 2026-11-14
 
 ### Ground Scorecard Facts And Employment Dates

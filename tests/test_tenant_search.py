@@ -198,9 +198,9 @@ def test_real_postgres_shortlist_and_final_skill_filter_agree(queue_db, wanted):
     criteria = SearchCriteria(required_skills=[wanted])
     where, params = discovery._criteria_sql_where(criteria)
     with queue_db.get_cursor() as (cursor, _):
-        cursor.execute('CREATE TABLE resume_embeddings (id INTEGER,embedding INTEGER,candidate_skills TEXT[])')
+        cursor.execute("CREATE TABLE resume_embeddings (id INTEGER,embedding INTEGER,candidate_skills TEXT[],extracted_text TEXT DEFAULT '')")
         for index, skill in enumerate(skills):
-            cursor.execute('INSERT INTO resume_embeddings VALUES (%s,1,%s)', (index, [skill]))
+            cursor.execute('INSERT INTO resume_embeddings (id,embedding,candidate_skills) VALUES (%s,1,%s)', (index, [skill]))
         cursor.execute('SELECT id FROM resume_embeddings WHERE '+where, params)
         shortlisted = {row['id'] for row in cursor.fetchall()}
     expected = {index for index, skill in enumerate(skills) if not evaluate_criteria(
@@ -221,14 +221,39 @@ def test_real_postgres_and_final_boolean_requirements_agree(queue_db, query):
     criteria = parse_search_criteria(query)
     where, params = discovery._criteria_sql_where(criteria)
     with queue_db.get_cursor() as (cursor, _):
-        cursor.execute('CREATE TABLE resume_embeddings (id INTEGER, embedding INTEGER, candidate_skills TEXT[], candidate_languages TEXT[])')
+        cursor.execute("CREATE TABLE resume_embeddings (id INTEGER, embedding INTEGER, candidate_skills TEXT[], candidate_languages TEXT[], extracted_text TEXT DEFAULT '')")
         for index, (skills, languages) in enumerate(profiles):
             profile = profile_from_analysis({'hr_scorecard': {'candidate_overview': {'skills': skills},
                                              'detailed_analysis': {'languages': languages}}})
-            cursor.execute('INSERT INTO resume_embeddings VALUES (%s,1,%s,%s)',
+            cursor.execute('INSERT INTO resume_embeddings (id,embedding,candidate_skills,candidate_languages) VALUES (%s,1,%s,%s)',
                            (index, profile['candidate_skills'], profile['candidate_languages']))
         cursor.execute('SELECT id FROM resume_embeddings WHERE '+where, params)
         shortlisted = {row['id'] for row in cursor.fetchall()}
     expected = {index for index, (skills, languages) in enumerate(profiles) if not evaluate_criteria(
         {'candidate_overview': {'skills': skills}, 'detailed_analysis': {'languages': languages}}, criteria)['misses']}
     assert shortlisted == expected
+
+
+@pytest.mark.parametrize('query', [
+    'Required skills: Adobe Illustrator',
+    'Required skills: (Adobe Illustrator or Figma) and Photoshop',
+    'Required skills: Node.js and React.js',
+])
+def test_postgres_partial_profile_source_evidence_matches_runtime_shortlist(queue_db, query):
+    texts = [None, '', 'Adobe Illustrator and Photoshop', 'Figma and Photoshop',
+             'Adobe IllustratorOther and Photoshop', 'NodeJS and ReactJS',
+             'multi-node SDN networks and Reactive programming']
+    criteria = parse_search_criteria(query)
+    where, params = discovery._criteria_sql_where(criteria)
+    rows = [{'id': index, 'candidate_skills': ['Excel'], 'text': text, 'score': .8}
+            for index, text in enumerate(texts)]
+    with queue_db.get_cursor() as (cursor, _):
+        cursor.execute('CREATE TABLE resume_embeddings (id INTEGER,embedding INTEGER,candidate_skills TEXT[],extracted_text TEXT)')
+        for row in rows:
+            cursor.execute('INSERT INTO resume_embeddings VALUES (%s,1,%s,%s)',
+                           (row['id'], row['candidate_skills'], row['text']))
+        cursor.execute('SELECT id FROM resume_embeddings WHERE '+where, params)
+        shortlisted = {row['id'] for row in cursor.fetchall()}
+    expected = {row['id'] for row in discovery._rank_rows(rows, query, 10)}
+    assert shortlisted == expected
+    assert shortlisted, 'Explicit source evidence must survive partial skill indexing'

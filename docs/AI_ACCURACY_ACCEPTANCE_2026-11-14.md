@@ -1,4 +1,4 @@
-# Controlled AI Search Acceptance: v2026.11.14.2
+# Controlled AI Search Acceptance: v2026.11.14.2 And v2026.11.14.3
 
 ## Observed Defect And Fix
 
@@ -20,7 +20,40 @@ named nonmatches, text indexing, strict ranked retrieval and SQL/Python parity.
 Existing location, experience, Boolean requirements and hard-filter tests remain
 part of the complete production-dependency regression gate.
 
+## Date And Fact Grounding Follow-Up
+
+The scoring-keyword prompt also required inferred tools/certifications and forced
+every category to be populated. That made unrequested certifications appear as
+required-keyword gaps and fed irrelevant terms into the keyword-weighted score.
+The shorter replacement preserves the JSON categories and all stated job
+competencies, permits empty categories and forbids invented requirements.
+Generic titles can still supply their core competency; semantic retrieval query
+expansion is unchanged. Actual keyword/token reductions are measured in the
+controlled rerun rather than assumed as an application-wide percentage.
+
+The first repaired real search returned the expected two candidates in 12.47
+seconds, ranked 88 and 86, with the truthful one-result shortfall. Core React,
+Node.js and experience assertions were supported by the source documents. The
+review also found a job starting in May 2023 described as lasting about 1.5 years,
+plus an unsupported promotion claim. Those ancillary scorecard claims did not
+meet the source-evidence standard and are not presented as passed accuracy.
+
+The follow-up adds a trusted UTC reference month to direct and split scorecard
+generation, requires source support for factual claims and makes future
+retention explicitly uncertain. The same context participates in the existing
+scorecard prompt hash. A month change invalidates time-dependent assessment
+reuse without daily cache churn; old ungrounded assessments are bypassed. This
+can require fresh scoring once, but does not change job inputs, score weights,
+output schema or search/ranking rules. Grounding instructions reduce risk; they
+do not make probabilistic outputs a substitute for recruiter review.
+
 ## Live Acceptance Method
+
+The live popup checks also exposed a display-only period-label issue: existing
+custom dates could be shown beside "Any time" in a newly mounted dialog. The
+period selection now travels with internal filter-view state, while the public
+backend payload remains unchanged. Presets and manual edits synchronize across
+the initial form and results dialog; the visual layout is unchanged.
 
 The controlled test set contains only three existing CVs in one selected
 folder/tag/received-day intersection. Source text is reviewed privately first.
@@ -49,7 +82,7 @@ or turn model-generated scores into objective hiring decisions.
 
 ## Cost And Boundaries
 
-Use the deployed provider/model without changing prompts, full-CV inputs or
+Use the deployed provider/model without shortening full-CV inputs or changing
 output budgets. Keep each paid search within the small verified scope, examine
 usage before another run, and avoid broad exploratory paid searches. Repeat and
 empty-scope checks should use the existing cache and early exit.
@@ -64,4 +97,6 @@ The code-only deployment is gated by full runtime regressions, a source secret
 scan, verified backup restore and active-task checks. Original CV bytes and
 unrelated VPS apps must be preserved. Normal searches retain their ordinary
 history, cache, metadata and usage records for traceability. The logo and UI,
-criteria meaning, ranking weights, scoring prompts and schema are unchanged.
+criteria meaning, ranking weights and schema are unchanged. Only trusted date
+and evidence instructions are added to scorecard prompts, and scoring keywords
+are grounded in the supplied job description instead of invented category fillers.

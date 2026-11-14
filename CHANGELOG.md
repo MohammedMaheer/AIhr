@@ -5,6 +5,30 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.14.3 - 2026-11-14
+
+### Ground Scorecard Facts And Employment Dates
+
+- Stop forcing invented skills, tools and certifications into empty keyword
+  categories. Extract the job's stated competencies using the same JSON shape;
+  retain broad-title core competencies and separate semantic search expansion.
+  This removes misleading required-keyword gaps and unnecessary matching tokens.
+- Keep the date-period label synchronized when reopening search filters or
+  editing dates in another mounted view. Preserve date presets and custom-range
+  labels without changing the backend filter payload or visual layout.
+- Real-provider review recovered both intended matches after the alias fix but
+  exposed a stale assumed reference year and an unsupported promotion claim.
+- Prefix direct and split scorecard generation with a trusted UTC reference
+  month and source-grounding rules. Resolve Present/Current against that month,
+  do not invent candidate facts and label future retention as uncertain.
+- Include the exact grounding context in the existing scorecard prompt hash.
+  Reuse remains available within the month; older ungrounded or different-month
+  assessments cannot masquerade as a current grounded cache hit.
+- Preserve all job/CV input text, scoring weights, ranking, filters, schema,
+  logo and UI. Existing inference can still be uncertain; this is not a claim
+  of error-free hiring predictions. Real acceptance and usage are recorded in
+  PR #1 after the gated deployment and controlled rerun.
+
 ## v2026.11.14.2 - 2026-11-14
 
 ### Recognize Equivalent JavaScript Framework Skill Names

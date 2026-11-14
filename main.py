@@ -104,6 +104,7 @@ from google.protobuf import timestamp_pb2
 from search_criteria import parse_search_criteria, apply_criteria_to_results
 from services.llm_cache import PreparationCache
 from services.search_reuse import SearchReuse
+from services.assessment_context import assessment_prompt
 from services.document_validation import validate_docx_archive
 from services.resume_folders import normalize_folders, source_in_folders
 from services.resume_filters import normalize_filters
@@ -3268,10 +3269,10 @@ Education: {entities.get('education', {}).get('degree', 'Not available')}
 Work History: {', '.join([f"{exp.get('company', 'Company')} ({exp.get('duration', 'Duration')})" for exp in entities.get('work_experience', [])[:3]])}
 """
 
-        scorecard_prompt = SCORECARD_PROMPT.format(
+        scorecard_prompt = assessment_prompt(SCORECARD_PROMPT.format(
             job_posting=_untrusted_prompt_data(query, "job requirements", max_len=4000),
             resume_content=_untrusted_prompt_data(resume_content, "candidate profile")
-        )
+        ))
 
         contents = [
             types.Content(
@@ -3879,10 +3880,10 @@ async def analyze_resume_with_hr_scorecard(resume_content: str, query: str, job_
             print(f"🧠 Using model: {model} for HR scorecard generation")
 
             # Create comprehensive HR scorecard prompt
-            hr_scorecard_prompt = HR_SCORECARD_PROMPT.format(
+            hr_scorecard_prompt = assessment_prompt(HR_SCORECARD_PROMPT.format(
                 job_posting=_untrusted_prompt_data(query, "job requirements", max_len=4000),
                 resume_content=_untrusted_prompt_data(resume_content, "resume")
-            )
+            ))
 
             contents = [
                 types.Content(
@@ -9521,7 +9522,7 @@ async def run_hr_scorecard_task(task_payload):
                             return blob.generation
                         version = await asyncio.to_thread(_resume_version)
                         jd_hash = scorecard_signature(query, job_title, user_bucket,
-                            file_path_for_cache, version, HR_SCORECARD_PROMPT,
+                            file_path_for_cache, version, assessment_prompt(HR_SCORECARD_PROMPT),
                             keywords=standardized_keywords,
                             auxiliary_prompts=(ENTITY_EXTRACTION_PROMPT, SCORECARD_PROMPT,
                                                KEYWORD_MATCHING_PROMPT))

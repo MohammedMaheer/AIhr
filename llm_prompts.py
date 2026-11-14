@@ -485,79 +485,34 @@ HARD LIMITS (failure to follow these will cause the parser to reject your output
 # Extract meaningful keywords that would help find qualified technical candidates, even if the job description is generic. Maximum 8 keywords per category."""
 
 KEYWORD_EXTRACTION_PROMPT = """
-You are an expert recruiter with deep knowledge across technical, managerial, functional, and hybrid roles.
-Extract meaningful keywords from the job posting below for candidate matching.
+Extract job-grounded keywords for candidate matching across technical and non-technical roles.
 
 JOB POSTING:
 {job_posting}
 
-EXTRACTION STRATEGY - BE COMPREHENSIVE AND INCLUSIVE:
-1. ✅ Extract ALL relevant skills, tools, and qualifications mentioned (technical AND non-technical)
-2. ✅ Include methodologies, frameworks, and approaches relevant to the role
-3. ✅ Extract soft skills, leadership qualities, and interpersonal skills
-4. ✅ Include certifications, qualifications, and education requirements
-5. ✅ Extract domain knowledge and industry expertise
-6. ✅ For any role type, infer common skills based on industry standards
-7. ✅ Include both explicit and implicit requirements
-8. ✅ Extract experience levels and seniority indicators
-9. ✅ Include tools commonly used in similar roles (even if not explicitly mentioned)
-10. ✅ ALWAYS extract at least 2-3 keywords per category when possible
+RULES:
+- Include all stated skills, tools, methodologies, qualifications, soft skills and domain duties.
+- Every keyword must be supported by the supplied job text. Normalize equivalent terminology,
+  but do not invent tools, certifications, education or industries because similar roles use them.
+- A broad role title may supply its core competency (for example, Accountant -> Accounting),
+  not an imagined technology stack or certification. Do not add generic filler skills.
+- Preserve stated requirements and alternatives. Do not turn preferred/optional skills into
+  mandatory requirements. Experience and location restrictions are handled separately.
+- Deduplicate equivalent terms. There is no quota per category; use empty arrays when a category
+  is not stated. Do not truncate a detailed job's actual requirements to fill a fixed list size.
 
-INTELLIGENT EXTRACTION APPROACH:
-
-1. **ANALYZE THE ROLE CONTEXT** - First understand what type of role this is and what industry/function it serves
-2. **IDENTIFY CORE COMPETENCIES** - What are the main skills needed to succeed in this specific role?
-3. **EXTRACT RELEVANT TOOLS** - What software, platforms, or systems would someone in this role typically use?
-4. **DETERMINE METHODOLOGIES** - What processes, frameworks, or approaches are relevant to this role?
-5. **ASSESS SOFT SKILLS** - What interpersonal and communication skills are important for this role?
-6. **CONSIDER CERTIFICATIONS** - What qualifications or certifications would be valuable for this role?
-7. **THINK DOMAIN EXPERTISE** - What industry knowledge or specialized areas are relevant?
-
-EXTRACTION PRINCIPLES:
-- **BE CONTEXTUAL** - Extract keywords that make sense for the specific role and industry
-- **BE COMPREHENSIVE** - Include both obvious and subtle skill requirements
-- **BE PRACTICAL** - Focus on skills that would actually help identify qualified candidates
-- **BE ADAPTIVE** - Adjust your extraction based on the role level (entry, mid, senior, executive)
-- **BE INCLUSIVE** - Consider both technical and non-technical skills as appropriate for the role
-
-RETURN ONLY valid JSON in this EXACT format:
+Return only a valid JSON object with these category keys and keyword-string arrays:
 {{
     "keywords": {{
-        "hard_skills": ["Python", "Data Analysis", "Project Management", "Software Development"],
-        "tools_platforms": ["Jira", "AWS", "Excel", "SQL Server", "Git"],
-        "methodologies": ["Agile", "Scrum", "ITIL", "DevOps"],
-        "soft_skills": ["Communication", "Leadership", "Problem Solving", "Teamwork"],
-        "certifications": ["PMP", "AWS Certified", "Scrum Master"],
-        "domain_expertise": ["Healthcare", "Finance", "E-commerce", "Technical Support"]
+        "hard_skills": [],
+        "tools_platforms": [],
+        "methodologies": [],
+        "soft_skills": [],
+        "certifications": [],
+        "domain_expertise": []
     }}
 }}
 
-CRITICAL: You MUST extract at least 2-3 keywords in each category. If the job posting lacks specific details, infer reasonable keywords based on the role type and industry standards.
-
-DYNAMIC EXTRACTION GUIDELINES:
-
-**THINK LIKE A RECRUITER** - What keywords would you search for to find the best candidates for this specific role?
-
-**CONSIDER THE ROLE LEVEL:**
-- Entry-level: Focus on foundational skills, education, basic tools
-- Mid-level: Include specialized skills, experience with specific tools/processes
-- Senior-level: Add leadership, strategy, advanced certifications, industry expertise
-- Executive-level: Emphasize strategic thinking, vision, governance, stakeholder management
-
-**ADAPT TO INDUSTRY CONTEXT:**
-- Healthcare: Include compliance, patient care, medical terminology, regulatory knowledge
-- Finance: Include financial regulations, risk management, compliance, analytical skills
-- Technology: Include programming, cloud platforms, development methodologies, security
-- Education: Include curriculum development, student engagement, assessment, pedagogy
-- Manufacturing: Include process optimization, quality control, safety, supply chain
-
-**EXTRACT BASED ON ACTUAL JOB CONTENT:**
-- What does this role actually DO day-to-day?
-- What tools would they need to use?
-- What knowledge would they need to have?
-- What skills would make someone successful in this role?
-
-DO NOT return empty arrays. Always extract meaningful keywords that would help find qualified candidates.
 """
 
 KEYWORD_ANALYSIS_PROMPT = """You are an expert at analyzing keyword matches between job requirements and candidate resumes.

@@ -21,6 +21,16 @@ CVs and private audit receipts are excluded from Git.
 - Preserve provider keys, scoring/eligibility behavior, original CVs and unrelated
   applications. CI billing and off-site backups are excluded by owner direction.
   Verification is recorded in `docs/PRODUCTION_GUARDRAILS_2026-11-14.md`.
+- Deployed source `8f76f64` after 1,199 backend tests passed per provider
+  configuration, 27 frontend suites, three isolated browser/API workflows and a
+  verified 23-table restore plus persistent-volume recreation rehearsal. All
+  7,862 referenced original file hashes and 22 unrelated containers are intact.
+- Ten live read-only folder/tag/date cases passed without scope leaks; a
+  four-worker, 32-request retrieval probe had zero errors and 116.64 ms p95.
+  This is SQL/vector retrieval, not full AI search or sustained capacity.
+  Installed limits/log rotation and the active local monitor were verified.
+  Health and acceptance checks added no paid AI calls. Existing disk headroom
+  warning remains visible rather than being hidden by cleanup or new thresholds.
 
 ## v2026.11.14.6 - 2026-11-14
 

@@ -1,20 +1,31 @@
 """Opt-in, local-only suggestions; never substitute them for verified exact results."""
 import math
 import re
+import threading
 
 from search_criteria import evaluate_criteria, parse_search_criteria
 from services.resume_folders import source_in_folders
 from vps_local.profile_extractor import profile_from_row, profile_to_analysis
 
+_slots = threading.BoundedSemaphore(2)
 
 def search(query, count, tenant_filter, folders, filters):
+    if not _slots.acquire(blocking=False):
+        raise RuntimeError('Similar profile search is busy')
+    try:
+        return _search(query, count, tenant_filter, folders, filters)
+    finally:
+        _slots.release()
+
+
+def _search(query, count, tenant_filter, folders, filters):
     from vps_local.discovery_shim import _vector_search
 
     criteria = parse_search_criteria(query)
     # Only this explicit preview bypasses qualification preselection. SQL still
     # applies the unchanged tenant/folder/tag/date scope before vector ranking.
     pool = _vector_search(query, min(100, max(count * 5, 25)), tenant_filter,
-                          folders, filters, criteria_query='')
+                          folders, filters, criteria_query='', profile_preview=True)
     suggestions, seen = [], set()
     for row in pool:
         filename, bucket = row.get('filename') or '', row.get('storage_bucket') or ''

@@ -34,7 +34,7 @@ def test_opt_in_similarity_retains_near_misses_and_scope_without_paid_models(mon
                                      'company_id: ANY("1")',scopes,filters)
     assert len(result)==4 and result[0]['id']=='1'
     assert calls[0][0][2:] == ('company_id: ANY("1")',scopes,filters)
-    assert calls[0][1]=={'criteria_query':''}
+    assert calls[0][1]=={'criteria_query':'','profile_preview':True}
     assert all(r['verification']=='indexed_profile_only' for r in result)
     assert all('match_score' not in r and 'text' not in r and 'gemini_analysis' not in r for r in result)
     assert {m['criterion'] for r in result for m in r['unmet_criteria']} >= {'skill','experience_years','location'}
@@ -80,7 +80,7 @@ def test_similar_api_preserves_tenant_and_explicit_scope(api,monkeypatch):
     monkeypatch.setenv('SMARTHR_LOCAL_MODE','1')
     monkeypatch.setattr(main,'get_company_resources',lambda u:('qa-bucket','qa-store'))
     from services import resume_folders
-    monkeypatch.setattr(resume_folders,'searchable_count',lambda *a:3)
+    monkeypatch.setattr(resume_folders,'searchable_count',lambda *a,**k:3)
     called=MagicMock(return_value=[{'verification':'indexed_profile_only'}])
     monkeypatch.setattr(similar_candidates,'search',called)
     response=client.post('/api/similar-candidates',data={'query':'Engineer in Dubai with 3-5 years',
@@ -97,7 +97,7 @@ def test_empty_scope_skips_even_local_embedding(api,monkeypatch):
     client,db=api
     monkeypatch.setenv('SMARTHR_LOCAL_MODE','1')
     from services import resume_folders
-    monkeypatch.setattr(resume_folders,'searchable_count',lambda *a:0)
+    monkeypatch.setattr(resume_folders,'searchable_count',lambda *a,**k:0)
     called=MagicMock();monkeypatch.setattr(similar_candidates,'search',called)
     response=client.post('/api/similar-candidates',data={'query':'Engineer','result_count':'10'})
     assert response.status_code==200 and response.json()['results']==[]
@@ -108,7 +108,7 @@ def test_all_authorized_folders_preserve_other_filters_but_explicit_empty_is_inv
     client,db=api
     monkeypatch.setenv('SMARTHR_LOCAL_MODE','1')
     from services import resume_folders
-    monkeypatch.setattr(resume_folders,'searchable_count',lambda *a:2)
+    monkeypatch.setattr(resume_folders,'searchable_count',lambda *a,**k:2)
     called=MagicMock(return_value=[])
     monkeypatch.setattr(similar_candidates,'search',called)
     data={'query':'Python developer','filters':'{"tags":["Data and AI"],"date_from":"2026-01-01"}'}
@@ -143,7 +143,47 @@ def test_similar_api_rate_limit_prevents_unbounded_local_inference(api,monkeypat
     monkeypatch.setattr(main.limiter,'enabled',True)
     monkeypatch.setenv('SMARTHR_LOCAL_MODE','1')
     from services import resume_folders
-    monkeypatch.setattr(resume_folders,'searchable_count',lambda *a:0)
+    monkeypatch.setattr(resume_folders,'searchable_count',lambda *a,**k:0)
     for _ in range(10):
         assert client.post('/api/similar-candidates',data={'query':'Engineer'}).status_code==200
     assert client.post('/api/similar-candidates',data={'query':'Engineer'}).status_code==429
+
+
+def test_busy_preview_does_not_queue_more_embedding_work(monkeypatch):
+    import threading
+    slots=threading.BoundedSemaphore(1)
+    monkeypatch.setattr(similar_candidates,'_slots',slots)
+    called=MagicMock()
+    monkeypatch.setattr(similar_candidates,'_search',called)
+    assert slots.acquire(blocking=False)
+    try:
+        with pytest.raises(RuntimeError,match='busy'):
+            similar_candidates.search('Engineer',10,'',[],{})
+        called.assert_not_called()
+    finally:
+        slots.release()
+    called.side_effect=ValueError('Test failure')
+    with pytest.raises(ValueError):
+        similar_candidates.search('Engineer',10,'',[],{})
+    assert slots.acquire(blocking=False),'Failed searches must release their worker slot'
+    slots.release()
+
+
+@pytest.mark.parametrize('disconnected',[True,False])
+def test_disconnected_client_skips_new_embedding_work(api,monkeypatch,disconnected):
+    from unittest.mock import AsyncMock
+    from starlette.requests import Request
+    from services import resume_folders
+    client,db=api
+    monkeypatch.setenv('SMARTHR_LOCAL_MODE','1')
+    calls=AsyncMock(side_effect=[True] if disconnected else [False,True])
+    monkeypatch.setattr(Request,'is_disconnected',calls)
+    count=MagicMock(return_value=3)
+    monkeypatch.setattr(resume_folders,'searchable_count',count)
+    search=MagicMock()
+    monkeypatch.setattr(similar_candidates,'search',search)
+    assert client.post('/api/similar-candidates',data={'query':'Engineer'}).status_code==499
+    search.assert_not_called()
+    assert count.call_count==(0 if disconnected else 1)
+    if not disconnected:
+        assert count.call_args.kwargs=={'timeout_ms':5000}

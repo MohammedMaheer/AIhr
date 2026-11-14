@@ -9,7 +9,8 @@
     function offer(root, data) {
         if (!root || root.querySelector('[data-find-similar]') || !Array.isArray(data.results) || data.results.length ||
             typeof data.query !== 'string' || !data.query.trim() || !Array.isArray(data.folder_filters) ||
-            !data.resume_filters || typeof data.resume_filters !== 'object' || Array.isArray(data.resume_filters)) return;
+            !data.resume_filters || typeof data.resume_filters !== 'object' || Array.isArray(data.resume_filters) ||
+            data.similar_scope_identity !== identity()) return;
         const scope = JSON.parse(JSON.stringify({query:data.query, folders:data.folder_filters,
             filters:data.resume_filters, count:data.requested_result_count || 10}));
         const owner = identity();

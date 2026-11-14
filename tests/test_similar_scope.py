@@ -43,3 +43,19 @@ def test_empty_similar_scope_never_embeds_or_looks_outside_selection(flow,monkey
     response=flow.client.post('/api/similar-candidates',data={'query':'Designer in Dubai',
         'folders':json.dumps([{'bucket':BUCKET,'path':'Missing folder'}]),'result_count':'10'})
     assert response.status_code==200 and response.json()['results']==[]
+
+
+def test_profile_preview_keeps_indexed_details_with_advanced_ranking_disabled(flow,monkeypatch):
+    seed(flow)
+    with flow.db.get_cursor() as (cur,_):
+        cur.execute("UPDATE resume_embeddings SET candidate_years=7,candidate_location='Sharjah' WHERE company_id=1")
+        cur.execute("CREATE INDEX fixture_hnsw ON resume_embeddings USING hnsw (embedding vector_cosine_ops)")
+    from services.similar_candidates import search
+    results=[]
+    for advanced in (True,False):
+        monkeypatch.setattr(discovery_shim,'ADVANCED_SEARCH_ENABLED',advanced)
+        rows=search('Designer in Dubai with 3-5 years. Required skills: Figma',10,'company_id: ANY("1")',[],{})
+        assert rows and all(r['experience_years']==7 and r['location']=='sharjah' for r in rows)
+        results.append(rows)
+    assert results[0]==results[1]
+    assert all(r['unmet_criteria'] for r in results[0])

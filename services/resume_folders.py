@@ -78,12 +78,14 @@ def inventory(db, user):
         return [dict(row) for row in cur.fetchall()]
 
 
-def searchable_count(db, user, folders, filters=None):
+def searchable_count(db, user, folders, filters=None, *, timeout_ms=None):
     from services.resume_filters import filters_sql
     scope, params = workspace_scope(user)
     selected, selected_params = folder_sql(folders)
     filtered, filtered_params = filters_sql(filters)
     with db.get_cursor() as (cur, _):
+        if timeout_ms is not None:
+            cur.execute("SELECT set_config('statement_timeout', %s, true)", (str(max(1, int(timeout_ms))),))
         cur.execute(f'SELECT count(*) AS count FROM resume_embeddings WHERE embedding IS NOT NULL AND {scope} AND {selected} AND {filtered}',
                     [*params, *selected_params, *filtered_params])
         return cur.fetchone()['count']

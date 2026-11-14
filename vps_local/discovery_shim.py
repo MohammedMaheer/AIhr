@@ -577,7 +577,7 @@ def _tenant_scope(filter_str: str) -> tuple[str, list]:
 
 def _vector_search(query: str, page_size: int = 10,
                    filter_str: str = "", folder_filters=None, resume_filters=None,
-                   criteria_query=None) -> List[Dict[str, Any]]:
+                   criteria_query=None, profile_preview=False) -> List[Dict[str, Any]]:
     """Run pgvector ANN search; return list of dicts shaped like Discovery results."""
     scope_sql, scope_params = _tenant_scope(filter_str)
     from services.resume_folders import folder_sql
@@ -589,7 +589,7 @@ def _vector_search(query: str, page_size: int = 10,
     scope_sql += f' AND ({filtered_sql})'
     scope_params.extend(filtered_params)
     source_sql, source_params = 'resume_embeddings', []
-    if folder_filters or resume_filters:
+    if folder_filters or resume_filters or profile_preview:
         # Rank the complete selected subset. An ANN index can otherwise filter
         # after its global nearest-neighbour pool and miss eligible folder CVs.
         source_sql = f'(SELECT * FROM resume_embeddings WHERE {scope_sql} OFFSET 0) AS scoped_resumes'
@@ -603,9 +603,11 @@ def _vector_search(query: str, page_size: int = 10,
     conn = pool.getconn()
     try:
         with conn.cursor() as cur:
+            if profile_preview:
+                cur.execute("SET LOCAL statement_timeout = '10000ms'")
             # Keep the lightweight path for semantic-only searches, but hard
             # criteria require profile evaluation even when hybrid ranking is off.
-            if not ADVANCED_SEARCH_ENABLED and criteria.is_empty():
+            if not ADVANCED_SEARCH_ENABLED and criteria.is_empty() and not profile_preview:
                 cur.execute(
                     f"""
                     SELECT id, filename, folder, file_size, content_type,
@@ -636,6 +638,8 @@ def _vector_search(query: str, page_size: int = 10,
 
             _ensure_advanced_search_schema(cur)
             conn.commit()
+            if profile_preview:
+                cur.execute("SET LOCAL statement_timeout = '10000ms'")
 
             # Cosine distance uses the HNSW vector_cosine_ops index. In
             # advanced mode we pull a deeper semantic pool, add full-text rank

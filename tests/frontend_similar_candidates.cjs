@@ -11,9 +11,12 @@ async function run(){
  w.fetch=(url,options)=>{assert.equal(url,'/api/similar-candidates');calls++;payload=options.body;return new Promise(r=>{resolve=r;});};
  w.eval(fs.readFileSync('static/js/similar-candidates.js','utf8'));
  const data={query:'Engineer in Dubai with 3-5 years. Required skills: Python',results:[],requested_result_count:10,
+   similar_scope_identity:JSON.stringify([7,undefined,{company_id:1}]),
    folder_filters:[{bucket:'fixture',path:'selected'}],resume_filters:{tags:['Data and AI'],date_basis:'received',date_from:'2026-01-01'}};
  w.SimilarCandidates.offer(root,{...data,results:[{}]});assert.equal(root.querySelector('button'),null);
  w.SimilarCandidates.offer(root,{query:data.query,results:[]});assert.equal(root.querySelector('button'),null,'Legacy history without scope must not broaden');
+ w.SimilarCandidates.offer(root,{...data,similar_scope_identity:undefined});assert.equal(root.querySelector('button'),null,'Saved search without original live identity must not broaden tenant scope');
+ w.SimilarCandidates.offer(root,{...data,similar_scope_identity:'another workspace'});assert.equal(root.querySelector('button'),null);
  w.SimilarCandidates.offer(root,data);w.SimilarCandidates.offer(root,data);
  const button=root.querySelector('[data-find-similar]');assert(button);assert.equal(root.querySelectorAll('button').length,1);
  assert.equal(calls,0,'Suggestions must require explicit opt-in');

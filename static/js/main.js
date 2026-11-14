@@ -1930,6 +1930,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const pendingCandidateSearches = new Map();
 
     function performRealSearch(query, onProgress) {
+        const similarIdentity = JSON.stringify([window.currentUser?.id, window.currentUser?.user_type, window.currentUser?.company]);
         let folders = null, filters = {};
         try {
             window.ResumeFolders?.validate();
@@ -2023,7 +2024,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 };
             }).then(value => ({...value, query: value.query || query, job_title: value.job_title || jobTitle,
                 folder_filters: folders || [], resume_filters: filters,
-                requested_result_count: value.requested_result_count || resultCount})).finally(() => {
+                requested_result_count: value.requested_result_count || resultCount,
+                similar_scope_identity: similarIdentity})).finally(() => {
                 pending.listeners.clear();
                 if (key && pendingCandidateSearches.get(key) === pending) pendingCandidateSearches.delete(key);
             });

@@ -6703,7 +6703,12 @@ async def similar_candidates(
         from services.resume_folders import searchable_count
         from services.similar_candidates import search
         results = []
-        if await asyncio.to_thread(searchable_count, db, user, selected, filtering):
+        if await request.is_disconnected():
+            raise HTTPException(status_code=499, detail='Search request closed.')
+        available = await asyncio.to_thread(searchable_count, db, user, selected, filtering, timeout_ms=5000)
+        if await request.is_disconnected():
+            raise HTTPException(status_code=499, detail='Search request closed.')
+        if available:
             results = await asyncio.to_thread(search, query, count, tenant, selected, filtering)
         return {'success': True, 'query': query, 'match_mode': 'similar',
                 'verification': 'indexed_profile_only', 'paid_ai_calls': 0,

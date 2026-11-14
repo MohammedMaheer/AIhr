@@ -26,7 +26,11 @@ provider. It is not a verified HR scorecard and makes no exact-match promise.
 ## Local Verification
 
 - 118 focused profile/precision tests passed.
-- 10 new service/API tests and three real PostgreSQL scope tests passed.
+- 14 new service/API tests and four real PostgreSQL scope tests passed, including
+  disabled-ranking profile parity, an HNSW fixture, disconnect checks, capacity
+  limits and real HTTP rate limiting. The combined import/API/SQL sequence
+  passed all 23 tests after fixing an existing import-smoke fixture that leaked
+  replacement modules into later tests. This was caught before the first deploy.
 - All 26 frontend DOM suites passed, including opt-in, fixed scope,
   all-folders handling, escaping and stale-response cleanup.
 - Opt-in localhost browser/HTTP/worker/PostgreSQL workflows passed for existing
@@ -36,8 +40,52 @@ provider. It is not a verified HR scorecard and makes no exact-match promise.
 
 ## Live Verification
 
-Production-runtime gates, deployment and bounded real-provider strict searches
-are pending at this source checkpoint. Results will be recorded after execution.
+The first deployed checkpoint `0456086` passed all 1,177 tests in each isolated
+production-runtime provider configuration. Backup restore matched all 23 tables,
+restart preserved business records and unrelated containers, and runtime/static
+hashes matched. Health checks added zero paid calls. The follow-up preview-only
+hardening receives fresh gates before final deployment.
+
+Four real searches used the existing authorized principal and normal durable
+submission/worker path over SSH. This is live backend/provider acceptance, not
+a live browser session or HTTP-authentication acceptance. Each requested ten:
+
+| Role And Hard Requirements | Returned | Worker Time | Task Tokens |
+| --- | ---: | ---: | ---: |
+| Data Analyst: Abu Dhabi, 0-5 years, SQL and Power BI | 1 | 13.89 s | 19,025 |
+| Sales Manager: Abu Dhabi, 10-25 years, Sales and CRM | 0 | 12.76 s | 9,175 |
+| HR Recruiter: Dubai, 20-25 years, Recruitment and Onboarding | 0 | 10.95 s | 17,014 |
+| Accountant: Accounts Payable and Excel | 10 | 26.09 s | 77,801 |
+
+Independent source review verified the expected sets, strict criteria,
+folder/tag/received-date membership, unique files, descending scores, score
+consistency and truthful shortfalls. Data's score was 77; accounting scores were
+92/92/91/90/89/89/88/88/88/86. The sales sample was correctly excluded: a past
+Abu Dhabi employer was not accepted as its current Sharjah address. No task
+retry/provider failure occurred. The 29 original source files were unchanged
+at preflight; integrity is rechecked at final acceptance.
+
+Measured ledger delta was 38 successful calls, 92,712 input and 30,303 output
+tokens, 123,015 total. Accounting regenerated its assessments; the anticipated
+old-cache reuse was not observed and no token reduction is claimed for that run.
+No paid calls were made by local QA, source review, scope probes or health checks.
+
+Ten read-only stored-vector scope probes passed with no out-of-scope results;
+sample median retrieval times were approximately 2-33 ms. These exclude query
+embedding, AI generation and network latency and are not end-to-end timings.
+
+## Preview Hardening
+
+- Offer only for a freshly executed search in the original live user/workspace
+  context. Saved history without that context must be rerun first; it cannot
+  silently change a tenant-specific search into an admin-wide preview.
+- Preserve indexed details even when advanced ranking is disabled. Materialize
+  the selected tenant subset before ANN ranking for unfiltered previews too.
+  Default exact-search paths and ranking weights are unchanged.
+- Skip new inference after a detected disconnect. Bound count queries to five
+  seconds, preview SQL statements to ten seconds and local preview inference
+  to two concurrent workers per process. Client aborts do not kill an already
+  running Python embedding thread; capacity remains held until it finishes.
 
 ## Limitations
 

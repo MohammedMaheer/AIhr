@@ -23,6 +23,9 @@ CVs and private audit receipts are excluded from Git.
 - Add scope, authentication, CSRF, validation, escaping, stale-response,
   desktop/mobile and SQL regressions. Preserve the logo, existing search UI,
   candidate data, original files and core scoring functionality.
+- Follow independent review with live-context-only offers, indexed-profile
+  parity when advanced ranking is disabled, tenant-prefiltered ANN previews,
+  disconnect checks, local inference capacity limits and preview SQL deadlines.
 - Verification and deployment evidence are recorded in
   `docs/STRICT_SEARCH_SIMILAR_ACCEPTANCE_2026-11-14.md`.
 

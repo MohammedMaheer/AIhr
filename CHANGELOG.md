@@ -23,6 +23,12 @@ CVs and private audit receipts are excluded from Git.
   scoring weights and original files. Real-provider acceptance, cost deltas and
   deployment evidence are recorded in
   `docs/REAL_EMAIL_SCORECARD_ACCEPTANCE_2026-11-15.md`.
+- Deployed runtime `8a00d3a` after 1,256 backend tests per provider configuration,
+  27 frontend suites, three isolated browser workflows and restore/recreation gates.
+  Thirteen live queue jobs verified ten-result accounting ranking, strict city
+  rejection, correct-city recovery, cache reuse and four zero-cost empty scopes.
+  Measured real-provider usage: 23 calls / 38,871 tokens; no provider failures.
+  All 7,862 original CVs and immutable index/context fields were preserved.
 
 ## v2026.11.14.8 - 2026-11-14
 

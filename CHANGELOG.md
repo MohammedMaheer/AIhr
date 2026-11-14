@@ -21,6 +21,19 @@ CVs and private audit receipts are excluded from Git.
 - Add deterministic accuracy/negative-attribution and cleanup safety fixtures.
   Actual rollout, historical-context recovery and reclaimed bytes are recorded
   in `docs/EMAIL_CONTEXT_ACCEPTANCE_2026-11-14.md` after verification.
+- Deployed final runtime `7225954` after 1,243 tests passed per provider
+  configuration, 27 frontend suites, three isolated browser workflows and a
+  verified 23-table/context restore plus persistent-volume recreation rehearsal.
+- Recovered context for all 3,862 verified 2026 mailbox CVs using exact attachment
+  identities; 3,538 single-CV messages support local matching, while 324 shared
+  contexts stay non-searchable without excluding those CVs from normal search.
+  All 7,862 original file hashes remain intact; no paid AI calls were added.
+- Reclaimed 740.11 MiB from 36 verified redundant source artifacts, preserving
+  98 backup hashes and all other containers. Corrected mount-order comparison
+  before deletion and retained real-change guards. No global Docker pruning.
+- Final live stored-vector scope probes had no leaks; 32 concurrent retrievals
+  had zero errors and 166.90 ms p95. This is not full AI response time. Disk use
+  remains around 80.20% and is still monitored as a warning.
 
 ## v2026.11.14.7 - 2026-11-14
 

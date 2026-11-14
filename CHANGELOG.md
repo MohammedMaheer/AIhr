@@ -18,6 +18,16 @@ CVs and private audit receipts are excluded from Git.
   criteria and scoring are unchanged.
 - Additional live role searches, source validation, API usage and actual cleanup
   evidence are recorded in `docs/ADDITIONAL_ROLES_SAFE_CLEANUP_2026-11-15.md`.
+- Deployed `7bdd1d0` after 1,260 backend tests per provider configuration and
+  restore/recreation gates. Twenty-seven frontend suites and seven live jobs
+  passed; the HR search returned ten fresh scorecards and exact credential/skill
+  negatives stayed excluded. A warm networking repeat used zero new tokens.
+- Removed eight verified redundant source artifacts, reclaiming 174,645,248 bytes
+  around the cleanup step. All 7,862 original CVs, immutable index fields, 116
+  backup files and unrelated containers were preserved. Disk remains at 80.52%.
+- Measured real-provider acceptance: 40 successful calls / 126,739 tokens; no
+  provider failures. Missing zero-hit task summaries are not counted as free:
+  totals use the provider ledger. No application/scoring/UI changes were made.
 
 ## v2026.11.15.1 - 2026-11-15
 

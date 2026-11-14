@@ -25,6 +25,14 @@ matches are retained even when the role words are absent from the message.
 Task completion records bounded context-match/cache-hit counts for acceptance.
 No raw email body is exposed or added to an AI prompt, and no UI text changes.
 
+Real source review also found a stale indexed workplace city overriding a CV's
+contact-header city. Local preselection now recognizes conservative geographic
+header segments from the existing supported city map, ignores employer/project/
+relocation sections, and prefers that source over contradictory indexed values.
+Supplemental retrieval considers the same bounded CV header to avoid hiding
+correct-city candidates. Neither stored metadata nor original files are rewritten;
+the full-document scorecard and original strict rules remain authoritative.
+
 ## Verification Checkpoint
 
 New regressions cover long JDs with role-only email text, unchanged CV lexical

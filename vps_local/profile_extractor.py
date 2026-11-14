@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 from search_criteria import (
     KNOWN_PLACES,
+    LOCATION_COUNTRY_CITIES,
     SPOKEN_LANGUAGES,
     SearchCriteria,
     _location_match,
@@ -71,6 +72,30 @@ COMMON_SKILLS = {
     "sales", "crm", "lead generation", "digital marketing",
     "project management", "procurement", "inventory", "logistics",
 }
+
+_HEADER_CITIES = sorted({city for cities in LOCATION_COUNTRY_CITIES.values() for city in cities},key=len,reverse=True)
+_HEADER_CITY_RE = re.compile(r'(?<!\w)(' + '|'.join(re.escape(city) for city in _HEADER_CITIES) + r')(?!\w)',re.I)
+_HEADER_NON_ADDRESS_RE = re.compile(
+    r'\b(?:client|project|employer|company|university|college|school|relocat\w*|nationality|born|'
+    r'education|experience|engineer|developer|analyst|manager|consultant|office|holding|headquarters)\b',re.I)
+
+
+def extract_contact_city(text: str) -> str:
+    """Only a city-shaped contact-header segment, never an employer/client mention."""
+    for line in (text or '')[:800].splitlines()[:12]:
+        if re.match(r'^\W*(?:preferred\b|relocat\w*\b|professional\s+(?:summary|experience)\b|work\s+(?:history|experience)\b|employment\b|education\b|projects?\b|clients?\b|skills\b)',line,re.I):
+            break
+        if _HEADER_NON_ADDRESS_RE.search(line):
+            continue
+        for part in re.split(r'[|\u2022]',line):
+            part = re.sub(r'^[^\w]+','',part).strip()
+            part = re.sub(r'^(?:(?:current\s+)?(?:location|address|residence)\s*[:\-]\s*)','',part,flags=re.I)
+            match = _HEADER_CITY_RE.match(part)
+            if match:
+                tail = part[match.end():]
+                if not tail.strip() or re.match(r'\s*[,/;(]',tail):
+                    return _norm(match.group(1))
+    return ''
 
 
 def parse_years(value: Any) -> Optional[float]:
@@ -216,6 +241,10 @@ def extract_location_from_text(text: str) -> str:
             if loc:
                 return loc
 
+    contact = extract_contact_city(text)
+    if contact:
+        return contact
+
     lower = head.lower()
     places = sorted(KNOWN_PLACES, key=len, reverse=True)
     mentions = [(match.start(), -len(place), _norm(place)) for place in places
@@ -360,6 +389,9 @@ def profile_from_row(row: dict[str, Any], required_skills: Optional[list[str]] =
     }
     if not any(profile.get(k) for k in ("candidate_years", "candidate_location", "candidate_languages", "candidate_skills")):
         profile = profile_from_text(row.get("text") or "", source="text_runtime")
+    contact_city = extract_contact_city(row.get('text') or row.get('extracted_text') or '')
+    if contact_city and not _location_match(contact_city, profile['candidate_location']):
+        profile['candidate_location'] = contact_city
     # Indexed skills are a partial vocabulary, not proof that a CV lacks a skill.
     # Supplement only explicit query terms; the full scorecard still verifies fit.
     text = row.get("text") or ""

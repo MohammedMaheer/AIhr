@@ -8,11 +8,36 @@ from vps_local.profile_extractor import (
     profile_from_analysis,
     profile_from_row,
     profile_from_text,
+    extract_contact_city,
 )
 from vps_local.discovery_shim import _rank_rows
 
 
 class ProfileExtractorTests(unittest.TestCase):
+    def test_contact_city_recognizes_supported_city_before_employer_city(self):
+        text='Fictional Analyst\nVijayawada, Andhra Pradesh\nProfessional Experience\nCognizant - Hyderabad'
+        self.assertEqual(extract_contact_city(text),'vijayawada')
+        profile=profile_from_row({'candidate_location':'Hyderabad','text':text,'candidate_years':2})
+        self.assertEqual(profile['candidate_location'],'vijayawada')
+
+    def test_contact_city_does_not_infer_from_employers_projects_or_preferences(self):
+        for text in ('Client: Hyderabad, India','Hyderabad University','Preferred location: Hyderabad, India',
+                     'Preferred location:\nHyderabad, India','Work Experience\nHyderabad, India',
+                     'Willing to relocate to Hyderabad','Dubai Holding','Engineer at Company - Dubai, UAE'):
+            self.assertEqual(extract_contact_city(text),'',text)
+
+    def test_equivalent_stored_contact_city_keeps_its_original_precision(self):
+        profile=profile_from_row({'candidate_location':'Dubai, UAE','text':'Dubai, UAE\nFictional Engineer'})
+        self.assertEqual(profile['candidate_location'],'dubai, uae')
+
+    def test_contact_city_keeps_empty_profile_text_extraction(self):
+        text='Fictional Applicant\nVijayawada, Andhra Pradesh\nExperience: 3 years\nSkills: Python and SQL\nLanguages: English'
+        expected=profile_from_text(text,source='text_runtime')
+        actual=profile_from_row({'text':text})
+        self.assertEqual(actual,expected)
+        self.assertEqual(actual['candidate_years'],3)
+        self.assertIn('python',actual['candidate_skills'])
+
     def test_legacy_address_job_duties_are_unknown_not_wrong_locations(self):
         for value in ['ed employee queries regarding policies', 'queries related to employment',
                       'ventory management, stock reconciliation', 'overdue accounts to minimize delays in payments', 'ing']:

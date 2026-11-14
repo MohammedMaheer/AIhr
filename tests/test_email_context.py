@@ -158,6 +158,31 @@ def test_role_context_supplements_instead_of_replacing_original_email_matches(fl
     assert rows and rows[0]['email_context_match']
 
 
+def test_contact_header_recovers_true_city_from_stale_index_without_reindexing(flow):
+    cv = Document()
+    cv.add_heading('Fictional Test Applicant',0)
+    cv.add_paragraph('Vijayawada, Andhra Pradesh')
+    cv.add_paragraph('Skills: SQL and Power BI. Experience: 2 years.')
+    stream=io.BytesIO();cv.save(stream);content=stream.getvalue()
+    ingest(flow,[message(content=content)])
+    with flow.db.get_cursor() as (cursor,_):
+        cursor.execute("UPDATE resume_embeddings SET candidate_location='Hyderabad'")
+        from search_criteria import parse_search_criteria
+        clause,params=index._criteria_sql_where(parse_search_criteria('Data Analyst based in Vijayawada. Required skills: SQL'))
+        cursor.execute('SELECT count(*) AS n FROM resume_embeddings WHERE '+clause,params)
+        assert cursor.fetchone()['n']==1,'Supplemental retrieval must not depend on the stale indexed city'
+    true = index._vector_search('Data Analyst based in Vijayawada with 1-4 years. Required skills: SQL',
+        10,'company_id: ANY("1")',FOLDERS)
+    wrong = index._vector_search('Data Analyst based in Hyderabad with 1-4 years. Required skills: SQL',
+        10,'company_id: ANY("1")',FOLDERS)
+    assert len(true)==1 and true[0]['criteria_profile_status']=='exact'
+    assert true[0]['candidate_profile']['candidate_location']=='vijayawada'
+    assert not wrong
+    with flow.db.get_cursor() as (cursor,_):
+        cursor.execute('SELECT candidate_location FROM resume_embeddings')
+        assert cursor.fetchone()['candidate_location']=='Hyderabad','Read-time grounding must not rewrite candidate data'
+
+
 def test_scoped_email_lookup_can_use_its_partial_text_index(flow):
     ingest(flow, [message()])
     with flow.db.get_cursor() as (cursor, _):

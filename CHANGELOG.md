@@ -14,6 +14,9 @@ CVs and private audit receipts are excluded from Git.
   every requested city, year and skill. Keep the original CV lexical query and
   hard eligibility rules unchanged, including raw-query fallback scope.
   Role lookup supplements rather than replaces existing email-query matches.
+- Ground contradictory indexed cities in unambiguous CV contact-header evidence
+  and allow supplemental header retrieval. Ignore employer/client/preferences
+  and preserve equivalent location precision. No reindex, file or row rewrite.
 - Retain generic-title behavior and add bounded completion counters for context
   matches/cache hits. No body text is exposed or sent to a paid model.
 - Add request, SQL and durable-worker regressions. Preserve the logo, UI, HR

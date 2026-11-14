@@ -335,8 +335,8 @@ def _criteria_sql_where(criteria) -> tuple[str, list[Any]]:
     if location_terms:
         loc_clauses = []
         for term in location_terms:
-            loc_clauses.append("candidate_location ILIKE %s")
-            params.append(f"%{term}%")
+            loc_clauses.append("(candidate_location ILIKE %s OR left(coalesce(extracted_text,''),800) ILIKE %s)")
+            params.extend([f"%{term}%", f"%{term}%"])
         clauses.append("(" + " OR ".join(loc_clauses) + ")")
 
     if criteria.language_expression is not None:

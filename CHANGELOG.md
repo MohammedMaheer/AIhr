@@ -5,6 +5,20 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.15.2 - 2026-11-15
+
+### Reviewed-Plan Cleanup And Additional Role Acceptance
+
+- Bind release-source cleanup to an explicitly reviewed dry-run digest. Refuse
+  changed targets, receipt evidence or container identities before deletion.
+  Retain CVs, private configuration, backups, active/mounted releases, rollback
+  source snapshots and all Docker resources. No global pruning.
+- Add cleanup regressions for missing approval, modified receipts, newly eligible
+  releases and successful unchanged plans. Application code, logo, UI, strict
+  criteria and scoring are unchanged.
+- Additional live role searches, source validation, API usage and actual cleanup
+  evidence are recorded in `docs/ADDITIONAL_ROLES_SAFE_CLEANUP_2026-11-15.md`.
+
 ## v2026.11.15.1 - 2026-11-15
 
 ### Role Context For Full Job-Description Searches

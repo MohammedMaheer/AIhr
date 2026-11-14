@@ -4,6 +4,8 @@ import io
 import json
 from pathlib import Path
 import tarfile
+import subprocess
+import sys
 
 import pytest
 
@@ -80,3 +82,42 @@ def test_mount_permutation_does_not_hide_a_real_container_change():
     changed = {**first, 'Mounts': [{'Destination': '/a', 'Source': '/other/a', 'RW': True}, first['Mounts'][0]]}
     assert cleanup.container_identity([first]) != cleanup.container_identity([changed])
     assert cleanup.container_identity([first]) != cleanup.container_identity([{**first, 'State': {'StartedAt': 'two'}}])
+
+
+def test_apply_requires_an_explicit_reviewed_plan_before_docker_access():
+    result = subprocess.run([sys.executable, str(Path(cleanup.__file__)), '--apply'],
+                            capture_output=True, text=True)
+    assert result.returncode == 2
+    assert '--expected-plan-sha256 from a reviewed dry run' in result.stderr
+
+
+def test_changed_receipt_cannot_reuse_reviewed_plan_even_with_same_targets(tmp_path):
+    stage, info = release(tmp_path, 0, deployed=False)
+    targets, _ = cleanup.plan(tmp_path, [])
+    reviewed = cleanup.plan_digest(tmp_path, targets, [])
+    (stage / 'receipt.json').write_text(json.dumps({**info, 'new_review_evidence': True}))
+    assert cleanup.plan(tmp_path, [])[0] == targets
+    with pytest.raises(RuntimeError, match='evidence changed'):
+        cleanup.apply(tmp_path, targets, [], expected_plan_sha256=reviewed)
+    assert (stage / 'source/main.py').is_file()
+
+
+def test_unchanged_reviewed_plan_applies_and_preserves_backups(tmp_path):
+    stage, _ = release(tmp_path, 0, deployed=False)
+    targets, _ = cleanup.plan(tmp_path, [])
+    reviewed = cleanup.plan_digest(tmp_path, targets, [])
+    cleanup.apply(tmp_path, targets, [], expected_plan_sha256=reviewed)
+    assert not (stage / 'source').exists()
+    assert (stage / 'backup/db.pgdump').read_bytes() == b'private backup must remain'
+
+
+def test_new_disposable_release_invalidates_previously_reviewed_plan(tmp_path):
+    stage, _ = release(tmp_path, 0, deployed=False)
+    targets, _ = cleanup.plan(tmp_path, [])
+    reviewed = cleanup.plan_digest(tmp_path, targets, [])
+    later, _ = release(tmp_path, 1, deployed=False)
+    current, _ = cleanup.plan(tmp_path, [])
+    with pytest.raises(RuntimeError, match='evidence changed'):
+        cleanup.apply(tmp_path, current, [], expected_plan_sha256=reviewed)
+    assert (stage / 'source/main.py').is_file()
+    assert (later / 'source/main.py').is_file()

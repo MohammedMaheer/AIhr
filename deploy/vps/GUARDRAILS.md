@@ -64,7 +64,10 @@ semantics are unchanged.
 
 ## Conservative Source Cleanup
 
-`scripts/prune-release-sources.py` defaults to a dry run. `--apply` removes only
+`scripts/prune-release-sources.py` defaults to a dry run. Review the emitted targets
+and retain its `plan_sha256`. Applying requires both `--apply` and
+`--expected-plan-sha256 <reviewed digest>`; changed targets, release receipts or
+container identities/mounts invalidate approval before deletion. `--apply` removes only
 hash-verified redundant `source/` and `source.tar.gz` copies inside recognized
 `/opt/smarthr/releases/review-*` directories. It retains active/mounted releases,
 the two newest deployed source snapshots and the active release's predecessor.

@@ -116,10 +116,20 @@ def plan(root, containers):
     return sorted(targets), protected
 
 
-def apply(root, targets, containers):
+def plan_digest(root, targets, containers):
+    manifest = {'targets': [{'path': path.relative_to(root).as_posix(),
+                             'receipt_sha256': digest(path.parent / 'receipt.json')}
+                            for path in targets],
+                'containers': container_identity(containers)}
+    return hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def apply(root, targets, containers, *, expected_plan_sha256=None):
     current, _ = plan(root, containers)
     if current != targets:
         raise RuntimeError('Cleanup plan changed; review the new dry run')
+    if expected_plan_sha256 is not None and plan_digest(root, current, containers) != expected_plan_sha256:
+        raise RuntimeError('Cleanup evidence changed; review the new dry run')
     for path in targets:
         stage = path.parent
         if (path.name not in {'source', 'source.tar.gz'} or stage.parent != root / 'releases'
@@ -139,12 +149,20 @@ def container_identity(rows):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--expected-plan-sha256', help='Plan digest from the reviewed dry-run output')
     args = parser.parse_args()
+    if args.apply and not re.fullmatch(r'[a-f0-9]{64}', args.expected_plan_sha256 or ''):
+        parser.error('--apply requires --expected-plan-sha256 from a reviewed dry run')
+    if args.expected_plan_sha256 and not args.apply:
+        parser.error('--expected-plan-sha256 requires --apply')
     os.nice(10)
     root = Path('/opt/smarthr').resolve()
     ids = subprocess.check_output(['docker', 'ps', '-aq'], text=True).split()
     containers = json.loads(subprocess.check_output(['docker', 'inspect', *ids], text=True))
     targets, protected = plan(root, containers)
+    fingerprint = plan_digest(root, targets, containers)
+    if args.apply and args.expected_plan_sha256 != fingerprint:
+        raise RuntimeError('Cleanup plan differs from the reviewed dry run')
     sizes = {str(path.relative_to(root)): int(subprocess.check_output(['du', '-s', '-B1', str(path)], text=True).split()[0])
              for path in targets}
     before = shutil.disk_usage(root)
@@ -155,9 +173,9 @@ def main():
         fresh = json.loads(subprocess.check_output(['docker', 'inspect', *fresh_ids], text=True))
         if container_identity(fresh) != container_identity(containers):
             raise RuntimeError('Container identity or mounts changed')
-        apply(root, targets, fresh)
+        apply(root, targets, fresh, expected_plan_sha256=args.expected_plan_sha256)
     after = shutil.disk_usage(root)
-    print(json.dumps({'applied': args.apply, 'targets': sizes, 'protected_releases': sorted(protected),
+    print(json.dumps({'applied': args.apply, 'plan_sha256': fingerprint, 'targets': sizes, 'protected_releases': sorted(protected),
         'verified_disposable_bytes': sum(sizes.values()), 'free_bytes_before': before.free,
         'free_bytes_after': after.free, 'cvs_backups_images_volumes_untouched': True}))
 

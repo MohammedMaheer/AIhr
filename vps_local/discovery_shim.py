@@ -433,8 +433,7 @@ def _hybrid_score(vector_score, lexical_score, profile_bonus=0.0):
     return (0.68 * vector_score) + (0.20 * min(float(lexical_score), 1.0)) + (0.12 * profile_bonus)
 
 
-def _add_email_context_rows(cur, rows, *, query, qvec, source_sql, source_params,
-                            scope_sql, scope_params, limit):
+def _add_email_context_rows(cur, rows, *, query, qvec, scope_sql, scope_params, limit):
     # Email text only broadens retrieval. Profiles, snippets and final scorecards
     # remain CV-only; quoted/shared-message text cannot establish eligibility.
     cur.execute(
@@ -446,7 +445,7 @@ def _add_email_context_rows(cur, rows, *, query, qvec, source_sql, source_params
                                        websearch_to_tsquery('simple', %s))) AS lexical_score,
                    candidate_years, candidate_location, candidate_languages,
                    candidate_skills, profile_source, storage_bucket, TRUE AS email_context_match
-            FROM {source_sql}
+            FROM resume_embeddings
             WHERE embedding IS NOT NULL AND {scope_sql}
               AND source_email_metadata->>'association' = 'single_resume'
               AND source_email_metadata->>'purpose' = 'retrieval_only'
@@ -455,7 +454,7 @@ def _add_email_context_rows(cur, rows, *, query, qvec, source_sql, source_params
                                 websearch_to_tsquery('simple', %s)) DESC,
                      embedding <=> %s::vector, id
             LIMIT %s""",
-        (_vec_lit(qvec), query[:1000], query[:1000], *source_params, *scope_params,
+        (_vec_lit(qvec), query[:1000], query[:1000], *scope_params,
          query[:1000], query[:1000], _vec_lit(qvec), int(limit)),
     )
     by_id = {row['id']: row for row in rows}
@@ -673,6 +672,7 @@ def _vector_search(query: str, page_size: int = 10,
     filtered_sql, filtered_params = filters_sql(resume_filters)
     scope_sql += f' AND ({filtered_sql})'
     scope_params.extend(filtered_params)
+    email_scope_sql, email_scope_params = scope_sql, tuple(scope_params)
     source_sql, source_params = 'resume_embeddings', []
     if folder_filters or resume_filters or profile_preview:
         # Rank the complete selected subset. An ANN index can otherwise filter
@@ -721,8 +721,7 @@ def _vector_search(query: str, page_size: int = 10,
                     for r in rows
                 ]
                 light_rows = _add_email_context_rows(cur, light_rows, query=query, qvec=qvec,
-                    source_sql=source_sql, source_params=source_params, scope_sql=scope_sql,
-                    scope_params=scope_params, limit=pool_size)
+                    scope_sql=email_scope_sql, scope_params=email_scope_params, limit=pool_size)
                 return _rank_rows(light_rows, query, int(page_size or 10), criteria_query=criteria_query)
 
             # Cosine distance uses the HNSW vector_cosine_ops index. In
@@ -793,8 +792,7 @@ def _vector_search(query: str, page_size: int = 10,
             row_dicts = [_row_tuple_to_dict(r) for r in rows]
             if not profile_preview:
                 row_dicts = _add_email_context_rows(cur, row_dicts, query=query, qvec=qvec,
-                    source_sql=source_sql, source_params=source_params, scope_sql=scope_sql,
-                    scope_params=scope_params, limit=pool_size)
+                    scope_sql=email_scope_sql, scope_params=email_scope_params, limit=pool_size)
         return _rank_rows(row_dicts, query, int(page_size or 10), criteria_query=criteria_query)
     finally:
         conn.rollback()

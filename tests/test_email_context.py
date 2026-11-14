@@ -114,6 +114,26 @@ def test_shared_or_quoted_email_never_becomes_a_candidate_match(flow):
     assert not any(row.get('email_context_match') for row in rows)
 
 
+def test_scoped_email_lookup_can_use_its_partial_text_index(flow):
+    ingest(flow, [message()])
+    with flow.db.get_cursor() as (cursor, _):
+        cursor.execute("""CREATE INDEX fixture_email_fts ON resume_embeddings USING gin(to_tsvector('simple',source_email_context))
+            WHERE source_email_metadata->>'association'='single_resume' AND source_email_metadata->>'purpose'='retrieval_only'""")
+        # Isolate index eligibility, not the planner's preference on a one-row fixture.
+        cursor.execute('DROP INDEX e2e_identity')
+        cursor.execute('SET LOCAL enable_seqscan=off')
+        plans = []
+        class Explain:
+            def execute(self, sql, params):
+                assert 'OFFSET 0' not in sql, 'The ANN scope barrier must not disable email text-index pushdown'
+                cursor.execute('EXPLAIN (FORMAT JSON) ' + sql, params)
+                plans.append(cursor.fetchone()['QUERY PLAN'])
+            def fetchall(self): return []
+        index._add_email_context_rows(Explain(), [], query='fjord navigation', qvec=[1, 0, 0],
+            scope_sql='company_id=%s AND storage_bucket=%s AND folder=%s',scope_params=[1, BUCKET, FOLDER],limit=10)
+    assert 'fixture_email_fts' in json.dumps(plans)
+
+
 @pytest.mark.parametrize('advanced', [False, True])
 @pytest.mark.parametrize('role,skills', [('Developer', 'Python and SQL'), ('Accountant', 'Excel'), ('Network Engineer', 'CCNA')])
 def test_ten_candidates_are_cv_verified_despite_false_email_claims(flow, monkeypatch, advanced, role, skills):

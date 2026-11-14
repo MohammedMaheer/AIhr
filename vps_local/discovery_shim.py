@@ -449,6 +449,8 @@ def _add_email_context_rows(cur, rows, *, query, qvec, scope_sql, scope_params, 
                    GREATEST(ts_rank_cd(to_tsvector('simple', coalesce(extracted_text, '')),
                                        websearch_to_tsquery('simple', %s)),
                             ts_rank_cd(to_tsvector('simple', source_email_context),
+                                       websearch_to_tsquery('simple', %s)),
+                            ts_rank_cd(to_tsvector('simple', source_email_context),
                                        websearch_to_tsquery('simple', %s))) AS lexical_score,
                    candidate_years, candidate_location, candidate_languages,
                    candidate_skills, profile_source, storage_bucket, TRUE AS email_context_match
@@ -456,13 +458,16 @@ def _add_email_context_rows(cur, rows, *, query, qvec, scope_sql, scope_params, 
             WHERE embedding IS NOT NULL AND {scope_sql}
               AND source_email_metadata->>'association' = 'single_resume'
               AND source_email_metadata->>'purpose' = 'retrieval_only'
-              AND to_tsvector('simple', source_email_context) @@ websearch_to_tsquery('simple', %s)
-            ORDER BY ts_rank_cd(to_tsvector('simple', source_email_context),
-                                websearch_to_tsquery('simple', %s)) DESC,
+              AND to_tsvector('simple', source_email_context) @@
+                  (websearch_to_tsquery('simple', %s) || websearch_to_tsquery('simple', %s))
+            ORDER BY GREATEST(ts_rank_cd(to_tsvector('simple', source_email_context),
+                                        websearch_to_tsquery('simple', %s)),
+                              ts_rank_cd(to_tsvector('simple', source_email_context),
+                                        websearch_to_tsquery('simple', %s))) DESC,
                      embedding <=> %s::vector, id
             LIMIT %s""",
-        (_vec_lit(qvec), query[:1000], context_query, *scope_params,
-         context_query, context_query, _vec_lit(qvec), int(limit)),
+        (_vec_lit(qvec), query[:1000], query[:1000], context_query, *scope_params,
+         query[:1000], context_query, query[:1000], context_query, _vec_lit(qvec), int(limit)),
     )
     by_id = {row['id']: row for row in rows}
     for value in cur.fetchall():

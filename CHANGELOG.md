@@ -13,6 +13,7 @@ CVs and private audit receipts are excluded from Git.
   use the explicit role for email context without requiring the message to repeat
   every requested city, year and skill. Keep the original CV lexical query and
   hard eligibility rules unchanged, including raw-query fallback scope.
+  Role lookup supplements rather than replaces existing email-query matches.
 - Retain generic-title behavior and add bounded completion counters for context
   matches/cache hits. No body text is exposed or sent to a paid model.
 - Add request, SQL and durable-worker regressions. Preserve the logo, UI, HR

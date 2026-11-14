@@ -146,8 +146,16 @@ def test_context_role_query_does_not_replace_cv_lexical_query(monkeypatch):
         email_query='UI Designer', qvec=[1, 0, 0],scope_sql='company_id=%s',scope_params=[1],limit=10)
     sql, params = cursor.execute.call_args.args
     assert params[1] == 'Figma developer Dubai five years'
-    assert params[2] == params[-4] == params[-3] == 'UI Designer'
+    assert params[2] == params[-6] == params[-4] == 'Figma developer Dubai five years'
+    assert params[3] == params[-5] == params[-3] == 'UI Designer'
     assert sql.count('%s') == len(params)
+
+
+def test_role_context_supplements_instead_of_replacing_original_email_matches(flow):
+    ingest(flow, [message(body='Application for fjord navigation')])
+    rows = index._vector_search('fjord navigation', 10, 'company_id: ANY("1")', FOLDERS,
+                                email_context_query='UI Designer')
+    assert rows and rows[0]['email_context_match']
 
 
 def test_scoped_email_lookup_can_use_its_partial_text_index(flow):

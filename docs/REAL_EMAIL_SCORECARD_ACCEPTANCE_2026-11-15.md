@@ -19,6 +19,8 @@ including raw-query fallback. The optimized CV query and original hard criteria
 remain separate and unchanged. The message cannot establish missing skills,
 location, years or languages; CV-only final verification still controls results.
 Generic titles retain the original query rather than broadening retrieval.
+Role context supplements the original email query; existing original-query
+matches are retained even when the role words are absent from the message.
 
 Task completion records bounded context-match/cache-hit counts for acceptance.
 No raw email body is exposed or added to an AI prompt, and no UI text changes.

@@ -28,8 +28,8 @@ provider. It is not a verified HR scorecard and makes no exact-match promise.
 - 118 focused profile/precision tests passed.
 - 14 new service/API tests and five real PostgreSQL scope tests passed, including
   disabled-ranking profile parity, an HNSW fixture, disconnect checks, capacity
-  limits and real HTTP rate limiting. The combined import/API/SQL sequence
-  passed all 23 tests after fixing an existing import-smoke fixture that leaked
+  limits and real HTTP rate limiting. The final combined import/API/SQL sequence
+  passed all 24 tests after fixing an existing import-smoke fixture that leaked
   replacement modules into later tests. This was caught before the first deploy.
 - All 26 frontend DOM suites passed, including opt-in, fixed scope,
   all-folders handling, escaping and stale-response cleanup.
@@ -43,8 +43,8 @@ provider. It is not a verified HR scorecard and makes no exact-match promise.
 The first deployed checkpoint `0456086` passed all 1,177 tests in each isolated
 production-runtime provider configuration. Backup restore matched all 23 tables,
 restart preserved business records and unrelated containers, and runtime/static
-hashes matched. Health checks added zero paid calls. The follow-up preview-only
-hardening receives fresh gates before final deployment.
+hashes matched. Health checks added zero paid calls. Subsequent preview-only
+hardening and its final production gates are recorded below.
 
 Four real searches used the existing authorized principal and normal durable
 submission/worker path over SSH. This is live backend/provider acceptance, not
@@ -91,6 +91,33 @@ embedding, AI generation and network latency and are not end-to-end timings.
   schema initialization entirely: it only reads the already-installed schema,
   retaining its SQL deadline. A regression rejects any preview-time schema DDL.
   Default exact-search initialization is unchanged.
+
+## Final Deployment
+
+- Deployed source `fd9cdaebde17254900f7d4b583dbf1a4fc480fda`, tree
+  `949e1ef5e89a0c51a9636576f687547219a8ec20`, image
+  `smarthr-app:review-fd9cdae-20261114t115740z`. Follow-up documentation does not
+  modify the tested runtime. Strict scoring/parsing code is identical to the
+  checkpoint used for the real four-role acceptance above.
+- All 1,182 backend tests passed independently under both production-matched
+  provider configurations. All 26 frontend suites and both isolated browser
+  workflows passed; final screenshots were inspected at desktop/mobile widths.
+- The backup restored with all 23 table fingerprints matching. Restart preserved
+  business records and unrelated containers. All 29 reviewed original CV hashes
+  matched afterward. Temporary release QA containers were removed.
+- HTTPS login/health/deep-health returned 200. Anonymous protected APIs and a
+  CSRF-valid unauthenticated preview POST returned 401. Runtime/static hashes
+  matched. Health checks and all final local probes added no paid calls.
+- Final live local-preview results were 10 profiles in the original HR scope,
+  zero for the future date and missing folder, and five for an explicitly changed
+  UI tag. Independent SQL verified each selected set and original date bounds;
+  no tag expansion or count padding occurred. All results were labeled indexed,
+  unverified suggestions with unmet/unconfirmed requirements, not scorecards.
+- The cold standalone diagnostic took 8.51 seconds including loading a separate
+  local embedding model; its warm alternate-tag probe took 0.02 seconds. These
+  tiny-cohort backend measurements are not normal UI latency benchmarks.
+- Final ten-case stored-vector probes passed again without scope leaks or paid
+  calls; median retrieval times were approximately 2-30 ms, excluding inference.
 
 ## Limitations
 

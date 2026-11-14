@@ -30,6 +30,11 @@ CVs and private audit receipts are excluded from Git.
   that can contend with concurrent read snapshots. Preserve normal search setup.
 - Verification and deployment evidence are recorded in
   `docs/STRICT_SEARCH_SIMILAR_ACCEPTANCE_2026-11-14.md`.
+- Final source `fd9cdae` deployed after 1,182 tests passed per runtime provider
+  configuration, 26 frontend suites, isolated desktop/mobile workflows and a
+  verified 23-table restore. Real strict ten-request searches returned 1/0/0/10;
+  final local similar/filter probes added no paid calls. Logo, original CVs,
+  strict score weights, business records and unrelated VPS applications retained.
 
 ## v2026.11.14.5 - 2026-11-14
 

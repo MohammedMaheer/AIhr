@@ -76,6 +76,13 @@ def test_only_explicit_location_alternatives_expand_the_query(query, location, e
     ('.NET', 'ASP.NET Core', True), ('.NET', '.NET 8', True),
     ('AWS', 'AWS Lambda', True), ('R', 'CRM', False), ('R', 'R', True),
     ('React', 'Reactive programming', False), ('React', 'React.js', True),
+    ('Node.js', 'Node', True), ('Node.js', 'NodeJS 20', True),
+    ('NodeJS', 'Node.js', True), ('Node', 'Node JS', True),
+    ('Node.js', 'multi-node SDN networks', False), ('Node', 'node_modules', False),
+    ('React.js', 'React', True), ('ReactJS', 'React.js 18', True),
+    ('React', 'ReactJS', True), ('React.js', 'Reactive programming', False),
+    ('Node.js', 'Node.jsOther', False), ('React.js', 'React.jsOther', False),
+    ('Node.js', 'Node.js.', True), ('React.js', 'React.js.', True),
     ('Machine Learning', 'Machine Learning / Python', True),
 ])
 def test_required_skill_tokens_are_bounded_without_losing_versions(wanted, have, expected):

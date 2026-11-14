@@ -330,12 +330,22 @@ _PLACE_RE = re.compile(r"(?<!\w)(?:" + "|".join(re.escape(name) for name in
 
 def _skill_pattern(skill: str) -> str:
     """The same bounded token pattern is used by Python and PostgreSQL."""
-    token = re.escape(_norm(skill))
-    if _norm(skill) == '.net':
+    normalized = _norm(skill)
+    token = re.escape(normalized)
+    prefix = r'(^|[^a-z0-9_+#])'
+    suffix = r'($|[^a-z_+#])'
+    if normalized in {'node', 'node.js', 'nodejs', 'node js'}:
+        token = r'node([. ]?js)?'
+        prefix = r'(^|[^a-z0-9_+#-])'
+        suffix = r'($|[^a-z_+#.]|[.](\s|$))'
+    elif normalized in {'react', 'react.js', 'reactjs', 'react js'}:
+        token = r'react([. ]?js)?'
+        suffix = r'($|[^a-z_+#.]|[.](\s|$))'
+    elif normalized == '.net':
         token = r'(asp)?\.net'
-    elif _norm(skill) == 'sql':
+    elif normalized == 'sql':
         token = r'(sql|mysql|postgresql|sqlite|mssql|sqlserver)'
-    return r'(^|[^a-z0-9_+#])' + token + r'($|[^a-z_+#])'
+    return prefix + token + suffix
 
 
 def uncertain_language(value: str) -> bool:

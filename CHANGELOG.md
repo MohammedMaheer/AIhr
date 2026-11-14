@@ -5,6 +5,23 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.14.2 - 2026-11-14
+
+### Recognize Equivalent JavaScript Framework Skill Names
+
+- A bounded real-provider search exposed false-negative retrieval: indexed
+  `node` did not satisfy an explicit `Node.js` requirement. Recognize Node,
+  Node.js, NodeJS and Node JS consistently in the shared Python/PostgreSQL skill
+  pattern, and do the equivalent for React/React.js/ReactJS/React JS.
+- Use those same patterns when extracting the two framework names locally.
+  Reject generic multi-node network text, reactive programming, node_modules
+  and longer similarly named tokens; preserve sentence-final punctuation.
+- Add fictional positive/negative and real PostgreSQL parity regressions.
+  Do not change scoring prompts, ranking weights, requested-count semantics,
+  tenant/folder/tag/date filters, logo, layout or production schema.
+- Full runtime verification, the controlled real-provider rerun, observed token
+  usage and source/image mapping are recorded with the deployment in PR #1.
+
 ## v2026.11.14.1 - 2026-11-14
 
 ### Reuse Exact Job Preparation And Preserve Invalid Search Drafts

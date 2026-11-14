@@ -20,6 +20,7 @@ from search_criteria import (
     _location_match,
     _norm,
     _parse_years_string,
+    _skill_pattern,
     _extract_candidate_years,
     evaluate_criteria,
     uncertain_language,
@@ -240,7 +241,8 @@ def extract_skills_from_text(text: str) -> list[str]:
     lower = (text or "").lower()
     found = []
     for skill in COMMON_SKILLS:
-        if re.search(rf"\b{re.escape(skill)}\b", lower):
+        pattern = _skill_pattern(skill) if skill in {'node', 'react'} else rf"\b{re.escape(skill)}\b"
+        if re.search(pattern, lower):
             found.append(skill)
     return _dedupe(found)
 

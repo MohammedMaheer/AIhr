@@ -1,7 +1,7 @@
 import unittest
 from decimal import Decimal
 
-from search_criteria import SearchCriteria
+from search_criteria import SearchCriteria, parse_search_criteria
 from vps_local.profile_extractor import (
     clean_location,
     evaluate_profile,
@@ -13,6 +13,22 @@ from vps_local.discovery_shim import _rank_rows
 
 
 class ProfileExtractorTests(unittest.TestCase):
+    def test_javascript_framework_aliases_survive_text_indexing_and_strict_retrieval(self):
+        profile = profile_from_text('Developer with 3 years of experience. Skills: ReactJS and Node.js.')
+        self.assertIn('react', profile['candidate_skills'])
+        self.assertIn('node', profile['candidate_skills'])
+        query = 'Developer with 2-4 years of experience. Required skills: React.js and Node.js.'
+        ev, status = evaluate_profile(profile, parse_search_criteria(query))
+        self.assertEqual(status, 'exact')
+        self.assertEqual(ev['misses'], [])
+        row = {'id': 'fictional-alias-match', 'score': .8, **profile}
+        self.assertEqual([r['id'] for r in _rank_rows([row], query, 3)], ['fictional-alias-match'])
+
+    def test_generic_multi_node_and_reactive_text_do_not_create_framework_skills(self):
+        profile = profile_from_text('Operate multi-node SDN networks and study reactive programming.')
+        self.assertNotIn('node', profile['candidate_skills'])
+        self.assertNotIn('react', profile['candidate_skills'])
+
     def test_profile_from_scorecard_extracts_core_fields(self):
         analysis = {
             "hr_scorecard": {

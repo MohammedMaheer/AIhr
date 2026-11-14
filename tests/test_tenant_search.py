@@ -189,9 +189,12 @@ def test_vector_api_reports_incomplete_profile_evidence_without_returning_candid
     assert payload['criteria_verification'] == 'incomplete'
 
 
-@pytest.mark.parametrize('wanted', ['Java', 'SQL', 'C', 'C++', 'C#', '.NET', 'R'])
+@pytest.mark.parametrize('wanted', ['Java', 'SQL', 'C', 'C++', 'C#', '.NET', 'R', 'Node.js', 'React.js'])
 def test_real_postgres_shortlist_and_final_skill_filter_agree(queue_db, wanted):
-    skills = ['JavaScript','Java','Java17','NoSQL','SQL Server','C++','C','C#','.NET 8','ASP.NET Core','CRM','R']
+    skills = ['JavaScript','Java','Java17','NoSQL','SQL Server','C++','C','C#','.NET 8','ASP.NET Core','CRM','R',
+              'Node','Node.js','NodeJS','Node JS','multi-node SDN networks','node_modules',
+              'React','React.js','ReactJS','Reactive programming','Node.js.','React.js.',
+              'Node.jsOther','React.jsOther']
     criteria = SearchCriteria(required_skills=[wanted])
     where, params = discovery._criteria_sql_where(criteria)
     with queue_db.get_cursor() as (cursor, _):

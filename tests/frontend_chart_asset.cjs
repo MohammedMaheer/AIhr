@@ -1,0 +1,18 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const crypto=require('node:crypto');
+const {JSDOM}=require('jsdom');
+const html=fs.readFileSync('templates/index.html','utf8');
+const document=new JSDOM(html).window.document;
+const script=document.querySelector('script[src*="chartjs/"]');
+assert(script,'The chart library must be self-hosted');
+assert.equal(script.getAttribute('src'),'/static/vendor/chartjs/chart-4.6.1.umd.min.js');
+const bytes=fs.readFileSync('.'+script.getAttribute('src'));
+assert.equal(script.integrity||script.getAttribute('integrity'),'sha384-'+crypto.createHash('sha384').update(bytes).digest('base64'));
+assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),'87364cc2b2a76a6684929e7d6b80b18a897794db38400caff1fcf1791c6925d2');
+const Chart=require('../static/vendor/chartjs/chart-4.6.1.umd.min.js');
+assert.equal(Chart.version,'4.6.1');
+assert(![...document.scripts].some(node=>/https?:.*chart\.js/.test(node.src)));
+assert(document.querySelector('img[src="/static/img/ai-logo.png"]'),'Preserve the application logo');
+assert(!fs.readFileSync('static/js/main.js','utf8').includes('Our support team has been notified'));
+console.log('Chart asset passed: pinned local build, exact digest/SRI, original logo and honest support feedback.');

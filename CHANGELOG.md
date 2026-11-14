@@ -5,6 +5,23 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.14.7 - 2026-11-14
+
+### Bounded Operations And Local Chart Reliability
+
+- Self-host the currently resolved Chart.js 4.6.1 build with exact-byte integrity
+  verification and its license. Remove the unused script origin without changing
+  charts, scores, application branding or layout.
+- Prepare local search schema before readiness with bounded lock/statement time.
+  Keep all retrieval modes free of request-time DDL and schema commits.
+- Add SmartHR-only resource/log policies, local state-change monitoring and a
+  persistent-volume recreation rehearsal for guarded application/database rollout.
+  No Docker-daemon restart, global pruning, external alerting or backup service.
+- Keep error feedback honest; do not claim support was notified automatically.
+- Preserve provider keys, scoring/eligibility behavior, original CVs and unrelated
+  applications. CI billing and off-site backups are excluded by owner direction.
+  Verification is recorded in `docs/PRODUCTION_GUARDRAILS_2026-11-14.md`.
+
 ## v2026.11.14.6 - 2026-11-14
 
 ### Scoped Similar Profiles And Stricter Location Parsing

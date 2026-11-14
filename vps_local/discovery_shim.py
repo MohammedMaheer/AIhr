@@ -180,6 +180,7 @@ class _SearchResponse:
 _db_pool_singleton = None
 _db_pool_lock = threading.Lock()
 _advanced_schema_ensured = False
+_schema_lock = threading.Lock()
 _query_embedding_cache: OrderedDict[str, List[float]] = OrderedDict()
 _query_embedding_cache_lock = threading.Lock()
 
@@ -228,6 +229,29 @@ def warm_search_runtime() -> None:
     """Load heavyweight local search dependencies before the first user query."""
     _get_pool()
     _embed_query("startup warmup query")
+
+
+def initialize_search_schema() -> None:
+    """Run bounded schema setup before serving requests, not during retrieval."""
+    global _advanced_schema_ensured
+    with _schema_lock:
+        if _advanced_schema_ensured:
+            return
+        pool = _get_pool()
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET LOCAL lock_timeout = '5000ms'")
+                cur.execute("SET LOCAL statement_timeout = '30000ms'")
+                _ensure_advanced_search_schema(cur)
+            conn.commit()
+            _advanced_schema_ensured = True
+        except Exception:
+            _advanced_schema_ensured = False
+            conn.rollback()
+            raise
+        finally:
+            pool.putconn(conn)
 
 
 def _vec_lit(vec: List[float]) -> str:
@@ -635,10 +659,6 @@ def _vector_search(query: str, page_size: int = 10,
                     }
                     for r in rows
                 ]
-
-            if not profile_preview:
-                _ensure_advanced_search_schema(cur)
-                conn.commit()
 
             # Cosine distance uses the HNSW vector_cosine_ops index. In
             # advanced mode we pull a deeper semantic pool, add full-text rank

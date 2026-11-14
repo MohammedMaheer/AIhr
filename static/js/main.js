@@ -3164,7 +3164,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             </button>
                             <p class="text-sm text-gray-500">
                                 <i class="fas fa-info-circle mr-1"></i>
-                                Our support team has been notified about this issue.
+                                Contact your administrator if this issue continues.
                             </p>
                         </div>
                     </div>

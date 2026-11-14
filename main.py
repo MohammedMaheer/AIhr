@@ -453,7 +453,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers.setdefault(
                 "Content-Security-Policy",
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
+                "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
                 "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://cdn.jsdelivr.net; "
                 "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
                 "img-src 'self' data: https: blob:; "
@@ -4457,9 +4457,9 @@ async def startup_event():
     except Exception as e:
         print(f"⚠️ Database setup error: {e} - continuing with limited functionality")
 
-    print("🎉 HR Agent API startup completed")
-
     if os.getenv("SMARTHR_LOCAL_MODE", "").lower() in {"1", "true", "yes", "on"}:
+        from vps_local.discovery_shim import initialize_search_schema
+        await asyncio.to_thread(initialize_search_schema)
         try:
             import asyncio as _asyncio
             from vps_local.discovery_shim import warm_search_runtime
@@ -4479,6 +4479,8 @@ async def startup_event():
             max_attempts=int(os.getenv('TASK_MAX_ATTEMPTS', '3')))
         worker.start()
         app.state.search_worker = worker
+
+    print("🎉 HR Agent API startup completed")
 
 
 @app.on_event("shutdown")

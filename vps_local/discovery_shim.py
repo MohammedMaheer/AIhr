@@ -636,10 +636,9 @@ def _vector_search(query: str, page_size: int = 10,
                     for r in rows
                 ]
 
-            _ensure_advanced_search_schema(cur)
-            conn.commit()
-            if profile_preview:
-                cur.execute("SET LOCAL statement_timeout = '10000ms'")
+            if not profile_preview:
+                _ensure_advanced_search_schema(cur)
+                conn.commit()
 
             # Cosine distance uses the HNSW vector_cosine_ops index. In
             # advanced mode we pull a deeper semantic pool, add full-text rank

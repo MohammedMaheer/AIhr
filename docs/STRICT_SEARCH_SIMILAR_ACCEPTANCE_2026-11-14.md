@@ -26,7 +26,7 @@ provider. It is not a verified HR scorecard and makes no exact-match promise.
 ## Local Verification
 
 - 118 focused profile/precision tests passed.
-- 14 new service/API tests and four real PostgreSQL scope tests passed, including
+- 14 new service/API tests and five real PostgreSQL scope tests passed, including
   disabled-ranking profile parity, an HNSW fixture, disconnect checks, capacity
   limits and real HTTP rate limiting. The combined import/API/SQL sequence
   passed all 23 tests after fixing an existing import-smoke fixture that leaked
@@ -86,6 +86,11 @@ embedding, AI generation and network latency and are not end-to-end timings.
   seconds, preview SQL statements to ten seconds and local preview inference
   to two concurrent workers per process. Client aborts do not kill an already
   running Python embedding thread; capacity remains held until it finishes.
+- Post-deploy diagnostics reproduced first-use DDL lock contention while a
+  read-only probe held a table snapshot. The preview now skips optional runtime
+  schema initialization entirely: it only reads the already-installed schema,
+  retaining its SQL deadline. A regression rejects any preview-time schema DDL.
+  Default exact-search initialization is unchanged.
 
 ## Limitations
 

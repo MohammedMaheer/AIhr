@@ -26,6 +26,8 @@ CVs and private audit receipts are excluded from Git.
 - Follow independent review with live-context-only offers, indexed-profile
   parity when advanced ranking is disabled, tenant-prefiltered ANN previews,
   disconnect checks, local inference capacity limits and preview SQL deadlines.
+- Keep preview retrieval read-only; remove first-use request-time schema DDL
+  that can contend with concurrent read snapshots. Preserve normal search setup.
 - Verification and deployment evidence are recorded in
   `docs/STRICT_SEARCH_SIMILAR_ACCEPTANCE_2026-11-14.md`.
 

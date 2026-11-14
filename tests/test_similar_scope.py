@@ -59,3 +59,11 @@ def test_profile_preview_keeps_indexed_details_with_advanced_ranking_disabled(fl
         results.append(rows)
     assert results[0]==results[1]
     assert all(r['unmet_criteria'] for r in results[0])
+
+
+def test_profile_preview_does_not_attempt_request_time_schema_changes(flow,monkeypatch):
+    seed(flow)
+    def unexpected(*args):raise AssertionError('A preview must not run schema DDL')
+    monkeypatch.setattr(discovery_shim,'_ensure_advanced_search_schema',unexpected)
+    from services.similar_candidates import search
+    assert search('Designer in Dubai',10,'company_id: ANY("1")',[],{})

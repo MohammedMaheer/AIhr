@@ -84,7 +84,8 @@ def library_db(queue_db):
             CREATE TABLE resume_embeddings(id SERIAL PRIMARY KEY,filename TEXT,folder TEXT,storage_bucket TEXT,company_id INTEGER,
             file_size INTEGER,content_type TEXT,extracted_text TEXT,text_length INTEGER,embedding vector(3),
             candidate_years NUMERIC,candidate_location TEXT,candidate_languages TEXT[],candidate_skills TEXT[],profile_source TEXT,
-            search_tags TEXT[] DEFAULT '{}',source_uploaded_at TIMESTAMP,source_received_at TIMESTAMPTZ);''')
+            search_tags TEXT[] DEFAULT '{}',source_uploaded_at TIMESTAMP,source_received_at TIMESTAMPTZ,
+            source_email_context TEXT NOT NULL DEFAULT '',source_email_metadata JSONB);''')
         for bucket, folder, company, tags, uploaded, received in [
             ('fixture-bucket','Networking/Nov 2026',1,['UI design'],'2026-11-06','2026-04-30T23:59:59Z'),
             ('fixture-bucket','Networking/Nov 2026/sub',1,['Web design'],'2026-11-06',None),

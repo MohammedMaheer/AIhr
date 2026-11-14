@@ -80,6 +80,7 @@ def collect_resume_mail(token, limit, *, include_attachment, classify_context, i
             message_id = message["id"]
             subject = message.get("subject") or "No Subject"
             body = (message.get("body") or {}).get("content") or ""
+            body_is_html = ((message.get("body") or {}).get("contentType") or "").casefold() == 'html'
             related = classify_context(subject, body)
             base = "https://graph.microsoft.com/v1.0/me/messages/" + quote(message_id, safe="") + "/attachments"
             attachments = []
@@ -115,6 +116,6 @@ def collect_resume_mail(token, limit, *, include_attachment, classify_context, i
             if attachments:
                 results.append({"id": message_id, "from": ((message.get("from") or {}).get("emailAddress") or {}).get("address", "Unknown"),
                                 "subject": subject, "date": message.get("receivedDateTime") or "Unknown",
-                                "body_plain": body, "body_html": "", "snippet": body[:500],
+                                "body_plain": "" if body_is_html else body, "body_html": body if body_is_html else "", "snippet": body[:500],
                                 "attachments": attachments, "has_resume_attachment": True})
     return results

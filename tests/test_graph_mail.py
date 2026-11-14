@@ -62,6 +62,21 @@ def test_attachment_query_keeps_all_dates_and_satisfies_graph_sort_filter_rules(
     assert session.get.call_count == 1
 
 
+@pytest.mark.parametrize('kind', ['html', 'text'])
+def test_graph_preserves_body_format_for_safe_context_cleaning(kind):
+    session = MagicMock()
+    session.__enter__.return_value = session
+    value = message('m1')
+    value['body'] = {'content': '<p>Fictional application</p>' if kind == 'html' else 'Fictional application',
+                     'contentType': kind}
+    session.get.side_effect = [result({'value': [value]}), result({'value': [attachment('a1')]})]
+    with patch.object(graph.requests, 'Session', return_value=session):
+        emails = graph.collect_resume_mail('fake', 1, include_attachment=lambda *_: True,
+                                          classify_context=lambda *_: True)
+    assert emails[0]['body_html' if kind == 'html' else 'body_plain'] == value['body']['content']
+    assert emails[0]['body_plain' if kind == 'html' else 'body_html'] == ''
+
+
 @pytest.mark.parametrize("url", ["https://evil.invalid/v1.0/me", "http://graph.microsoft.com/v1.0/me",
     "https://graph.microsoft.com.evil.invalid/v1.0/me", "https://user@graph.microsoft.com/v1.0/me"])
 def test_graph_rejects_untrusted_nextlink_before_sending_tokens(url):

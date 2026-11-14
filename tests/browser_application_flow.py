@@ -40,7 +40,8 @@ def test_browser_application_upload_review_and_interview(job_app_flow, monkeypat
             ADD COLUMN profile_source TEXT, ADD COLUMN profile_updated_at TIMESTAMP,
             ADD COLUMN embedded_at TIMESTAMP, ADD COLUMN embed_model TEXT, ADD COLUMN extraction_error TEXT,
             ADD COLUMN search_tags TEXT[] DEFAULT '{}', ADD COLUMN source_uploaded_at TIMESTAMP,
-            ADD COLUMN source_received_at TIMESTAMPTZ;
+            ADD COLUMN source_received_at TIMESTAMPTZ,
+            ADD COLUMN source_email_context TEXT NOT NULL DEFAULT '', ADD COLUMN source_email_metadata JSONB;
             CREATE UNIQUE INDEX browser_embedding_identity ON resume_embeddings
             (storage_bucket,folder,filename,(COALESCE(company_id,0)));''')
     monkeypatch.setattr(main, '_run_resume_upload', REAL_UPLOAD)

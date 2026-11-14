@@ -14,6 +14,7 @@ Surface implemented (only what main.py touches):
 """
 from __future__ import annotations
 import os
+import json
 import mimetypes
 import re
 import threading
@@ -273,11 +274,14 @@ def _ensure_advanced_search_schema(cur) -> None:
         "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS search_tags TEXT[] NOT NULL DEFAULT '{}'",
         "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS source_uploaded_at TIMESTAMP",
         "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS source_received_at TIMESTAMPTZ",
+        "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS source_email_context TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS source_email_metadata JSONB",
         "CREATE INDEX IF NOT EXISTS idx_resume_emb_candidate_years ON resume_embeddings(candidate_years)",
         "CREATE INDEX IF NOT EXISTS idx_resume_emb_candidate_location ON resume_embeddings(candidate_location)",
         "CREATE INDEX IF NOT EXISTS idx_resume_emb_candidate_languages ON resume_embeddings USING gin(candidate_languages)",
         "CREATE INDEX IF NOT EXISTS idx_resume_emb_candidate_skills ON resume_embeddings USING gin(candidate_skills)",
         "CREATE INDEX IF NOT EXISTS idx_resume_emb_text_fts ON resume_embeddings USING gin(to_tsvector('simple', coalesce(extracted_text, '')))",
+        "CREATE INDEX IF NOT EXISTS idx_resume_emb_email_fts ON resume_embeddings USING gin(to_tsvector('simple', source_email_context)) WHERE source_email_metadata->>'association' = 'single_resume' AND source_email_metadata->>'purpose' = 'retrieval_only'",
     ]
     for stmt in statements:
         cur.execute(stmt)
@@ -371,6 +375,7 @@ def _row_tuple_to_dict(r) -> Dict[str, Any]:
         "candidate_skills": list(r[12] or []),
         "profile_source": r[13] or "",
         "storage_bucket": r[14],
+        "email_context_match": bool(r[15]) if len(r) > 15 else False,
     }
 
 
@@ -378,6 +383,11 @@ def _rank_rows(rows: list[Dict[str, Any]], query: str, page_size: int,
                criteria_query=None) -> list[Dict[str, Any]]:
     criteria = parse_search_criteria(query if criteria_query is None else criteria_query)
     if criteria.is_empty():
+        if any(row.get('email_context_match') for row in rows):
+            for row in rows:
+                row['vector_score'] = float(row.get('score') or 0.0)
+                row['score'] = _hybrid_score(row['vector_score'], row.get('lexical_score') or 0.0)
+            rows.sort(key=lambda row: (row['score'], row['vector_score']), reverse=True)
         return rows[:page_size]
 
     ranked = []
@@ -399,7 +409,7 @@ def _rank_rows(rows: list[Dict[str, Any]], query: str, page_size: int,
         if ev.get("hard_fail"):
             profile_bonus = -1.25
 
-        row["score"] = (0.68 * vector_score) + (0.20 * lexical_score) + (0.12 * profile_bonus)
+        row["score"] = _hybrid_score(vector_score, lexical_score, profile_bonus)
         row["vector_score"] = vector_score
         row["hybrid_lexical_score"] = lexical_score
         ranked.append(row)
@@ -417,6 +427,48 @@ def _rank_rows(rows: list[Dict[str, Any]], query: str, page_size: int,
     if len(exact) >= page_size:
         return exact[:page_size]
     return (exact + unknown)[:page_size]
+
+
+def _hybrid_score(vector_score, lexical_score, profile_bonus=0.0):
+    return (0.68 * vector_score) + (0.20 * min(float(lexical_score), 1.0)) + (0.12 * profile_bonus)
+
+
+def _add_email_context_rows(cur, rows, *, query, qvec, source_sql, source_params,
+                            scope_sql, scope_params, limit):
+    # Email text only broadens retrieval. Profiles, snippets and final scorecards
+    # remain CV-only; quoted/shared-message text cannot establish eligibility.
+    cur.execute(
+        f"""SELECT id, filename, folder, file_size, content_type,
+                   extracted_text, text_length, 1 - (embedding <=> %s::vector) AS vector_score,
+                   GREATEST(ts_rank_cd(to_tsvector('simple', coalesce(extracted_text, '')),
+                                       websearch_to_tsquery('simple', %s)),
+                            ts_rank_cd(to_tsvector('simple', source_email_context),
+                                       websearch_to_tsquery('simple', %s))) AS lexical_score,
+                   candidate_years, candidate_location, candidate_languages,
+                   candidate_skills, profile_source, storage_bucket, TRUE AS email_context_match
+            FROM {source_sql}
+            WHERE embedding IS NOT NULL AND {scope_sql}
+              AND source_email_metadata->>'association' = 'single_resume'
+              AND source_email_metadata->>'purpose' = 'retrieval_only'
+              AND to_tsvector('simple', source_email_context) @@ websearch_to_tsquery('simple', %s)
+            ORDER BY ts_rank_cd(to_tsvector('simple', source_email_context),
+                                websearch_to_tsquery('simple', %s)) DESC,
+                     embedding <=> %s::vector, id
+            LIMIT %s""",
+        (_vec_lit(qvec), query[:1000], query[:1000], *source_params, *scope_params,
+         query[:1000], query[:1000], _vec_lit(qvec), int(limit)),
+    )
+    by_id = {row['id']: row for row in rows}
+    for value in cur.fetchall():
+        row = _row_tuple_to_dict(value)
+        existing = by_id.get(row['id'])
+        if existing is None:
+            rows.append(row)
+            by_id[row['id']] = row
+        else:
+            existing['email_context_match'] = True
+            existing['lexical_score'] = max(float(existing.get('lexical_score') or 0), row['lexical_score'])
+    return rows
 
 
 def _extract_text_from_file(path: Path) -> str:
@@ -483,6 +535,10 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> Ind
 
     text = _extract_text_from_file(path)
     struct = document.struct_data or {}
+    email_context = None
+    if struct.get('source_email') is not None:
+        from services.email_context import validated_context
+        email_context = validated_context(struct['source_email'])
     # This column is storage identity, not a label: metadata joins, conflict keys
     # and search-result URIs must all refer to the actual stored object.
     filename = Path(key or path.name).name
@@ -577,6 +633,11 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> Ind
             cur.execute('''UPDATE resume_embeddings SET search_tags=%s
                 WHERE storage_bucket=%s AND folder=%s AND filename=%s AND company_id IS NOT DISTINCT FROM %s''',
                         (tags_from_text(text), storage_bucket, folder, filename, company_id))
+            if email_context is not None:
+                context_text, metadata = email_context
+                cur.execute('''UPDATE resume_embeddings SET source_email_context=%s,source_email_metadata=%s::jsonb
+                    WHERE storage_bucket=%s AND folder=%s AND filename=%s AND company_id IS NOT DISTINCT FROM %s''',
+                            (context_text, json.dumps(metadata), storage_bucket, folder, filename, company_id))
         conn.commit()
     except Exception:
         conn.rollback()
@@ -645,7 +706,7 @@ def _vector_search(query: str, page_size: int = 10,
                     (_vec_lit(qvec), *source_params, *scope_params, _vec_lit(qvec), int(page_size or 10)),
                 )
                 rows = cur.fetchall()
-                return [
+                light_rows = [
                     {
                         "id": str(r[0]),
                         "filename": r[1],
@@ -659,6 +720,10 @@ def _vector_search(query: str, page_size: int = 10,
                     }
                     for r in rows
                 ]
+                light_rows = _add_email_context_rows(cur, light_rows, query=query, qvec=qvec,
+                    source_sql=source_sql, source_params=source_params, scope_sql=scope_sql,
+                    scope_params=scope_params, limit=pool_size)
+                return _rank_rows(light_rows, query, int(page_size or 10), criteria_query=criteria_query)
 
             # Cosine distance uses the HNSW vector_cosine_ops index. In
             # advanced mode we pull a deeper semantic pool, add full-text rank
@@ -725,7 +790,11 @@ def _vector_search(query: str, page_size: int = 10,
                     if row[0] not in seen_ids:
                         rows.append(row)
                         seen_ids.add(row[0])
-        row_dicts = [_row_tuple_to_dict(r) for r in rows]
+            row_dicts = [_row_tuple_to_dict(r) for r in rows]
+            if not profile_preview:
+                row_dicts = _add_email_context_rows(cur, row_dicts, query=query, qvec=qvec,
+                    source_sql=source_sql, source_params=source_params, scope_sql=scope_sql,
+                    scope_params=scope_params, limit=pool_size)
         return _rank_rows(row_dicts, query, int(page_size or 10), criteria_query=criteria_query)
     finally:
         conn.rollback()
@@ -750,6 +819,7 @@ def _row_to_result(row: Dict[str, Any]) -> _Result:
         "candidate_profile": row.get("candidate_profile") or {},
         "criteria_match_preview": row.get("criteria_match_preview") or {},
         "criteria_profile_status": row.get("criteria_profile_status") or "",
+        "email_context_match": bool(row.get('email_context_match')),
     }
     doc = Document(
         id=row["id"],

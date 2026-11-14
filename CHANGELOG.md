@@ -5,6 +5,23 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.14.8 - 2026-11-14
+
+### Provenance-Aware Email Retrieval And Conservative Cleanup
+
+- Persist bounded, cleaned email context separately from CV text/embeddings and
+  qualifications. Search eligible single-CV messages through a local text index
+  using the same tenant/folder/tag/date scope and existing retrieval weights.
+- Keep quoted/shared-message text out of contextual ranking; keep all email text
+  out of candidate profile facts, snippets and AI scorecard prompts. Preserve
+  strict criteria, HR scoring weights, logo, layouts and original files.
+- Add dry-run-first, hash-verified redundant release-source cleanup. Never prune
+  globally or remove genuine CVs, backups, private configuration, active/mounted
+  releases, Docker resources or another application's files.
+- Add deterministic accuracy/negative-attribution and cleanup safety fixtures.
+  Actual rollout, historical-context recovery and reclaimed bytes are recorded
+  in `docs/EMAIL_CONTEXT_ACCEPTANCE_2026-11-14.md` after verification.
+
 ## v2026.11.14.7 - 2026-11-14
 
 ### Bounded Operations And Local Chart Reliability

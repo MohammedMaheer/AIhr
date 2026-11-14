@@ -55,7 +55,8 @@ def flow(queue_db, tmp_path, monkeypatch):
                 extracted_text TEXT,text_length INTEGER,embedding vector(3),candidate_years NUMERIC,
                 candidate_location TEXT,candidate_languages TEXT[],candidate_skills TEXT[],profile_source TEXT,
                 profile_updated_at TIMESTAMP,embedded_at TIMESTAMP,embed_model TEXT,extraction_error TEXT,
-                search_tags TEXT[] DEFAULT '{}',source_uploaded_at TIMESTAMP,source_received_at TIMESTAMPTZ);
+                search_tags TEXT[] DEFAULT '{}',source_uploaded_at TIMESTAMP,source_received_at TIMESTAMPTZ,
+                source_email_context TEXT NOT NULL DEFAULT '',source_email_metadata JSONB);
             CREATE UNIQUE INDEX e2e_identity ON resume_embeddings
                 (storage_bucket,folder,filename,(COALESCE(company_id,0)));''')
     monkeypatch.setenv('SMARTHR_LOCAL_MODE', '1')

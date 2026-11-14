@@ -61,3 +61,27 @@ failures prevent that app worker from claiming readiness. Optional embedding
 warmup remains separate and makes no paid provider call. Retrieval itself is
 read-only in both normal and similar-profile modes; existing profile/scoring
 semantics are unchanged.
+
+## Conservative Source Cleanup
+
+`scripts/prune-release-sources.py` defaults to a dry run. `--apply` removes only
+hash-verified redundant `source/` and `source.tar.gz` copies inside recognized
+`/opt/smarthr/releases/review-*` directories. It retains active/mounted releases,
+the two newest deployed source snapshots and the active release's predecessor.
+Unknown or modified source files make that directory ineligible.
+
+The tool never removes CV documents, private configuration, backups, receipts,
+Docker images, containers, volumes or files belonging to other applications. It
+rechecks the plan and container inventory before deletion. Run it at low I/O
+priority after a verified rollout; record dry-run and actual reclaimed bytes.
+Do not use global Docker pruning to chase a disk threshold.
+
+## Email Context
+
+Local ingestion stores a bounded cleaned email context separately from CV text,
+embeddings, profile fields and tags. The partial text index only searches messages
+with exactly one collected resume attachment. Shared-message context is retained
+for provenance, not ranking. HTML scripts/hidden elements, common quoted replies
+and signatures are excluded. Original email content is never rendered as HTML or
+added to an AI prompt. Exact qualifications and scorecards remain CV-grounded;
+this index adds no paid model call or prompt tokens.

@@ -2422,7 +2422,7 @@ def get_mime_type_for_datastore(file_path: str) -> str:
     return mime_type
 
 def upload_to_vector_datastore(file_path: str, company_id: int = None, company_code: str = None,
-                               user_id: str = None, display_filename: str = None) -> bool:
+                               user_id: str = None, display_filename: str = None, source_email=None) -> bool:
     """
     Upload a document to the company-specific vector datastore with proper metadata.
     This enables incremental indexing during file upload.
@@ -2479,6 +2479,8 @@ def upload_to_vector_datastore(file_path: str, company_id: int = None, company_c
         filename = display_filename or file_path.split('/')[-1]
         structured_data["filename"] = filename
         structured_data["file_extension"] = filename.split('.')[-1] if '.' in filename else "unknown"
+        if source_email is not None and os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
+            structured_data['source_email'] = source_email
 
         # Create the document
         document = discoveryengine_v1.Document(
@@ -2502,7 +2504,7 @@ def upload_to_vector_datastore(file_path: str, company_id: int = None, company_c
 
         print(f"📤 Uploading to datastore: {datastore_id}")
         print(f"🆔 Document ID: {document_id}")
-        print(f"🏷️ Metadata: {structured_data}")
+        print(f"🏷️ Metadata fields: {', '.join(sorted(structured_data))}")
 
         # Create the document
         operation = client.create_document(request=request)
@@ -6075,7 +6077,7 @@ def _resume_blob_name(folder, safe_name, *, stable_identity=False):
 
 
 def _store_resume_upload(db, *, bucket_name, blob_name, filename, content, content_type,
-                         user_id, company_id, company_code, source_received=None):
+                         user_id, company_id, company_code, source_received=None, source_email=None):
     blob = _get_storage_client().bucket(bucket_name).blob(blob_name)
     with db.resume_upload_lock(company_id) as records:
         existing_id = records.get_resume_upload_id(company_id, blob_name) if company_id is not None else None
@@ -6085,9 +6087,10 @@ def _store_resume_upload(db, *, bucket_name, blob_name, filename, content, conte
         if existing_id is None:
             records.track_resume_upload(file_name=filename, file_path=blob_name, file_size=len(content),
                                         mime_type=content_type, user_id=user_id, company_id=company_id)
+    email_options = {'source_email': source_email} if source_email is not None else {}
     indexed = upload_to_vector_datastore(file_path=blob_name, company_id=company_id,
                                          company_code=company_code, user_id=str(user_id),
-                                         display_filename=filename)
+                                         display_filename=filename, **email_options)
     if os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
         from services.resume_filters import record_metadata
         try:
@@ -6175,6 +6178,8 @@ async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], fold
     for email_data in scraped_emails:
         email_id = email_data['id']
         email_subject = email_data['subject']
+        from services.email_context import build_context
+        source_email = build_context(email_data)
 
         for attachment in email_data['attachments']:
             try:
@@ -6229,6 +6234,7 @@ async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], fold
                     company_code=company_code,
                     user_id=user['id'],
                     source_received=email_data.get('date'),
+                    source_email=source_email,
                 )
 
                 upload_results.append({

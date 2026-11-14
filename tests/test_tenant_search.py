@@ -25,7 +25,7 @@ def test_all_vector_queries_include_parameterized_tenant_scope(advanced):
         assert discovery._vector_search("Python developer in Dubai with 5+ years", 10,
                                          'company_id: ANY("27")') == []
     searches = [call for call in cursor.execute.call_args_list if "FROM resume_embeddings" in call.args[0]]
-    assert len(searches) == 2, "Hard criteria always use structured verification, even when hybrid ranking is disabled"
+    assert len(searches) == 3, "Structured CV verification and scoped email retrieval apply even when hybrid ranking is disabled"
     for call in searches:
         sql, params = call.args
         assert "company_id = %s" in sql
@@ -47,7 +47,7 @@ def test_semantic_only_search_keeps_lightweight_path_when_advanced_search_is_dis
         assert discovery._vector_search("Python engineer", 10, 'company_id: ANY("27")') == []
 
     searches = [call for call in cursor.execute.call_args_list if "FROM resume_embeddings" in call.args[0]]
-    assert len(searches) == 1
+    assert len(searches) == 2
     assert "candidate_skills" not in searches[0].args[0]
 
 

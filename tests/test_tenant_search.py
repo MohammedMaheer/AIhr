@@ -72,6 +72,30 @@ def test_search_request_makes_tenant_scope_explicit(monkeypatch):
     assert main._local_company_search_filter({"id": 1, "user_type": "super_admin"}) == ""
 
 
+def test_local_request_keeps_original_criteria_separate_from_optimized_semantics(monkeypatch):
+    monkeypatch.setenv('SMARTHR_LOCAL_MODE', '1')
+    original = 'Python developer based in Dubai with 3-6 years experience'
+    user = {'id': 7, 'user_type': 'tenant_user', 'company': {'company_id': 27}}
+    with patch.object(main, 'get_company_resources', return_value=('fixture', 'fixture')):
+        request = main.create_company_search_request('Python developer', user_context=user,
+                                                     criteria_query=original)
+    with patch.object(discovery, '_vector_search', return_value=[]) as vector:
+        discovery.SearchServiceClient().search(request)
+    assert vector.call_args.kwargs['query'] == 'Python developer'
+    assert vector.call_args.kwargs['criteria_query'] == original
+    assert vector.call_args.kwargs['filter_str'] == 'company_id: ANY("27")'
+
+
+def test_profile_ranking_uses_original_requirements_not_rewritten_location():
+    rows = [dict(id=location, score=0.9, lexical_score=0,
+                 candidate_years=5, candidate_location=location,
+                 candidate_languages=[], candidate_skills=['Python'], profile_source='test', text='')
+            for location in ('Paris, France', 'Dubai, UAE')]
+    ranked = discovery._rank_rows(rows, 'Python developer based in Paris', 10,
+                                 criteria_query='Python developer based in Dubai with 3-6 years experience')
+    assert [row['id'] for row in ranked] == ['Dubai, UAE']
+
+
 def test_result_preserves_full_folder_and_bucket():
     result = discovery._row_to_result({"id": "1", "folder": "resume/2026", "filename": "QA.txt",
                                        "storage_bucket": "qa-company-bucket"})
@@ -165,15 +189,18 @@ def test_vector_api_reports_incomplete_profile_evidence_without_returning_candid
     assert payload['criteria_verification'] == 'incomplete'
 
 
-@pytest.mark.parametrize('wanted', ['Java', 'SQL', 'C', 'C++', 'C#', '.NET', 'R'])
+@pytest.mark.parametrize('wanted', ['Java', 'SQL', 'C', 'C++', 'C#', '.NET', 'R', 'Node.js', 'React.js'])
 def test_real_postgres_shortlist_and_final_skill_filter_agree(queue_db, wanted):
-    skills = ['JavaScript','Java','Java17','NoSQL','SQL Server','C++','C','C#','.NET 8','ASP.NET Core','CRM','R']
+    skills = ['JavaScript','Java','Java17','NoSQL','SQL Server','C++','C','C#','.NET 8','ASP.NET Core','CRM','R',
+              'Node','Node.js','NodeJS','Node JS','multi-node SDN networks','node_modules',
+              'React','React.js','ReactJS','Reactive programming','Node.js.','React.js.',
+              'Node.jsOther','React.jsOther']
     criteria = SearchCriteria(required_skills=[wanted])
     where, params = discovery._criteria_sql_where(criteria)
     with queue_db.get_cursor() as (cursor, _):
-        cursor.execute('CREATE TABLE resume_embeddings (id INTEGER,embedding INTEGER,candidate_skills TEXT[])')
+        cursor.execute("CREATE TABLE resume_embeddings (id INTEGER,embedding INTEGER,candidate_skills TEXT[],extracted_text TEXT DEFAULT '')")
         for index, skill in enumerate(skills):
-            cursor.execute('INSERT INTO resume_embeddings VALUES (%s,1,%s)', (index, [skill]))
+            cursor.execute('INSERT INTO resume_embeddings (id,embedding,candidate_skills) VALUES (%s,1,%s)', (index, [skill]))
         cursor.execute('SELECT id FROM resume_embeddings WHERE '+where, params)
         shortlisted = {row['id'] for row in cursor.fetchall()}
     expected = {index for index, skill in enumerate(skills) if not evaluate_criteria(
@@ -194,14 +221,39 @@ def test_real_postgres_and_final_boolean_requirements_agree(queue_db, query):
     criteria = parse_search_criteria(query)
     where, params = discovery._criteria_sql_where(criteria)
     with queue_db.get_cursor() as (cursor, _):
-        cursor.execute('CREATE TABLE resume_embeddings (id INTEGER, embedding INTEGER, candidate_skills TEXT[], candidate_languages TEXT[])')
+        cursor.execute("CREATE TABLE resume_embeddings (id INTEGER, embedding INTEGER, candidate_skills TEXT[], candidate_languages TEXT[], extracted_text TEXT DEFAULT '')")
         for index, (skills, languages) in enumerate(profiles):
             profile = profile_from_analysis({'hr_scorecard': {'candidate_overview': {'skills': skills},
                                              'detailed_analysis': {'languages': languages}}})
-            cursor.execute('INSERT INTO resume_embeddings VALUES (%s,1,%s,%s)',
+            cursor.execute('INSERT INTO resume_embeddings (id,embedding,candidate_skills,candidate_languages) VALUES (%s,1,%s,%s)',
                            (index, profile['candidate_skills'], profile['candidate_languages']))
         cursor.execute('SELECT id FROM resume_embeddings WHERE '+where, params)
         shortlisted = {row['id'] for row in cursor.fetchall()}
     expected = {index for index, (skills, languages) in enumerate(profiles) if not evaluate_criteria(
         {'candidate_overview': {'skills': skills}, 'detailed_analysis': {'languages': languages}}, criteria)['misses']}
     assert shortlisted == expected
+
+
+@pytest.mark.parametrize('query', [
+    'Required skills: Adobe Illustrator',
+    'Required skills: (Adobe Illustrator or Figma) and Photoshop',
+    'Required skills: Node.js and React.js',
+])
+def test_postgres_partial_profile_source_evidence_matches_runtime_shortlist(queue_db, query):
+    texts = [None, '', 'Adobe Illustrator and Photoshop', 'Figma and Photoshop',
+             'Adobe IllustratorOther and Photoshop', 'NodeJS and ReactJS',
+             'multi-node SDN networks and Reactive programming']
+    criteria = parse_search_criteria(query)
+    where, params = discovery._criteria_sql_where(criteria)
+    rows = [{'id': index, 'candidate_skills': ['Excel'], 'text': text, 'score': .8}
+            for index, text in enumerate(texts)]
+    with queue_db.get_cursor() as (cursor, _):
+        cursor.execute('CREATE TABLE resume_embeddings (id INTEGER,embedding INTEGER,candidate_skills TEXT[],extracted_text TEXT)')
+        for row in rows:
+            cursor.execute('INSERT INTO resume_embeddings VALUES (%s,1,%s,%s)',
+                           (row['id'], row['candidate_skills'], row['text']))
+        cursor.execute('SELECT id FROM resume_embeddings WHERE '+where, params)
+        shortlisted = {row['id'] for row in cursor.fetchall()}
+    expected = {row['id'] for row in discovery._rank_rows(rows, query, 10)}
+    assert shortlisted == expected
+    assert shortlisted, 'Explicit source evidence must survive partial skill indexing'

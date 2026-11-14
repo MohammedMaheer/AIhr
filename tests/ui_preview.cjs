@@ -24,6 +24,14 @@ const history = Array.from({length:55},(_,i)=>({id:i+1,search_query:i===0?'Netwo
     top_results:i%3?[{name:'Fictional Candidate With A Long Name',score:82},{name:'Example Candidate',score:77}]:[]}));
 const interviews=[{id:1,candidate_name:'Fictional Candidate With A Long Name',candidate_email:'candidate@example.invalid',position:'Senior Infrastructure Engineer',interview_date:'2026-11-10',interview_time:'10:00',time_zone:'Asia/Dubai',duration_minutes:60,interview_type:'video',status:'scheduled',version:1,meeting_provider:'teams'},
     {id:2,candidate_name:'Example Candidate',position:'UI Designer',interview_date:'2026-11-06',interview_time:'11:30',time_zone:'Asia/Kolkata',status:'cancelled',version:1,meeting_provider:'none'}];
+const jobPage={id:11,title:'Senior Network and Information Security Team Lead',company_name:'Example Recruitment Company',
+    location:'Riyadh, Saudi Arabia',employment_type:'Full-time',status:'published',version:1,applicant_count:2,indexing_pending:1,
+    public_url:'/apply/'+'b'.repeat(42),description:'Lead the network and information security team. Support incident response, service delivery and operational improvements across a growing business.',
+    custom_questions:['Describe a relevant project you delivered.'],application_settings:{work_arrangement:'onsite',resume_policy:'either',
+        pay:{show:true,minimum:'7000',maximum:'10000',currency:'SAR',period:'month'},fields:{portfolio:true}}};
+const applicants=[{id:21,candidate_name:'Fictional Candidate With A Long Professional Name',normalized_email:'fictional.candidate.with.long.address@example.invalid',
+    location:'Riyadh, Saudi Arabia',years_experience:8,answers:{0:'Led an infrastructure improvement project.'},resume_upload_id:1,vector_indexed:true,status:'received',version:1,created_at:'2026-11-12T10:30:00Z'},
+    {id:22,candidate_name:'Example Applicant',normalized_email:'applicant@example.invalid',resume_url:'https://example.invalid/resume',status:'reviewing',version:1,answers:{},created_at:'2026-11-12T11:30:00Z'}];
 function json(response,value,status=200){response.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});response.end(JSON.stringify(value));}
 const ingestionEnabled=process.env.UI_PREVIEW_INGESTION==='1';
 const ingestionRequests=[];
@@ -62,11 +70,20 @@ const server = http.createServer((request,response)=>{
         request.resume();return json(response,{success:true,results:[],total_results:0,query:'Fictional UI review search'});
     }
     if(request.method!=='GET' && request.method!=='HEAD'){request.resume();return json(response,{detail:'Writes are disabled in the UI preview.'},405);}
+    if(url.pathname===jobPage.public_url || url.pathname==='/job-application-pages/11/preview'){
+        const preview=url.pathname.endsWith('/preview');
+        const html=fs.readFileSync(path.join(root,'templates/job_application_public.html'),'utf8')
+            .replace(/\{\{\s*asset_v\.[a-z_]+\s*\}\}/g,'preview')
+            .replace('{{ public_token }}',preview?'':'b'.repeat(42))
+            .replace("{{ preview_page_id or '' }}",preview?'11':'')
+            .replace("{{ preview_company_id or '' }}",preview?'1':'');
+        response.writeHead(200,{'Content-Type':'text/html','Cache-Control':'no-store'});return response.end(html);
+    }
     if(url.pathname==='/'){
         const html=fs.readFileSync(path.join(root,'templates/index.html'),'utf8')
             .replace(/\{\{\s*asset_v\.[a-z_]+\s*\}\}/g,'preview')
             .replace('{{ ui_limits | tojson }}',JSON.stringify({search_results:25,email_scan:100}))
-            .replace('href="/static/css/tailwind.css"','href="https://effortsairecruiter.tech/static/css/tailwind.css"')
+            .replace('href="/static/css/tailwind.css"',fs.existsSync(path.join(staticRoot,'css/tailwind.css'))?'href="/static/css/tailwind.css"':'href="https://effortsairecruiter.tech/static/css/tailwind.css"')
             .replace('<title>Smart HR</title>','<title>SmartHR UI review - fictional data</title>');
         response.writeHead(200,{'Content-Type':'text/html','Cache-Control':'no-store'});return response.end(html);
     }
@@ -86,6 +103,9 @@ const server = http.createServer((request,response)=>{
     if(url.pathname==='/api/me')return json(response,{success:true,user});
     if(url.pathname==='/api/companies')return json(response,{success:true,companies});
     if(url.pathname==='/api/users')return json(response,{success:true,users});
+    if(url.pathname==='/api/job-application-pages')return json(response,{success:true,pages:[jobPage]});
+    if(url.pathname==='/api/job-application-pages/11/applications')return json(response,{success:true,applications:applicants,total:applicants.length});
+    if(url.pathname==='/api/job-application-pages/11/preview-data' || url.pathname==='/api/public/application-pages/'+'b'.repeat(42))return json(response,{success:true,page:jobPage});
     if(url.pathname==='/api/resume-folders')return json(response,{success:true,supported:true,folders,tags,
         tag_counts:Object.fromEntries(tags.map((tag,i)=>[tag,{total:63-i,searchable:59-i}]))});
     if(url.pathname==='/api/resume-library'){
@@ -105,6 +125,9 @@ const server = http.createServer((request,response)=>{
         response.writeHead(200,{'Content-Type':extension==='txt'?'text/plain; charset=utf-8':'application/pdf','Cache-Control':'no-store'});return response.end(fs.readFileSync(target));
     }
     if(url.pathname==='/api/dashboard-stats')return json(response,{success:true,candidate_stats:{selected:1,rejected:0,shortlisted:2,interviewed:0},activity_stats:{total_resumes:63,total_searches:12}});
+    if(url.pathname==='/api/candidates-by-status')return json(response,{success:true,candidates:[{candidate_name:'Fictional Candidate With A Long Professional Name',
+        candidate_email:'fictional.candidate.with.long.address@example.invalid',candidate_location:'Riyadh, Saudi Arabia',position_applied:'Senior Network and Information Security Team Lead',
+        match_score:82,actioned_at:'2026-11-12T10:30:00Z',search_id:1,search_query:'Network engineer in Riyadh',file_path:uploads[0].file_path}]});
     if(url.pathname==='/api/search-history'){
         const page=Math.max(1,Number(url.searchParams.get('page'))||1),page_size=Math.max(1,Math.min(100,Number(url.searchParams.get('page_size')||url.searchParams.get('limit'))||25));
         return json(response,{success:true,history:history.slice((page-1)*page_size,page*page_size),total:history.length,page,page_size});

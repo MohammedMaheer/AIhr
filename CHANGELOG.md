@@ -5,6 +5,205 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.14.7 - 2026-11-14
+
+### Bounded Operations And Local Chart Reliability
+
+- Self-host the currently resolved Chart.js 4.6.1 build with exact-byte integrity
+  verification and its license. Remove the unused script origin without changing
+  charts, scores, application branding or layout.
+- Prepare local search schema before readiness with bounded lock/statement time.
+  Keep all retrieval modes free of request-time DDL and schema commits.
+- Add SmartHR-only resource/log policies, local state-change monitoring and a
+  persistent-volume recreation rehearsal for guarded application/database rollout.
+  No Docker-daemon restart, global pruning, external alerting or backup service.
+- Keep error feedback honest; do not claim support was notified automatically.
+- Preserve provider keys, scoring/eligibility behavior, original CVs and unrelated
+  applications. CI billing and off-site backups are excluded by owner direction.
+  Verification is recorded in `docs/PRODUCTION_GUARDRAILS_2026-11-14.md`.
+- Deployed source `8f76f64` after 1,199 backend tests passed per provider
+  configuration, 27 frontend suites, three isolated browser/API workflows and a
+  verified 23-table restore plus persistent-volume recreation rehearsal. All
+  7,862 referenced original file hashes and 22 unrelated containers are intact.
+- Ten live read-only folder/tag/date cases passed without scope leaks; a
+  four-worker, 32-request retrieval probe had zero errors and 116.64 ms p95.
+  This is SQL/vector retrieval, not full AI search or sustained capacity.
+  Installed limits/log rotation and the active local monitor were verified.
+  Health and acceptance checks added no paid AI calls. Existing disk headroom
+  warning remains visible rather than being hidden by cleanup or new thresholds.
+
+## v2026.11.14.6 - 2026-11-14
+
+### Scoped Similar Profiles And Stricter Location Parsing
+
+- Offer an explicit "Search for similar candidates" action after a genuine
+  zero-result exact search. Show local indexed profile suggestions separately,
+  label them unverified, and list unmet or unconfirmed requirements. Never pad
+  exact results or invent verified scorecards or match percentages.
+- Retain the original company, folders, tags and received/uploaded date scope.
+  Support all authorized folders without submitting an invalid empty selection;
+  fail closed for explicit empty selections. No paid AI calls for suggestions.
+- Correct location parsing before numeric experience requirements and stop
+  treating a role preceding "based in" as a location. Treat recognized legacy
+  address-parser job-duty artifacts as unknown, not as proof of a wrong city.
+  Retain final full-document eligibility checks and ranking weights.
+- Add scope, authentication, CSRF, validation, escaping, stale-response,
+  desktop/mobile and SQL regressions. Preserve the logo, existing search UI,
+  candidate data, original files and core scoring functionality.
+- Follow independent review with live-context-only offers, indexed-profile
+  parity when advanced ranking is disabled, tenant-prefiltered ANN previews,
+  disconnect checks, local inference capacity limits and preview SQL deadlines.
+- Keep preview retrieval read-only; remove first-use request-time schema DDL
+  that can contend with concurrent read snapshots. Preserve normal search setup.
+- Verification and deployment evidence are recorded in
+  `docs/STRICT_SEARCH_SIMILAR_ACCEPTANCE_2026-11-14.md`.
+- Final source `fd9cdae` deployed after 1,182 tests passed per runtime provider
+  configuration, 26 frontend suites, isolated desktop/mobile workflows and a
+  verified 23-table restore. Real strict ten-request searches returned 1/0/0/10;
+  final local similar/filter probes added no paid calls. Logo, original CVs,
+  strict score weights, business records and unrelated VPS applications retained.
+
+## v2026.11.14.5 - 2026-11-14
+
+### Clear Stale Search Actions And Clean Outreach Role Prefills
+
+- Replace an old result count with a pending label and remove its export action
+  when a new search starts. Clear the candidate-list progress state on failure;
+  preserve actual counts/results during repeated cleanup and restore export
+  normally when new verified results arrive.
+- Stop copying explicit skills/requirements clauses into outreach job titles,
+  subjects and generated template text. Preserve literal role punctuation such
+  as .NET, Node.js and Sr., the complete original query and manually edited drafts.
+- Preserve complete role names in the title helper and bound fallback keywords
+  to actual words: Data Analyst must not become Data, and required/recruitment
+  must not accidentally classify an HR search as UI/UX. Preserve punctuation in
+  framework names. No role requirement, score weight or eligibility rule changes.
+- Add DOM regressions for loading, failure cleanup, detached views and prefills.
+  No search, scoring, ranking, filtering, token limit, logo or layout changes.
+- Extend controlled real-provider acceptance to HR recruitment (ten exact
+  matches), data analysis (four) and sales management (one), each requesting ten
+  candidates. Retain truthful shortfalls and private source evidence. Runtime
+  gates and post-deploy observations are recorded in
+  `docs/EXPANDED_ROLE_DESKTOP_ACCEPTANCE_2026-11-14.md`.
+- Deployed final source `1d881e2` after 1,152 backend tests passed in each runtime
+  configuration, 25 frontend suites and verified 23-table restore/restart gates.
+  Real corrected-role searches returned 10/4/1 exact matches, all within scope;
+  the identical ten-result HR repeat reused all scores in 2.60 seconds. Empty
+  folder/date scopes blocked cached results without AI calls. Original logo,
+  layout, CVs, business records and unrelated applications were preserved.
+
+## v2026.11.14.4 - 2026-11-14
+
+### Recover Explicit Skills From Partial Search Profiles
+
+- A controlled real design search reproduced a false negative: a CV explicitly
+  listed Adobe Illustrator, but its partial indexed skill vocabulary omitted it.
+- Supplement retrieval profiles with only explicitly requested skills found in
+  the existing CV text using the shared bounded skill matcher. Apply the same
+  evidence fallback in scoped PostgreSQL supplemental retrieval so those CVs do
+  not depend solely on the initial semantic pool. No reindexing or paid AI is
+  required for this check; full-document AI verification still decides eligibility.
+- Preserve boolean requirements, location/experience rejection, tenant/folder/
+  tag/date scope, score weights, result-count shortfalls, logo and UI.
+- Add partial-index, boolean, token-boundary, final-verification and real SQL
+  parity regressions. Local checks: 108 focused tests, 30 PostgreSQL tests and
+  the opt-in desktop/mobile search workflow passed. Full runtime and deployment
+  acceptance are recorded in
+  `docs/AI_MULTIROLE_TEN_CANDIDATE_ACCEPTANCE_2026-11-14.md`.
+- Real accounting acceptance returned ten supported matches; its cached repeat
+  retained all ten scores and reduced measured tokens from 77,343 to 1,138.
+  These are bounded sample measurements, not population-wide accuracy claims.
+- Deployed code `49e4f85` after 1,152 tests passed in each production-runtime
+  provider configuration and a verified 23-table backup restore. The real design
+  rerun recovered the intended match. Accounting retained ten identical cached
+  scorecards after restart and on mobile; post-deploy exclusions still returned
+  zero. Original files, unrelated apps, logo, layout and scoring rules preserved.
+
+## v2026.11.14.3 - 2026-11-14
+
+### Ground Scorecard Facts And Employment Dates
+
+- Stop forcing invented skills, tools and certifications into empty keyword
+  categories. Extract the job's stated competencies using the same JSON shape;
+  retain broad-title core competencies and separate semantic search expansion.
+  This removes misleading required-keyword gaps and unnecessary matching tokens.
+- Keep the date-period label synchronized when reopening search filters or
+  editing dates in another mounted view. Preserve date presets and custom-range
+  labels without changing the backend filter payload or visual layout.
+- Real-provider review recovered both intended matches after the alias fix but
+  exposed a stale assumed reference year and an unsupported promotion claim.
+- Prefix direct and split scorecard generation with a trusted UTC reference
+  month and source-grounding rules. Resolve Present/Current against that month,
+  do not invent candidate facts and label future retention as uncertain.
+- Include the exact grounding context in the existing scorecard prompt hash.
+  Reuse remains available within the month; older ungrounded or different-month
+  assessments cannot masquerade as a current grounded cache hit.
+- Preserve all job/CV input text, scoring weights, ranking, filters, schema,
+  logo and UI. Existing inference can still be uncertain; this is not a claim
+  of error-free hiring predictions. Real acceptance and usage are recorded in
+  PR #1 after the gated deployment and controlled rerun.
+
+## v2026.11.14.2 - 2026-11-14
+
+### Recognize Equivalent JavaScript Framework Skill Names
+
+- A bounded real-provider search exposed false-negative retrieval: indexed
+  `node` did not satisfy an explicit `Node.js` requirement. Recognize Node,
+  Node.js, NodeJS and Node JS consistently in the shared Python/PostgreSQL skill
+  pattern, and do the equivalent for React/React.js/ReactJS/React JS.
+- Use those same patterns when extracting the two framework names locally.
+  Reject generic multi-node network text, reactive programming, node_modules
+  and longer similarly named tokens; preserve sentence-final punctuation.
+- Add fictional positive/negative and real PostgreSQL parity regressions.
+  Do not change scoring prompts, ranking weights, requested-count semantics,
+  tenant/folder/tag/date filters, logo, layout or production schema.
+- Full runtime verification, the controlled real-provider rerun, observed token
+  usage and source/image mapping are recorded with the deployment in PR #1.
+
+## v2026.11.14.1 - 2026-11-14
+
+### Reuse Exact Job Preparation And Preserve Invalid Search Drafts
+
+- Reuse successful keyword/query preparation across verified recruiters in the
+  same company for an identical complete job description and provider/model.
+  Keep the existing bounded 15-minute in-process cache and per-user boundaries
+  for documents, candidate matching and super-admin preparation. Repeated team
+  searches can avoid two preparation calls; candidate scoring is unchanged.
+- Validate folder/tag/date scope before starting search animations or clearing
+  either composer. Invalid selections retain the query and editable form instead
+  of replacing them with a generic search failure. Backend validation remains.
+- Add an opt-in desktop/mobile browser-to-API-to-worker-to-PostgreSQL scope test
+  using real fictional DOCX ingestion, mocked Graph/provider responses and local
+  deterministic vectors. Cover received/uploaded dates, multi-folder/tag scope,
+  filter-dialog follow-up searches, empty results and invalid selections.
+- Verify ten read-only live retrieval cohorts without model inference or paid
+  AI calls. No logo, layout, ranking, scoring prompt, threshold or schema change.
+  See `docs/SEARCH_SCOPE_VERIFICATION_2026-11-14.md` for evidence and boundaries;
+  actual deployment and full runtime results are recorded in GitHub PR #1.
+
+## v2026.11.13.1 - 2026-11-13
+
+### Correct Recent Search And Indexing Regressions
+
+- Restore storage-key identity in the local resume index. Original filenames
+  remain in upload/library records; unique stored filenames continue to drive
+  vector identities, download paths and received/uploaded-date metadata joins.
+  This prevents same-named CVs from overwriting another CV's index record.
+- Use the recruiter's original query for local hard-criteria preselection and
+  profile ranking, independently of the AI-optimized semantic query. Preserve
+  tenant, folder, tag and date restrictions through both retrieval paths.
+- Bind search results, errors and progress to the originating workspace view.
+  Ignore stale responses after newer searches, navigation or identity changes;
+  retain exact-request coalescing with progress for every waiting consumer.
+- Version cached scorecards against the actual keyword set, auxiliary prompts
+  and normalized provider/model selection. Older cache signatures are bypassed;
+  changed assessment inputs may require fresh paid scoring on the next search.
+- Add real PostgreSQL/file regression coverage for same-named CVs, Graph import
+  dates and original criteria outside the rewritten query's nearest-neighbor
+  pool. Keep oversized fixture IDs bounded and validation tests portable.
+- Verification and deployment status are recorded in the release commit.
+  This is a source-only release, not a live deployment or provider acceptance.
+
 ## v2026.11.11.6 - 2026-11-11
 
 ### Keep The Job Page Form Scrollable

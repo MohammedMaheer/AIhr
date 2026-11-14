@@ -35,7 +35,8 @@ def test_extraction_retains_every_character_and_uses_exact_bytes():
     assert len(calls) == 6
 
 
-@pytest.mark.parametrize("text", [None, "", "   ", "x" * 262145])
+@pytest.mark.parametrize("text", [None, "", "   ", "x" * 262145],
+                         ids=['none', 'empty', 'whitespace', 'oversized'])
 def test_empty_or_oversized_extraction_is_returned_unchanged_but_not_cached(text):
     reuse, calls = SearchReuse(), []
     for _ in range(2):

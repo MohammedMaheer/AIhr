@@ -98,9 +98,11 @@ class SearchRequest:
     def __init__(self, *, serving_config: str = "", query: str = "",
                  page_size: int = 10, content_search_spec=None,
                  query_expansion_spec=None, spell_correction_spec=None,
-                 filter: str = "", folder_filters=None, resume_filters=None, **kwargs):
+                 filter: str = "", folder_filters=None, resume_filters=None,
+                 criteria_query=None, **kwargs):
         self.serving_config = serving_config
         self.query = query
+        self.criteria_query = criteria_query
         self.page_size = page_size
         self.content_search_spec = content_search_spec
         self.query_expansion_spec = query_expansion_spec
@@ -178,6 +180,7 @@ class _SearchResponse:
 _db_pool_singleton = None
 _db_pool_lock = threading.Lock()
 _advanced_schema_ensured = False
+_schema_lock = threading.Lock()
 _query_embedding_cache: OrderedDict[str, List[float]] = OrderedDict()
 _query_embedding_cache_lock = threading.Lock()
 
@@ -226,6 +229,29 @@ def warm_search_runtime() -> None:
     """Load heavyweight local search dependencies before the first user query."""
     _get_pool()
     _embed_query("startup warmup query")
+
+
+def initialize_search_schema() -> None:
+    """Run bounded schema setup before serving requests, not during retrieval."""
+    global _advanced_schema_ensured
+    with _schema_lock:
+        if _advanced_schema_ensured:
+            return
+        pool = _get_pool()
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET LOCAL lock_timeout = '5000ms'")
+                cur.execute("SET LOCAL statement_timeout = '30000ms'")
+                _ensure_advanced_search_schema(cur)
+            conn.commit()
+            _advanced_schema_ensured = True
+        except Exception:
+            _advanced_schema_ensured = False
+            conn.rollback()
+            raise
+        finally:
+            pool.putconn(conn)
 
 
 def _vec_lit(vec: List[float]) -> str:
@@ -315,15 +341,15 @@ def _criteria_sql_where(criteria) -> tuple[str, list[Any]]:
             clauses.append("%s = ANY(candidate_languages)")
             params.append(language)
 
-    skill_sql="EXISTS (SELECT 1 FROM unnest(candidate_skills) s WHERE s ~* %s)"
+    skill_sql = "(EXISTS (SELECT 1 FROM unnest(candidate_skills) s WHERE s ~* %s) OR extracted_text ~* %s)"
     if criteria.skill_expression is not None:
         clause,values=requirements_logic.sql(criteria.skill_expression,
-            lambda term:(skill_sql,[_skill_pattern(term)]))
+            lambda term:(skill_sql,[_skill_pattern(term), _skill_pattern(term)]))
         clauses.append(clause);params.extend(values)
     else:
         for skill in criteria.required_skills:
             clauses.append(skill_sql)
-            params.append(_skill_pattern(skill))
+            params.extend([_skill_pattern(skill), _skill_pattern(skill)])
 
     return " AND ".join(clauses), params
 
@@ -348,14 +374,15 @@ def _row_tuple_to_dict(r) -> Dict[str, Any]:
     }
 
 
-def _rank_rows(rows: list[Dict[str, Any]], query: str, page_size: int) -> list[Dict[str, Any]]:
-    criteria = parse_search_criteria(query)
+def _rank_rows(rows: list[Dict[str, Any]], query: str, page_size: int,
+               criteria_query=None) -> list[Dict[str, Any]]:
+    criteria = parse_search_criteria(query if criteria_query is None else criteria_query)
     if criteria.is_empty():
         return rows[:page_size]
 
     ranked = []
     for row in rows:
-        profile = profile_from_row(row)
+        profile = profile_from_row(row, required_skills=criteria.required_skills)
         ev, status = evaluate_profile(profile, criteria)
         row["candidate_profile"] = profile
         row["criteria_match_preview"] = ev
@@ -456,8 +483,9 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> Ind
 
     text = _extract_text_from_file(path)
     struct = document.struct_data or {}
-    display_filename = struct.get("filename")
-    filename = Path(display_filename).name if isinstance(display_filename, str) and display_filename else Path(key or path.name).name
+    # This column is storage identity, not a label: metadata joins, conflict keys
+    # and search-result URIs must all refer to the actual stored object.
+    filename = Path(key or path.name).name
     folder = Path(key).parent.as_posix() if key and len(Path(key).parts) > 1 else ""
     storage_bucket = urlparse(uri).netloc
     ctype = (getattr(content, "mime_type", "") if content else "") or mimetypes.guess_type(str(path))[0] or path.suffix.lstrip(".")
@@ -572,7 +600,8 @@ def _tenant_scope(filter_str: str) -> tuple[str, list]:
 
 
 def _vector_search(query: str, page_size: int = 10,
-                   filter_str: str = "", folder_filters=None, resume_filters=None) -> List[Dict[str, Any]]:
+                   filter_str: str = "", folder_filters=None, resume_filters=None,
+                   criteria_query=None, profile_preview=False) -> List[Dict[str, Any]]:
     """Run pgvector ANN search; return list of dicts shaped like Discovery results."""
     scope_sql, scope_params = _tenant_scope(filter_str)
     from services.resume_folders import folder_sql
@@ -584,7 +613,7 @@ def _vector_search(query: str, page_size: int = 10,
     scope_sql += f' AND ({filtered_sql})'
     scope_params.extend(filtered_params)
     source_sql, source_params = 'resume_embeddings', []
-    if folder_filters or resume_filters:
+    if folder_filters or resume_filters or profile_preview:
         # Rank the complete selected subset. An ANN index can otherwise filter
         # after its global nearest-neighbour pool and miss eligible folder CVs.
         source_sql = f'(SELECT * FROM resume_embeddings WHERE {scope_sql} OFFSET 0) AS scoped_resumes'
@@ -592,15 +621,17 @@ def _vector_search(query: str, page_size: int = 10,
     if not query.strip():
         return []
     qvec = _embed_query(query)
-    criteria = parse_search_criteria(query)
+    criteria = parse_search_criteria(query if criteria_query is None else criteria_query)
     pool_size = _candidate_pool_size(page_size, not criteria.is_empty())
     pool = _get_pool()
     conn = pool.getconn()
     try:
         with conn.cursor() as cur:
+            if profile_preview:
+                cur.execute("SET LOCAL statement_timeout = '10000ms'")
             # Keep the lightweight path for semantic-only searches, but hard
             # criteria require profile evaluation even when hybrid ranking is off.
-            if not ADVANCED_SEARCH_ENABLED and criteria.is_empty():
+            if not ADVANCED_SEARCH_ENABLED and criteria.is_empty() and not profile_preview:
                 cur.execute(
                     f"""
                     SELECT id, filename, folder, file_size, content_type,
@@ -628,9 +659,6 @@ def _vector_search(query: str, page_size: int = 10,
                     }
                     for r in rows
                 ]
-
-            _ensure_advanced_search_schema(cur)
-            conn.commit()
 
             # Cosine distance uses the HNSW vector_cosine_ops index. In
             # advanced mode we pull a deeper semantic pool, add full-text rank
@@ -698,7 +726,7 @@ def _vector_search(query: str, page_size: int = 10,
                         rows.append(row)
                         seen_ids.add(row[0])
         row_dicts = [_row_tuple_to_dict(r) for r in rows]
-        return _rank_rows(row_dicts, query, int(page_size or 10))
+        return _rank_rows(row_dicts, query, int(page_size or 10), criteria_query=criteria_query)
     finally:
         conn.rollback()
         pool.putconn(conn)
@@ -743,7 +771,8 @@ class SearchServiceClient:
         rows = _vector_search(query=request.query, page_size=request.page_size,
                               filter_str=getattr(request, "filter", "") or "",
                               folder_filters=getattr(request, 'folder_filters', None),
-                              resume_filters=getattr(request, 'resume_filters', None))
+                              resume_filters=getattr(request, 'resume_filters', None),
+                              criteria_query=getattr(request, 'criteria_query', None))
         return _SearchResponse(
             results=[_row_to_result(r) for r in rows],
             total_size=len(rows),

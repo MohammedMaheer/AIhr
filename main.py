@@ -104,6 +104,7 @@ from google.protobuf import timestamp_pb2
 from search_criteria import parse_search_criteria, apply_criteria_to_results
 from services.llm_cache import PreparationCache
 from services.search_reuse import SearchReuse
+from services.assessment_context import assessment_prompt
 from services.document_validation import validate_docx_archive
 from services.resume_folders import normalize_folders, source_in_folders
 from services.resume_filters import normalize_filters
@@ -452,7 +453,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers.setdefault(
                 "Content-Security-Policy",
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
+                "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
                 "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://cdn.jsdelivr.net; "
                 "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
                 "img-src 'self' data: https: blob:; "
@@ -627,6 +628,7 @@ def _compute_asset_versions() -> dict[str, str]:
                       ("job_applications_js", "static/js/job-applications.js"),
                       ("notifications_js", "static/js/notifications.js"),
                       ("outreach_js", "static/js/recruiter-outreach.js"),
+                      ("similar_candidates_js", "static/js/similar-candidates.js"),
                       ("interview_manager_js", "static/js/interview-manager.js"),
                       ("components_css", "static/css/components.css"),
                       ("candidate_state_js", "static/js/candidate-state.js"),
@@ -726,7 +728,7 @@ def _prepare_search_input(operation: str, query: str, user: dict,
     compute = functions[operation]
     expected_field = "all_keywords" if operation == "keywords" else "optimized_query"
     return _jd_preparation_cache.get_or_compute(
-        PreparationCache.key(operation, query, user),
+        PreparationCache.key(operation, query, user, company_preparation=True),
         lambda: compute(query, token_tracker),
         lambda value: (isinstance(value, dict) and value.get("success") is True
                        and not value.get("fallback_used") and bool(value.get(expected_field))),
@@ -2525,6 +2527,7 @@ def create_company_search_request(
     user_context: dict = None,
     folder_filters=None,
     resume_filters=None,
+    criteria_query: Optional[str] = None,
 ) -> 'discoveryengine_v1.SearchRequest':
     """
     Create a search request using company-specific datastore for automatic tenant isolation.
@@ -2549,6 +2552,10 @@ def create_company_search_request(
     # Base serving config
     serving_config = f"projects/{PROJECT_ID}/locations/{LOCATION}/collections/default_collection/dataStores/{datastore_id}/servingConfigs/default_config"
 
+    request_options = _folder_request_options(folder_filters, resume_filters)
+    if criteria_query is not None and os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
+        request_options['criteria_query'] = criteria_query
+
     # Create the search request
     request = discoveryengine_v1.SearchRequest(
         serving_config=serving_config,
@@ -2556,7 +2563,7 @@ def create_company_search_request(
         page_size=result_count,
         filter=_local_company_search_filter(user_context),
         content_search_spec=build_discovery_content_search_spec(discoveryengine_v1),
-        **_folder_request_options(folder_filters, resume_filters),
+        **request_options,
     )
 
     print(f"✅ Search will automatically be isolated to company datastore")
@@ -3263,10 +3270,10 @@ Education: {entities.get('education', {}).get('degree', 'Not available')}
 Work History: {', '.join([f"{exp.get('company', 'Company')} ({exp.get('duration', 'Duration')})" for exp in entities.get('work_experience', [])[:3]])}
 """
 
-        scorecard_prompt = SCORECARD_PROMPT.format(
+        scorecard_prompt = assessment_prompt(SCORECARD_PROMPT.format(
             job_posting=_untrusted_prompt_data(query, "job requirements", max_len=4000),
             resume_content=_untrusted_prompt_data(resume_content, "candidate profile")
-        )
+        ))
 
         contents = [
             types.Content(
@@ -3874,10 +3881,10 @@ async def analyze_resume_with_hr_scorecard(resume_content: str, query: str, job_
             print(f"🧠 Using model: {model} for HR scorecard generation")
 
             # Create comprehensive HR scorecard prompt
-            hr_scorecard_prompt = HR_SCORECARD_PROMPT.format(
+            hr_scorecard_prompt = assessment_prompt(HR_SCORECARD_PROMPT.format(
                 job_posting=_untrusted_prompt_data(query, "job requirements", max_len=4000),
                 resume_content=_untrusted_prompt_data(resume_content, "resume")
-            )
+            ))
 
             contents = [
                 types.Content(
@@ -4450,9 +4457,9 @@ async def startup_event():
     except Exception as e:
         print(f"⚠️ Database setup error: {e} - continuing with limited functionality")
 
-    print("🎉 HR Agent API startup completed")
-
     if os.getenv("SMARTHR_LOCAL_MODE", "").lower() in {"1", "true", "yes", "on"}:
+        from vps_local.discovery_shim import initialize_search_schema
+        await asyncio.to_thread(initialize_search_schema)
         try:
             import asyncio as _asyncio
             from vps_local.discovery_shim import warm_search_runtime
@@ -4472,6 +4479,8 @@ async def startup_event():
             max_attempts=int(os.getenv('TASK_MAX_ATTEMPTS', '3')))
         worker.start()
         app.state.search_worker = worker
+
+    print("🎉 HR Agent API startup completed")
 
 
 @app.on_event("shutdown")
@@ -6664,6 +6673,58 @@ async def get_config(user: dict = Depends(require_auth)):
             "default_folder": config.get("gcs", {}).get("default_folder", ""),
         },
     }
+
+@app.post('/api/similar-candidates')
+@limiter.limit('10/minute')
+async def similar_candidates(
+    request: Request,
+    query: str = Form(...),
+    result_count: int = Form(10),
+    folders: Annotated[Optional[str], Form()] = None,
+    filters: Annotated[Optional[str], Form()] = None,
+    user: dict = Depends(require_auth),
+):
+    query = _sanitize_user_text(query, max_len=4000)
+    if not query.strip():
+        raise HTTPException(status_code=400, detail='Enter candidate requirements.')
+    if len(parse_search_criteria(query).required_skills) > 32:
+        raise HTTPException(status_code=422, detail='Use no more than 32 explicit required skills for similar profiles.')
+    selected = _parse_search_folders(folders)
+    filtering = _parse_resume_filters(filters)
+    count = clamp_result_count(result_count, default=10, max_value=MAX_HR_SCORECARD_RESULTS)
+    tenant = _local_company_search_filter(user)
+    if os.getenv('SMARTHR_LOCAL_MODE', '').lower() not in {'1', 'true', 'yes', 'on'}:
+        raise HTTPException(status_code=501, detail='Similar candidate previews are unavailable.')
+    db = get_db_manager()
+    if not db:
+        raise HTTPException(status_code=503, detail='Candidate search is temporarily unavailable.')
+    try:
+        company_id = _get_company_id(user)
+        if company_id:
+            await asyncio.to_thread(db.check_search_limit, company_id)
+        from services.resume_folders import searchable_count
+        from services.similar_candidates import search
+        results = []
+        if await request.is_disconnected():
+            raise HTTPException(status_code=499, detail='Search request closed.')
+        available = await asyncio.to_thread(searchable_count, db, user, selected, filtering, timeout_ms=5000)
+        if await request.is_disconnected():
+            raise HTTPException(status_code=499, detail='Search request closed.')
+        if available:
+            results = await asyncio.to_thread(search, query, count, tenant, selected, filtering)
+        return {'success': True, 'query': query, 'match_mode': 'similar',
+                'verification': 'indexed_profile_only', 'paid_ai_calls': 0,
+                'requested_result_count': count, 'total_results': len(results),
+                'folder_filters': selected or [], 'resume_filters': filtering,
+                'results': results}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if 'maximum search limit' in str(exc).lower():
+            raise HTTPException(status_code=400, detail='Your company has reached its maximum search limit.') from None
+        logging.warning('Similar candidate preview failed: %s', type(exc).__name__)
+        raise HTTPException(status_code=503, detail='Similar candidates could not be loaded. Please try again.') from None
+
 
 @app.post("/api/search-vector")
 async def search_vector(
@@ -9388,6 +9449,7 @@ async def run_hr_scorecard_task(task_payload):
             user_context=user,
             folder_filters=folder_filters,
             resume_filters=resume_filters,
+            criteria_query=query,
         )
 
         response = await asyncio.to_thread(client.search, request_obj)
@@ -9515,7 +9577,10 @@ async def run_hr_scorecard_task(task_payload):
                             return blob.generation
                         version = await asyncio.to_thread(_resume_version)
                         jd_hash = scorecard_signature(query, job_title, user_bucket,
-                                                      file_path_for_cache, version, HR_SCORECARD_PROMPT)
+                            file_path_for_cache, version, assessment_prompt(HR_SCORECARD_PROMPT),
+                            keywords=standardized_keywords,
+                            auxiliary_prompts=(ENTITY_EXTRACTION_PROMPT, SCORECARD_PROMPT,
+                                               KEYWORD_MATCHING_PROMPT))
                     except Exception:
                         logging.warning("Resume metadata unavailable; bypassing scorecard cache.")
 

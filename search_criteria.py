@@ -235,20 +235,21 @@ _LANG_PATTERNS = [
 ]
 
 
+_LOCATION_END = r"(?=[.,;()\[\]]|\s+(?:and|or|with|who|having|but|not|excluding|requiring|skills?|experience|speaks?|fluent)\b|$)"
 _LOCATION_PATTERNS = [
     # "based in X", "located in X", "living in X"
-    r"(?:based|located|residing|living|stationed|headquartered)\s+in\s+([A-Za-z][A-Za-z .\-]+?)(?=[.,;()\[\]]|\sand\s|\sor\s|$)",
+    r"\b(?:based|located|residing|living|stationed|headquartered)\s+in\s+([A-Za-z][A-Za-z .\-]+?)" + _LOCATION_END,
     # "Dubai-based", "London based" -- case-sensitive on the leading caps to
     # avoid matching "candidate must be based" / "be based" phrasing.
-    r"(?-i:\b([A-Z][A-Za-z\-]+(?:\s+[A-Z][A-Za-z\-]+){0,2}))[- ]based\b",
+    r"(?-i:\b([A-Z][A-Za-z\-]+(?:\s+[A-Z][A-Za-z\-]+){0,2}))[- ]based\b(?!\s+in\b)",
     # "in the UAE", "in the United States"
-    r"\bin\s+the\s+([A-Za-z][A-Za-z .\-]+?)(?=[.,;()\[\]]|\sand\s|\sor\s|$)",
+    r"\bin\s+the\s+([A-Za-z][A-Za-z .\-]+?)" + _LOCATION_END,
     # "in Dubai area/region/city"
     r"\bin\s+([A-Z][A-Za-z\-]+(?:\s+[A-Z][A-Za-z\-]+){0,2})\s+(?:area|region|city|preferred)",
     # "location: Dubai"
-    r"location\s*[:=]\s*([A-Za-z][A-Za-z .\-]+?)(?=[.,;()\[\]]|$)",
+    r"\blocation\s*[:=]\s*([A-Za-z][A-Za-z .\-]+?)" + _LOCATION_END,
     # "must be in X", "should be in X", "on-site at X"
-    r"(?:must\s+be\s+in|should\s+be\s+in|on[- ]site\s+at)\s+([A-Za-z][A-Za-z .\-]+?)(?=[.,;()\[\]]|\sand\s|\sor\s|$)",
+    r"\b(?:must\s+be\s+in|should\s+be\s+in|on[- ]site\s+at)\s+([A-Za-z][A-Za-z .\-]+?)" + _LOCATION_END,
     # Bare preposition "in X" / "from X" / "at X" where X is Title-Cased.
     # The (?-i:) inline modifier keeps the [A-Z] anchor case-sensitive even
     # though the outer search uses re.IGNORECASE.
@@ -330,12 +331,22 @@ _PLACE_RE = re.compile(r"(?<!\w)(?:" + "|".join(re.escape(name) for name in
 
 def _skill_pattern(skill: str) -> str:
     """The same bounded token pattern is used by Python and PostgreSQL."""
-    token = re.escape(_norm(skill))
-    if _norm(skill) == '.net':
+    normalized = _norm(skill)
+    token = re.escape(normalized)
+    prefix = r'(^|[^a-z0-9_+#])'
+    suffix = r'($|[^a-z_+#])'
+    if normalized in {'node', 'node.js', 'nodejs', 'node js'}:
+        token = r'node([. ]?js)?'
+        prefix = r'(^|[^a-z0-9_+#-])'
+        suffix = r'($|[^a-z_+#.]|[.](\s|$))'
+    elif normalized in {'react', 'react.js', 'reactjs', 'react js'}:
+        token = r'react([. ]?js)?'
+        suffix = r'($|[^a-z_+#.]|[.](\s|$))'
+    elif normalized == '.net':
         token = r'(asp)?\.net'
-    elif _norm(skill) == 'sql':
+    elif normalized == 'sql':
         token = r'(sql|mysql|postgresql|sqlite|mssql|sqlserver)'
-    return r'(^|[^a-z0-9_+#])' + token + r'($|[^a-z_+#])'
+    return prefix + token + suffix
 
 
 def uncertain_language(value: str) -> bool:

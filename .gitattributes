@@ -1,0 +1,2 @@
+# Pinned vendor bytes must retain their upstream digest for browser SRI.
+static/vendor/chartjs/*.js -text

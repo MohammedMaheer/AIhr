@@ -23,7 +23,7 @@ class PreparationCache:
         self._lock = threading.Lock()
 
     @staticmethod
-    def key(operation: str, query: str, user: dict) -> str | None:
+    def key(operation: str, query: str, user: dict, *, company_preparation: bool = False) -> str | None:
         if not user or user.get("id") is None:
             return None
         company = user.get("company")
@@ -39,6 +39,12 @@ class PreparationCache:
         model = os.getenv("DEEPSEEK_MODEL", "deepseek-flash") if provider == "deepseek" else os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         payload = [provider, model, operation, user["id"], user.get("user_type"),
                    company_id, company_code, query]
+        # These operations depend only on the exact JD, never on recruiter data.
+        # Other caches (including CV text) retain their existing per-user keys.
+        if (company_preparation and operation in {"query", "keywords"}
+                and user.get("user_type") in {"tenant_admin", "tenant_user"}
+                and isinstance(company_id, int) and not isinstance(company_id, bool) and company_id > 0):
+            payload[3:5] = ["company-preparation-v1", "tenant"]
         return hashlib.sha256(json.dumps(payload, ensure_ascii=True).encode()).hexdigest()
 
     def get_or_compute(self, key: str | None, compute: Callable[[], dict],

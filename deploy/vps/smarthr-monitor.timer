@@ -1,0 +1,13 @@
+[Unit]
+Description=Check SmartHR without calling paid AI providers
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=15s
+RandomizedDelaySec=20s
+Persistent=true
+Unit=smarthr-monitor.service
+
+[Install]
+WantedBy=timers.target

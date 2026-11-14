@@ -137,6 +137,30 @@ def test_normalized_tags_feed_scoped_sql_without_changing_resume_content(library
     assert searchable_count(library_db, USER, FOLDERS, {'tags': ['Graphic design']}) == 1
 
 
+@pytest.mark.parametrize('advanced', [True, False])
+def test_original_criteria_recover_eligible_cv_outside_rewritten_semantic_pool(library_db, monkeypatch, advanced):
+    with library_db.get_cursor() as (cursor, _):
+        cursor.execute("""UPDATE resume_embeddings SET candidate_years=5,
+            candidate_skills=ARRAY['Python'], candidate_languages=ARRAY[]::text[],
+            candidate_location='Dubai, UAE', profile_source='fixture'""")
+        cursor.execute("UPDATE resume_embeddings SET embedding='[0,1,0]' WHERE id=1")
+        cursor.execute("UPDATE resume_embeddings SET candidate_location='Paris, France' WHERE id=2")
+    monkeypatch.setattr(search, '_get_pool', lambda: library_db.pool)
+    embed = MagicMock(return_value=[1, 0, 0])
+    monkeypatch.setattr(search, '_embed_query', embed)
+    monkeypatch.setattr(search, '_advanced_schema_ensured', True)
+    monkeypatch.setattr(search, 'ADVANCED_SEARCH_ENABLED', advanced)
+    monkeypatch.setattr(search, '_candidate_pool_size', lambda *_: 1)
+
+    rows = search._vector_search('Python developer based in Paris', 1,
+        'company_id: ANY("1")', FOLDERS,
+        criteria_query='Python developer based in Dubai with 3-6 years experience')
+
+    embed.assert_called_once_with('Python developer based in Paris')
+    assert [row['id'] for row in rows] == ['1']
+    assert rows[0]['criteria_profile_status'] == 'exact'
+
+
 def test_library_pagination_scope_preview_and_metadata_no_vectors_changed(library_db):
     data=list_uploads(library_db,USER,limit=2)
     assert data['total']==4 and len(data['uploads'])==2

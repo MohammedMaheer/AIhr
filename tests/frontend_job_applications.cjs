@@ -60,7 +60,22 @@ async function run() {
     form.elements.candidate_name.value = 'Fictional Candidate';
     form.elements.email.value = 'candidate@example.invalid';
     form.elements.consent.checked = true;
+    form.reportValidity = () => form.checkValidity();
+    form.dispatchEvent(new w.Event('submit', {bubbles:true,cancelable:true}));
+    assert.match(form.elements.file.validationMessage, /Upload a CV or provide a resume link/);
+    assert.equal(calls.some(call => call.options.method === 'POST'), false);
     form.elements.resume_url.value = 'https://files.example.com/candidate.pdf';
+    form.elements.resume_url.dispatchEvent(new w.Event('input', {bubbles:true}));
+    assert.equal(form.elements.file.validationMessage, '', 'Adding a link must clear the previous missing-resume error before native validation');
+    Object.defineProperty(form.elements.file, 'files', {configurable:true, value:[{name:'notes.exe',size:10}]});
+    form.elements.file.dispatchEvent(new w.Event('change'));
+    assert.match(form.elements.file.validationMessage, /PDF or Word/);
+    Object.defineProperty(form.elements.file, 'files', {configurable:true, value:[{name:'resume.pdf',size:10*1024*1024+1}]});
+    form.elements.file.dispatchEvent(new w.Event('change'));
+    assert.match(form.elements.file.validationMessage, /10 MB/);
+    Object.defineProperty(form.elements.file, 'files', {configurable:true, value:[]});
+    form.elements.file.dispatchEvent(new w.Event('change'));
+    assert.equal(form.elements.file.validationMessage, '');
     form.querySelector('[data-question]').value = 'Two weeks';
     form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
     await flush();
@@ -120,6 +135,15 @@ async function run() {
     assert.equal(emailContext.candidateEmail, 'candidate@example.invalid');
     assert.equal(interviewContext.jobApplicationId, '21');
     assert.equal(interviewContext.jobApplicationPageId, '11');
+    manager.fetch = async url => ({ok:!String(url).includes('/applications?'),
+        headers:{get:()=> 'application/json'},json:async()=>String(url).includes('/applications?')
+            ? {detail:'Fictional temporary outage'} : {success:true,pages:[]}});
+    manager.dispatchEvent(new manager.CustomEvent('job-application-interview-scheduled', {detail:{pageId:11}}));
+    await flush();
+    assert.match(workspace.textContent, /Applications unavailable/);
+    workspace.querySelector('[data-back]').click();
+    await flush();
+    assert.match(workspace.textContent, /No job pages yet/, 'The error-state back button must actually return to job pages');
     dispose();
     managerDom.window.close();
 
@@ -165,6 +189,12 @@ async function run() {
     pageForm.elements.pay_minimum.value = '10000';
     pageForm.elements.pay_maximum.value = '15000';
     pageForm.elements.pay_currency.value = 'AED';
+    pageForm.elements.pay_maximum.setCustomValidity('Maximum pay must be at least the minimum pay.');
+    pageForm.elements.pay_minimum.dispatchEvent(new admin.Event('input',{bubbles:true}));
+    assert.equal(pageForm.elements.pay_maximum.validationMessage,'','Changing either end of the range must clear stale range validation');
+    pageForm.elements.pay_note.setCustomValidity('Enter a pay range or compensation note to show pay.');
+    pageForm.elements.pay_minimum.dispatchEvent(new admin.Event('input',{bubbles:true}));
+    assert.equal(pageForm.elements.pay_note.validationMessage,'','Adding a range must clear stale missing-pay validation');
     pageForm.elements.field_portfolio.checked = true;
     admin.document.querySelector('[data-generate-questions]').click();
     await flush();

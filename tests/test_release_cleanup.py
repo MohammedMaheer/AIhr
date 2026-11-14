@@ -69,3 +69,14 @@ def test_cleanup_rechecks_hashes_before_applying(tmp_path):
     with pytest.raises(RuntimeError, match='plan changed'):
         cleanup.apply(tmp_path, targets, [])
     assert (stage / 'source/main.py').is_file()
+
+
+def test_mount_permutation_does_not_hide_a_real_container_change():
+    first = {'Id': 'owned-container', 'State': {'StartedAt': 'one'}, 'Config': {'Image': 'owned:one'},
+             'Mounts': [{'Destination': '/b', 'Source': '/owned/b', 'RW': False},
+                        {'Destination': '/a', 'Source': '/owned/a', 'RW': True}]}
+    reordered = {**first, 'Mounts': first['Mounts'][::-1]}
+    assert cleanup.container_identity([first]) == cleanup.container_identity([reordered])
+    changed = {**first, 'Mounts': [{'Destination': '/a', 'Source': '/other/a', 'RW': True}, first['Mounts'][0]]}
+    assert cleanup.container_identity([first]) != cleanup.container_identity([changed])
+    assert cleanup.container_identity([first]) != cleanup.container_identity([{**first, 'State': {'StartedAt': 'two'}}])

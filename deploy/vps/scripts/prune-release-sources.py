@@ -131,6 +131,11 @@ def apply(root, targets, containers):
             path.unlink()
 
 
+def container_identity(rows):
+    return {row['Id']: (row['State']['StartedAt'], row['Config']['Image'],
+                       sorted(row['Mounts'], key=lambda mount: mount['Destination'])) for row in rows}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
@@ -148,11 +153,8 @@ def main():
         if fresh_ids != ids:
             raise RuntimeError('Container inventory changed; rerun the dry run')
         fresh = json.loads(subprocess.check_output(['docker', 'inspect', *fresh_ids], text=True))
-        if fresh != containers:
-            # Inspect health timestamps can change; only identity, mount and image changes matter.
-            identity = lambda rows: [(r['Id'], r['State']['StartedAt'], r['Config']['Image'], r['Mounts']) for r in rows]
-            if identity(fresh) != identity(containers):
-                raise RuntimeError('Container identity or mounts changed')
+        if container_identity(fresh) != container_identity(containers):
+            raise RuntimeError('Container identity or mounts changed')
         apply(root, targets, fresh)
     after = shutil.disk_usage(root)
     print(json.dumps({'applied': args.apply, 'targets': sizes, 'protected_releases': sorted(protected),

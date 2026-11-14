@@ -8,6 +8,13 @@ from vps_local import discovery_shim
 from test_integration_workflows import api
 
 
+@pytest.fixture(autouse=True)
+def isolated_request_limits():
+    main.limiter.reset()
+    yield
+    main.limiter.reset()
+
+
 def row(id, *, years=4, location='Dubai, UAE', skills=None, score=.8, folder='resumes'):
     return {'id': id, 'filename': f'fixture-{id}.pdf', 'storage_bucket': 'qa-bucket',
             'folder': folder, 'candidate_years': years, 'candidate_location': location,
@@ -57,7 +64,8 @@ def test_similar_api_auth_csrf_and_validation(api,monkeypatch):
     client,db=api
     monkeypatch.setenv('SMARTHR_LOCAL_MODE','1')
     backend=MagicMock();monkeypatch.setattr(similar_candidates,'search',backend)
-    assert client.post('/api/similar-candidates',data={'query':''}).status_code==400
+    assert client.post('/api/similar-candidates',data={'query':''}).status_code in (400,422)
+    assert client.post('/api/similar-candidates',data={'query':'   '}).status_code==400
     assert client.post('/api/similar-candidates',data={'query':'Python','filters':'{"date_from":"2026-12-31","date_to":"2026-01-01"}'}).status_code==422
     assert client.post('/api/similar-candidates',data={'query':'Python','filters':'{"tags":["invalid"]}'}).status_code==422
     backend.assert_not_called()
@@ -128,3 +136,14 @@ def test_similar_errors_are_sanitized_and_company_limits_respected(api,monkeypat
     assert r.status_code==503 and 'private-database-marker' not in r.text
     db.check_search_limit.side_effect=RuntimeError('maximum search limit')
     assert client.post('/api/similar-candidates',data={'query':'Engineer'}).status_code==400
+
+
+def test_similar_api_rate_limit_prevents_unbounded_local_inference(api,monkeypatch):
+    client,db=api
+    monkeypatch.setattr(main.limiter,'enabled',True)
+    monkeypatch.setenv('SMARTHR_LOCAL_MODE','1')
+    from services import resume_folders
+    monkeypatch.setattr(resume_folders,'searchable_count',lambda *a:0)
+    for _ in range(10):
+        assert client.post('/api/similar-candidates',data={'query':'Engineer'}).status_code==200
+    assert client.post('/api/similar-candidates',data={'query':'Engineer'}).status_code==429

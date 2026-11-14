@@ -5,6 +5,21 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.15.1 - 2026-11-15
+
+### Role Context For Full Job-Description Searches
+
+- Correct an overly restrictive email lookup found against real indexed data:
+  use the explicit role for email context without requiring the message to repeat
+  every requested city, year and skill. Keep the original CV lexical query and
+  hard eligibility rules unchanged, including raw-query fallback scope.
+- Retain generic-title behavior and add bounded completion counters for context
+  matches/cache hits. No body text is exposed or sent to a paid model.
+- Add request, SQL and durable-worker regressions. Preserve the logo, UI, HR
+  scoring weights and original files. Real-provider acceptance, cost deltas and
+  deployment evidence are recorded in
+  `docs/REAL_EMAIL_SCORECARD_ACCEPTANCE_2026-11-15.md`.
+
 ## v2026.11.14.8 - 2026-11-14
 
 ### Provenance-Aware Email Retrieval And Conservative Cleanup

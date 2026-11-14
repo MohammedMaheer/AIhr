@@ -100,10 +100,13 @@ class SearchRequest:
                  page_size: int = 10, content_search_spec=None,
                  query_expansion_spec=None, spell_correction_spec=None,
                  filter: str = "", folder_filters=None, resume_filters=None,
-                 criteria_query=None, **kwargs):
+                 criteria_query=None, email_context_query=None, **kwargs):
         self.serving_config = serving_config
         self.query = query
         self.criteria_query = criteria_query
+        if email_context_query is not None and (not isinstance(email_context_query, str) or len(email_context_query) > 250):
+            raise ValueError('Invalid email context query')
+        self.email_context_query = email_context_query
         self.page_size = page_size
         self.content_search_spec = content_search_spec
         self.query_expansion_spec = query_expansion_spec
@@ -433,9 +436,13 @@ def _hybrid_score(vector_score, lexical_score, profile_bonus=0.0):
     return (0.68 * vector_score) + (0.20 * min(float(lexical_score), 1.0)) + (0.12 * profile_bonus)
 
 
-def _add_email_context_rows(cur, rows, *, query, qvec, scope_sql, scope_params, limit):
+def _add_email_context_rows(cur, rows, *, query, qvec, scope_sql, scope_params, limit, email_query=None):
     # Email text only broadens retrieval. Profiles, snippets and final scorecards
     # remain CV-only; quoted/shared-message text cannot establish eligibility.
+    context_query = email_query.strip() if isinstance(email_query, str) else ''
+    if context_query.casefold() in {'', 'position', 'the role', 'candidate', 'candidates'}:
+        context_query = query
+    context_query = context_query[:1000]
     cur.execute(
         f"""SELECT id, filename, folder, file_size, content_type,
                    extracted_text, text_length, 1 - (embedding <=> %s::vector) AS vector_score,
@@ -454,8 +461,8 @@ def _add_email_context_rows(cur, rows, *, query, qvec, scope_sql, scope_params, 
                                 websearch_to_tsquery('simple', %s)) DESC,
                      embedding <=> %s::vector, id
             LIMIT %s""",
-        (_vec_lit(qvec), query[:1000], query[:1000], *scope_params,
-         query[:1000], query[:1000], _vec_lit(qvec), int(limit)),
+        (_vec_lit(qvec), query[:1000], context_query, *scope_params,
+         context_query, context_query, _vec_lit(qvec), int(limit)),
     )
     by_id = {row['id']: row for row in rows}
     for value in cur.fetchall():
@@ -661,7 +668,7 @@ def _tenant_scope(filter_str: str) -> tuple[str, list]:
 
 def _vector_search(query: str, page_size: int = 10,
                    filter_str: str = "", folder_filters=None, resume_filters=None,
-                   criteria_query=None, profile_preview=False) -> List[Dict[str, Any]]:
+                   criteria_query=None, profile_preview=False, email_context_query=None) -> List[Dict[str, Any]]:
     """Run pgvector ANN search; return list of dicts shaped like Discovery results."""
     scope_sql, scope_params = _tenant_scope(filter_str)
     from services.resume_folders import folder_sql
@@ -721,7 +728,8 @@ def _vector_search(query: str, page_size: int = 10,
                     for r in rows
                 ]
                 light_rows = _add_email_context_rows(cur, light_rows, query=query, qvec=qvec,
-                    scope_sql=email_scope_sql, scope_params=email_scope_params, limit=pool_size)
+                    scope_sql=email_scope_sql, scope_params=email_scope_params, limit=pool_size,
+                    email_query=email_context_query)
                 return _rank_rows(light_rows, query, int(page_size or 10), criteria_query=criteria_query)
 
             # Cosine distance uses the HNSW vector_cosine_ops index. In
@@ -792,7 +800,8 @@ def _vector_search(query: str, page_size: int = 10,
             row_dicts = [_row_tuple_to_dict(r) for r in rows]
             if not profile_preview:
                 row_dicts = _add_email_context_rows(cur, row_dicts, query=query, qvec=qvec,
-                    scope_sql=email_scope_sql, scope_params=email_scope_params, limit=pool_size)
+                    scope_sql=email_scope_sql, scope_params=email_scope_params, limit=pool_size,
+                    email_query=email_context_query)
         return _rank_rows(row_dicts, query, int(page_size or 10), criteria_query=criteria_query)
     finally:
         conn.rollback()
@@ -840,7 +849,8 @@ class SearchServiceClient:
                               filter_str=getattr(request, "filter", "") or "",
                               folder_filters=getattr(request, 'folder_filters', None),
                               resume_filters=getattr(request, 'resume_filters', None),
-                              criteria_query=getattr(request, 'criteria_query', None))
+                              criteria_query=getattr(request, 'criteria_query', None),
+                              email_context_query=getattr(request, 'email_context_query', None))
         return _SearchResponse(
             results=[_row_to_result(r) for r in rows],
             total_size=len(rows),

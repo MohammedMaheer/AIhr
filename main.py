@@ -2530,6 +2530,7 @@ def create_company_search_request(
     folder_filters=None,
     resume_filters=None,
     criteria_query: Optional[str] = None,
+    email_context_query: Optional[str] = None,
 ) -> 'discoveryengine_v1.SearchRequest':
     """
     Create a search request using company-specific datastore for automatic tenant isolation.
@@ -2557,6 +2558,8 @@ def create_company_search_request(
     request_options = _folder_request_options(folder_filters, resume_filters)
     if criteria_query is not None and os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
         request_options['criteria_query'] = criteria_query
+    if email_context_query is not None and os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
+        request_options['email_context_query'] = _sanitize_user_text(email_context_query, max_len=250)
 
     # Create the search request
     request = discoveryengine_v1.SearchRequest(
@@ -9456,6 +9459,7 @@ async def run_hr_scorecard_task(task_payload):
             folder_filters=folder_filters,
             resume_filters=resume_filters,
             criteria_query=query,
+            email_context_query=job_title,
         )
 
         response = await asyncio.to_thread(client.search, request_obj)
@@ -9481,6 +9485,7 @@ async def run_hr_scorecard_task(task_payload):
                     user_context=user,
                     folder_filters=folder_filters,
                     resume_filters=resume_filters,
+                    email_context_query=job_title,
                 )
                 fallback_resp = await asyncio.to_thread(client.search, fallback_req)
                 fb_results = list(fallback_resp.results)
@@ -9819,6 +9824,9 @@ async def run_hr_scorecard_task(task_payload):
                 'requested_results': result_count,
                 'returned_results': len(results),
                 'candidate_pool_size': fetch_count,
+                'retrieval_email_context_matches': sum((getattr(r.document, 'struct_data', None) or {}).get('email_context_match') is True
+                    for r in result_list if r.document),
+                'cache_hits': completed_counter['cache_hits'],
                 'exact_match_shortfall': max(0, result_count - len(results)),
                 'search_criteria': task_search_criteria.to_dict(),
                 'successful_scorecards': len([r for r in results if r.get('analysis_type') == 'comprehensive_hr_scorecard']),

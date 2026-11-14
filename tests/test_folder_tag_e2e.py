@@ -220,7 +220,7 @@ def test_durable_worker_scores_and_persists_only_the_selected_cohort(flow, monke
         return value
     monkeypatch.setattr(main, 'analyze_resume_with_hr_scorecard', analyze)
     monkeypatch.setattr(main, 'using_deepseek', lambda: True)
-    response = flow.client.post('/api/hr-scorecard-search', data={'query': 'candidate profiles', 'result_count': '10',
+    response = flow.client.post('/api/hr-scorecard-search', data={'query': 'candidate profiles', 'job_title': 'Designer', 'result_count': '10',
         'folders': json.dumps(FOLDERS), 'filters': json.dumps(filters)})
     assert response.status_code == 200, response.text
     task_id = response.json()['task_id']
@@ -232,6 +232,7 @@ def test_durable_worker_scores_and_persists_only_the_selected_cohort(flow, monke
     assert seen == [FOLDER + '/' + expected['filename']]
     assert len(requests) == (2 if fallback else 1)
     assert all(request.folder_filters == FOLDERS and request.resume_filters == filters for request in requests)
+    assert all(request.email_context_query == 'Designer' for request in requests)
     response = flow.client.get('/api/search-results/' + str(status['search_id']))
     assert response.status_code == 200, response.text
     data = response.json()

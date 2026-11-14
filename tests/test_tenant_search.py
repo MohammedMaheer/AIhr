@@ -78,12 +78,13 @@ def test_local_request_keeps_original_criteria_separate_from_optimized_semantics
     user = {'id': 7, 'user_type': 'tenant_user', 'company': {'company_id': 27}}
     with patch.object(main, 'get_company_resources', return_value=('fixture', 'fixture')):
         request = main.create_company_search_request('Python developer', user_context=user,
-                                                     criteria_query=original)
+                                                     criteria_query=original,email_context_query='Python Developer')
     with patch.object(discovery, '_vector_search', return_value=[]) as vector:
         discovery.SearchServiceClient().search(request)
     assert vector.call_args.kwargs['query'] == 'Python developer'
     assert vector.call_args.kwargs['criteria_query'] == original
     assert vector.call_args.kwargs['filter_str'] == 'company_id: ANY("27")'
+    assert vector.call_args.kwargs['email_context_query'] == 'Python Developer'
 
 
 def test_profile_ranking_uses_original_requirements_not_rewritten_location():

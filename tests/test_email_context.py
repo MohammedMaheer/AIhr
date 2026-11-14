@@ -114,6 +114,42 @@ def test_shared_or_quoted_email_never_becomes_a_candidate_match(flow):
     assert not any(row.get('email_context_match') for row in rows)
 
 
+@pytest.mark.parametrize('advanced', [False, True])
+def test_role_context_does_not_require_email_to_repeat_cv_requirements(flow, monkeypatch, advanced):
+    monkeypatch.setattr(index, 'ADVANCED_SEARCH_ENABLED', advanced)
+    role = 'Fjord Navigation Engineer'
+    query = role + ' based in Dubai with 3-6 years of experience. Required skills: Figma.'
+    ingest(flow, [message(body='Application for ' + role + '. EMAIL_ONLY_SENTINEL')])
+    original = index._vector_search(query, 10, 'company_id: ANY("1")', FOLDERS)
+    assert original and not original[0]['email_context_match']
+    improved = index._vector_search(query, 10, 'company_id: ANY("1")', FOLDERS, email_context_query=role)
+    assert improved and improved[0]['email_context_match']
+    assert improved[0]['criteria_profile_status'] == 'exact'
+    assert 'EMAIL_ONLY_SENTINEL' not in improved[0]['text']
+    assert not index._vector_search(role + ' based in Paris. Required skills: Figma', 10,
+        'company_id: ANY("1")', FOLDERS, email_context_query=role)
+    unverified = index._vector_search(role + '. Required skills: Python', 10,
+        'company_id: ANY("1")', FOLDERS, email_context_query=role)
+    assert all(row['criteria_profile_status'] != 'exact' for row in unverified)
+
+
+@pytest.mark.parametrize('value', [42, [], 'x' * 251])
+def test_context_query_is_typed_and_bounded(value):
+    with pytest.raises(ValueError): index.SearchRequest(query='Figma', email_context_query=value)
+
+
+def test_context_role_query_does_not_replace_cv_lexical_query(monkeypatch):
+    from unittest.mock import MagicMock
+    cursor = MagicMock()
+    cursor.fetchall.return_value = []
+    index._add_email_context_rows(cursor, [], query='Figma developer Dubai five years',
+        email_query='UI Designer', qvec=[1, 0, 0],scope_sql='company_id=%s',scope_params=[1],limit=10)
+    sql, params = cursor.execute.call_args.args
+    assert params[1] == 'Figma developer Dubai five years'
+    assert params[2] == params[-4] == params[-3] == 'UI Designer'
+    assert sql.count('%s') == len(params)
+
+
 def test_scoped_email_lookup_can_use_its_partial_text_index(flow):
     ingest(flow, [message()])
     with flow.db.get_cursor() as (cursor, _):
@@ -208,3 +244,33 @@ def test_durable_scorecard_prompt_remains_full_cv_only(flow, monkeypatch):
     asyncio.run(SearchWorker(lambda: flow.db, main.run_hr_scorecard_task).process(flow.db, job))
     status = flow.db.get_task_status(task_id)
     assert status['status'] == 'completed' and seen == [FOLDER + '/one-0.docx']
+
+
+def test_durable_job_reports_role_context_without_changing_cv_scoring(flow, monkeypatch):
+    role = 'Fjord Navigation Engineer'
+    query = role + ' based in Dubai with 3-6 years of experience. Required skills: Figma.'
+    ingest(flow, [message(body='Application for ' + role + '. EMAIL_ONLY_SENTINEL')])
+    monkeypatch.setattr(main, '_prepare_search_input', lambda kind, *args: {'all_keywords': ['Figma']} if kind == 'keywords'
+        else {'optimized_query': query + ' extra optimizer terms'})
+    monkeypatch.setattr(flow.db, 'get_cached_resume_analysis', lambda *args, **kwargs: None)
+    monkeypatch.setattr(flow.db, 'save_cached_resume_analysis', lambda *args, **kwargs: None)
+    async def analyze(text, original_query, title, *args, **kwargs):
+        assert 'EMAIL_ONLY_SENTINEL' not in text
+        assert original_query == query and title == role
+        value = assessment()
+        value['hr_scorecard']['candidate_overview'].update(location='Dubai', experience_years=5, skills=['Figma'])
+        return value
+    monkeypatch.setattr(main, 'analyze_resume_with_hr_scorecard', analyze)
+    monkeypatch.setattr(main, 'using_deepseek', lambda: True)
+    response = flow.client.post('/api/hr-scorecard-search', data={'query':query,'job_title':role,'result_count':'10',
+        'folders':json.dumps(FOLDERS)})
+    assert response.status_code == 200, response.text
+    job = flow.db.claim_next_hr_task()
+    asyncio.run(SearchWorker(lambda:flow.db, main.run_hr_scorecard_task).process(flow.db,job))
+    status = flow.db.get_task_status(response.json()['task_id'])
+    assert status['status'] == 'completed', status
+    progress = status['progress']
+    if isinstance(progress, str): progress = json.loads(progress)
+    assert progress['retrieval_email_context_matches'] == 1
+    assert progress['returned_results'] == 1 and progress['exact_match_shortfall'] == 9
+    assert progress['cache_hits'] == 0

@@ -16,8 +16,18 @@ CVs and private audit receipts are excluded from Git.
   source copies. Leave recovery pointers and retain a self-contained manifest.
   Coordinate with retention locking; use bounded CPU/memory and idle I/O.
 - No application image rebuild, restart, AI generation, UI/logo or core behavior
-  change is needed. Actual whole-VPS savings and other-app ownership review are
-  recorded in `docs/ACTUAL_VPS_SPACE_REDUCTION_2026-11-15.md` after verification.
+  change. Applied the reviewed operations tool without changing runtime `2f762d8`.
+- Reclaimed a measured net 1,658,961,920 bytes (1.66 GB) across the VPS, including
+  the new archives: free space rose from 18.71 GB to 20.37 GB. Preserve all bytes
+  from 50 old backup/test sets in verified archives and purge only pip downloads.
+- All 7,862 CV originals, 23 HR tables, 576 SmartHR backup files, 11 other-app DB
+  snapshots, 27 container identities and 11 native service identities verified.
+  Both independent archive/restore checks and 28 local / 16 Linux tests passed.
+  No new AI calls. An unrelated DB's normal timer writes are explicitly reviewed,
+  not misreported as byte-identical live data. Disk remains near 80.2% used.
+- Recovery procedure, measured savings, preservation evidence, other-app review
+  and same-host backup limitations are recorded in
+  `docs/ACTUAL_VPS_SPACE_REDUCTION_2026-11-15.md`.
 
 ## v2026.11.15.3 - 2026-11-15
 

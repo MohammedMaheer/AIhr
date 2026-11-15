@@ -17,8 +17,16 @@ CVs and private audit receipts are excluded from Git.
   with Docker's force-free/no-parent-prune guards, fresh container/metadata checks,
   a retention lock and durable private action receipts. No volume pruning.
 - Forty-eight safety tests pass locally and in the existing isolated Linux QA
-  image. Live cleanup and measured capacity/preservation results are recorded in
-  `docs/QA_IMAGE_CLEANUP_2026-11-15.md` after verification. Logo/UI/core unchanged.
+  image. Applied the exact reviewed plan: remove 39 obsolete QA images and 77
+  exclusive intermediates; independently verify all 711 remaining image records.
+- Reclaimed a net 195,080,192 bytes (195 MB), including new evidence/operations
+  files. Free space rose from 20.37 GB to 20.56 GB. Current/rollback source and all
+  production/foreign images remain protected; source dry run found zero targets.
+- All 7,862 CVs, 23 HR tables, 237 backup/pointer files, four cold archive/manifest
+  files, 51 volumes, 27 container and 11 native service identities verified.
+  Zero new AI calls; no app rebuild/restart or logo/UI/core changes. Utilization
+  remains near 80%; detailed proof and limitations are recorded in
+  `docs/QA_IMAGE_CLEANUP_2026-11-15.md`.
 
 ## v2026.11.15.4 - 2026-11-15
 

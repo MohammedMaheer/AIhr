@@ -41,7 +41,31 @@ and exact image metadata are rechecked. The existing retention lock coordinates
 cleanup. A private, fsynced action log precedes deletion; retained image availability
 and container identities are checked afterward.
 
-## Verification Checkpoint
+## Applied Results
+
+The reviewed plan was applied using the installed source from commit `dec9d5b`.
+It removed exactly **39 obsolete QA images and 77 exclusive untagged intermediate
+records**. Independent inspection confirmed the expected image-ID delta and
+unchanged complete metadata for all **711 retained image records**, including all
+74 production and 30 foreign/shared tagged image records. No production image was
+removed; baseline, recent, operations-pinned and ambiguous multi-tag QA remain.
+
+Whole-filesystem checkpoints include the new operations source, QA fixture files,
+private receipts and continuing live logs. Sizes are decimal bytes/MB/GB:
+
+| Measurement | Before this pass | Final preservation snapshot |
+| --- | ---: | ---: |
+| Free bytes | 20,369,895,424 | 20,564,975,616 |
+| Used bytes | 82,528,817,152 | 82,333,736,960 |
+| Used percentage | 80.19% | 80.00% |
+
+**Actual net space reclaimed: 195,080,192 bytes, approximately 195 MB.** The removal
+step itself measured 195,846,144 additional free bytes. Differences reflect new
+evidence/operations files and live host writes. QA added-layer virtual sizes
+totaled about 43 MB; Docker's virtual/negative reclaimable estimates were not used
+as filesystem savings. Shared image layers are not counted once per image.
+
+## Verification
 
 Forty-eight focused QA-image/release-source/cold-archive tests passed locally and
 on Linux. Linux tests used a retained QA image with no network, no Docker socket,
@@ -50,11 +74,44 @@ bounded CPU/memory. Fixtures covered stopped/new containers, config references,
 shared parents, changed tags, recent/pinned images, registry digests, unknown build
 steps, review mismatch, protected-image disappearance and immutable-ID commands.
 
-The reviewed plan selects 39 test-only leaves and 77 exclusive intermediate image
-records, retaining 711 image records. QA added-layer virtual sizes total about
-43 MB, not the sum of full image sizes; actual filesystem savings and complete
-preservation checks must be verified after supervised application.
+- All 7,862 original CVs remain byte-identical, with no missing or outside-storage
+  references. All 23 HR table fingerprints match the fresh pre-cleanup snapshot,
+  including embeddings, email context, searches, scorecards and usage history.
+- All 237 physical HR backup/pointer files and all four cold archive/manifest files
+  match their pre-cleanup hashes. Every needed recovery copy remains available.
+  The prior archive content/restore proofs remain applicable because hashes match.
+- All 51 volume names are unchanged. No volume, database, upload or model cache was
+  deleted. All 27 container identities, images, starts, mounts and reported health
+  match; all 11 reviewed native service identities match as well.
+- Exact independent image inspection found only the 116 planned removals; every
+  other image retained its tags, digests, parent, timestamp, layer list and size.
+- The source-release dry run still selects zero artifacts. Current and rollback
+  source trees and all release receipts/backups remain in place.
+- Live HTTPS, authentication guards, security headers and deployed asset hashes
+  passed. SmartHR/PostgreSQL remain healthy, and the temporary test container was
+  removed. No app image was rebuilt and no app was restarted.
+- The AI ledger remains 312 calls / 980,393 tokens: **zero new paid AI calls or
+  tokens**. Deep health explicitly skipped AI. No live search or scorecard calls
+  were needed for this operations-only change.
+
+Another app's existing minute-based maintenance continues writing its live SQLite
+database. Its timer/service are healthy and read-only `quick_check` returned `ok`.
+That expected raw-file hash drift is explicitly reviewed, not described as
+byte-identical unrelated business data. No restore, checkpoint or database edit
+was performed. Other apps received preservation/liveness checks, not full product
+workflow tests.
+
+## Remaining Limits
+
+Free space is approximately 20.56 GB; utilization remains near 80%, so the existing
+capacity warning stays appropriate. No further source deletion or broad image
+pruning is justified by this review. Larger reductions would require a separate
+decision about historical production-image retention, not silently treating useful
+rollback versions or other apps' storage as disposable.
 
 No production image, genuine CV, needed backup, other-app data or volume is an
 authorized target. This is not a production-image retention policy and does not
-establish off-site disaster recovery.
+establish off-site disaster recovery. Runtime remains `2f762d8` and the installed
+operations source matches the versioned tool; the logo, UI and core are unchanged.
+Private configuration, customer data, detailed per-app inventory and action logs
+are excluded from GitHub.

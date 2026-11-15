@@ -5,6 +5,26 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.15.6 - 2026-11-15
+
+### Verified Inactive Swapfile Removal
+
+- Remove only the explicitly authorized, inactive `/swapfile` after verifying its
+  exact root-owned regular-file identity, normal swap signature, lack of open/
+  mapped/loop references, 2,973 configuration/helper files and both boot images.
+  Bind the action to the reviewed plan and recheck inactivity before unlinking.
+- Preserve the separate active swap's inode, capacity, priority and active unit,
+  along with all boot/configuration fingerprints. No swap activation/deactivation,
+  reboot, application restart or core/logo/UI changes. Nineteen private guard
+  tests passed on Windows and Linux; no recurring cleanup was installed.
+- Reclaim 4,294,971,392 bytes at unlink; measured whole-operation net savings are
+  4,294,721,536 bytes. Free space rose from 20.52 GB to 24.82 GB, utilization fell
+  from 80.04% to about 75.9%, and the existing monitor cleared its disk warning.
+- All 7,862 CVs, 23 HR tables, 237 backup/pointer files, four cold archive/manifest
+  files, 51 volumes, 27 container and 11 native-service identities verified. Zero
+  new AI usage; runtime remains `2f762d8`. Detailed evidence and limitations:
+  `docs/INACTIVE_SWAP_REMOVAL_2026-11-15.md`.
+
 ## v2026.11.15.5 - 2026-11-15
 
 ### Verified Test-Image Cleanup

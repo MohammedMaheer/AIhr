@@ -5,6 +5,21 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.15.5 - 2026-11-15
+
+### Verified Test-Image Cleanup
+
+- Add a dry-run-first cleanup tool limited to old SmartHR QA images whose layers
+  and exact test-only build history match retained production bases. Protect all
+  production/foreign images, registry references, multi-tag aliases, container
+  references, configured image pins and baseline/recent/operations QA images.
+- Remove only reviewed immutable image IDs and exclusive untagged QA ancestors,
+  with Docker's force-free/no-parent-prune guards, fresh container/metadata checks,
+  a retention lock and durable private action receipts. No volume pruning.
+- Forty-eight safety tests pass locally and in the existing isolated Linux QA
+  image. Live cleanup and measured capacity/preservation results are recorded in
+  `docs/QA_IMAGE_CLEANUP_2026-11-15.md` after verification. Logo/UI/core unchanged.
+
 ## v2026.11.15.4 - 2026-11-15
 
 ### Lossless Cold Backup Consolidation

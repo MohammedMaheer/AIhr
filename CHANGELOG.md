@@ -5,6 +5,20 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.15.4 - 2026-11-15
+
+### Lossless Cold Backup Consolidation
+
+- Add an operations-only, dry-run-first cold archival tool. Keep baseline and
+  recent recovery sets, reject runtime references, mounts, links, genuine CV
+  formats and recent writes, and require an explicitly reviewed plan digest.
+- Verify all archive bytes/metadata and an isolated restore before removing
+  source copies. Leave recovery pointers and retain a self-contained manifest.
+  Coordinate with retention locking; use bounded CPU/memory and idle I/O.
+- No application image rebuild, restart, AI generation, UI/logo or core behavior
+  change is needed. Actual whole-VPS savings and other-app ownership review are
+  recorded in `docs/ACTUAL_VPS_SPACE_REDUCTION_2026-11-15.md` after verification.
+
 ## v2026.11.15.3 - 2026-11-15
 
 ### Complete Zero-Result Token Reporting

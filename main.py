@@ -9403,7 +9403,9 @@ async def run_hr_scorecard_task(task_payload):
             if not await asyncio.to_thread(searchable_count, db_idem, user_data, folder_filters, resume_filters):
                 await asyncio.to_thread(db_idem.complete_hr_task, task_id, [],
                     {'step': 'completed', 'results': 0, 'requested_results': result_count,
-                     'returned_results': 0, 'exact_match_shortfall': result_count}, lease[1] if lease else None)
+                     'returned_results': 0, 'exact_match_shortfall': result_count,
+                     'processing_time_seconds': round(time.time() - start_time, 2),
+                     'token_usage': token_tracker.get_summary()}, lease[1] if lease else None)
                 return {'success': True, 'results': 0, 'message': 'No searchable CVs in the selected folders'}
 
         # Run both keyword-extraction LLM calls in parallel (was sequential)
@@ -9504,7 +9506,9 @@ async def run_hr_scorecard_task(task_payload):
         if found_count == 0:
             await asyncio.to_thread(db_idem.complete_hr_task, task_id, [],
                 {'step': 'completed', 'results': 0, 'requested_results': result_count,
-                 'returned_results': 0, 'exact_match_shortfall': result_count}, lease[1] if lease else None)
+                 'returned_results': 0, 'exact_match_shortfall': result_count,
+                 'processing_time_seconds': round(time.time() - start_time, 2),
+                 'token_usage': token_tracker.get_summary()}, lease[1] if lease else None)
             return {"success": True, "results": 0, "message": "No candidates found"}
 
         # Generate HR scorecards for filtered results — in PARALLEL, with a

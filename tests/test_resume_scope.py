@@ -1,5 +1,7 @@
 """Explicit search scopes must constrain every retrieval branch, not ranking alone."""
 import asyncio
+import json
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -77,7 +79,8 @@ def test_whitespace_normalization_does_not_invent_categories(text):
 @pytest.fixture
 def library_db(queue_db):
     with queue_db.get_cursor() as (cur, _):
-        cur.execute('''ALTER TABLE tenant_companies ADD COLUMN gcs_bucket_name TEXT;
+        cur.execute('''ALTER TABLE search_results ADD COLUMN created_at TIMESTAMP DEFAULT NOW();
+            ALTER TABLE tenant_companies ADD COLUMN gcs_bucket_name TEXT;
             INSERT INTO tenant_companies(id,gcs_bucket_name) VALUES (1,'fixture-bucket'),(2,'second-company');
             CREATE TABLE resume_uploads(id SERIAL PRIMARY KEY,file_name TEXT,file_path TEXT,file_size INTEGER,
             mime_type TEXT,company_id INTEGER,upload_timestamp TIMESTAMP);
@@ -241,7 +244,58 @@ def test_empty_explicit_scope_completes_without_paid_preparation(library_db, mon
             assert result['success'] and result['results']==0
         finally:current_lease.reset(token)
     asyncio.run(run())
-    assert library_db.get_task_status('qa-empty')['status']=='completed'
+    status=library_db.get_task_status('qa-empty')
+    assert status['status']=='completed'
+    progress=status['progress'];progress=json.loads(progress) if isinstance(progress,str) else progress
+    assert progress['token_usage']['total_tokens']==0 and progress['token_usage']['total_calls']==0
+    assert progress['processing_time_seconds']>=0
+
+
+@pytest.mark.parametrize('retrieval', ['empty','fallback-empty','outside-folder','cached-preparation'])
+def test_zero_retrieval_persists_preparation_usage_without_generating_scorecards(library_db,monkeypatch,retrieval):
+    monkeypatch.setattr(main,'get_db_manager',lambda:library_db)
+    monkeypatch.setattr(library_db,'get_hr_task_user',lambda *args:USER)
+    monkeypatch.setattr(main,'get_company_resources',lambda *args:('fixture-bucket','fixture-store'))
+    query='Figma designer';optimized='optimized Figma' if retrieval=='fallback-empty' else query
+    def prepare(kind,query,user,tracker):
+        if retrieval!='cached-preparation':
+            tracker.add_call(kind,'fixture-model',input_tokens=40,output_tokens=10)
+        return {'all_keywords':['Figma']} if kind=='keywords' else {'optimized_query':optimized}
+    monkeypatch.setattr(main,'_prepare_search_input',prepare)
+    client=MagicMock()
+    outside=SimpleNamespace(document=SimpleNamespace(content=SimpleNamespace(uri='gs://fixture-bucket/Outside/cv.pdf')))
+    client.search.return_value=SimpleNamespace(results=[outside] if retrieval=='outside-folder' else [])
+    monkeypatch.setattr(main,'get_search_client',lambda:client)
+    monkeypatch.setattr(main,'analyze_resume_with_hr_scorecard',MagicMock(side_effect=AssertionError('No CV assessment expected')))
+    payload={'task_id':'qa-zero-usage','user_data':{'id':7},'company_id':1,'folder_filters':FOLDERS}
+    library_db.save_hr_scorecard_task('qa-zero-usage',query,'Designer',10,'7',company_id=1,task_payload=payload)
+    claim=library_db.claim_next_hr_task()
+    from services.task_lease import current_lease
+    async def run():
+        token=current_lease.set(('qa-zero-usage',claim['lease_token']))
+        try:return await main.run_hr_scorecard_task(claim['task_payload'])
+        finally:current_lease.reset(token)
+    assert asyncio.run(run())['results']==0
+    status=library_db.get_task_status('qa-zero-usage');assert status['status']=='completed'
+    progress=status['progress'];progress=json.loads(progress) if isinstance(progress,str) else progress
+    usage=progress['token_usage'];calls=0 if retrieval=='cached-preparation' else 2
+    assert usage['total_calls']==calls and usage['failed_calls']==0
+    assert usage['total_input_tokens']==40*calls and usage['total_output_tokens']==10*calls
+    assert usage['total_tokens']==50*calls and len(usage['calls_detail'])==calls
+    assert progress['processing_time_seconds']>=0
+    assert progress['returned_results']==0 and progress['exact_match_shortfall']==10
+    assert client.search.call_count==(2 if retrieval=='fallback-empty' else 1)
+    main.analyze_resume_with_hr_scorecard.assert_not_called()
+    assert library_db.get_search_context(status['search_id'])['folder_filters']==FOLDERS
+    public_status=asyncio.run(main.get_hr_scorecard_task_status('qa-zero-usage',user=USER))
+    public_progress=public_status['progress']
+    if isinstance(public_progress,str):public_progress=json.loads(public_progress)
+    assert public_progress['token_usage']==usage
+    public_results=asyncio.run(main.get_hr_scorecard_task_results('qa-zero-usage',user=USER))
+    assert public_results['total_results']==0 and public_results['results']==[]
+    result_progress=public_results['task_info']['progress']
+    if isinstance(result_progress,str):result_progress=json.loads(result_progress)
+    assert result_progress['token_usage']==usage
 
 
 def test_vector_cache_distinguishes_folders_and_tags(monkeypatch):

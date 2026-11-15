@@ -5,6 +5,19 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.15.3 - 2026-11-15
+
+### Complete Zero-Result Token Reporting
+
+- Persist the existing token summary and elapsed worker time for both empty-scope
+  and post-preparation zero-hit completion. Cached/unused preparation reports
+  actual zero usage; a billed preparation is no longer hidden by an early return.
+- Add durable persistence and status/results-handler regressions for empty scope,
+  empty retrieval, raw-query fallback, folder rejection and cached preparation.
+  Retrieval, prompts, scorecard signatures, scoring, logo and UI remain unchanged.
+- Reviewed cleanup and live provider-ledger verification are recorded in
+  `docs/ZERO_RESULT_USAGE_SAFE_CLEANUP_2026-11-15.md`.
+
 ## v2026.11.15.2 - 2026-11-15
 
 ### Reviewed-Plan Cleanup And Additional Role Acceptance

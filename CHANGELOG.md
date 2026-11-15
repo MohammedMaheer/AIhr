@@ -5,6 +5,26 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.16.1 - 2026-11-16
+
+### Concurrent Backup Review And Recovery Verification
+
+- Reconcile the planned cold-backup review with a user-confirmed concurrent
+  cleanup. Its retention run removed four older manual snapshots; no archival or
+  original-backup deletion was applied by this turn. Historical snapshot-byte
+  preservation is not claimed for those externally removed copies.
+- Retain the last manual recovery copy. Restore-test all four surviving compressed
+  nightly copies using the existing verifier: archive/database hashes, full SQLite
+  integrity, table counts and attachment/history byte totals all passed. The manual
+  copy also passed integrity checks; all 14 backup files stayed unchanged.
+- Backup storage is now about 6.20 GB, including a fresh copy created by the other
+  cleanup. No disk savings are attributed to this audit. Scheduled backup policy,
+  app/core/logo/UI and runtime `2f762d8` are unchanged by this work; no new AI calls.
+- All 7,862 CVs, 23 HR tables, the post-cleanup baseline's 117 retained HR backup
+  files, four cold archive/manifest files, 51 volumes, 27 container and 11 native
+  service identities verified. Existing 48 safety tests passed. Evidence and limits:
+  `docs/ADJACENT_BACKUP_RECOVERY_REVIEW_2026-11-15.md`.
+
 ## v2026.11.15.6 - 2026-11-15
 
 ### Verified Inactive Swapfile Removal

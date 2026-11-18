@@ -5,6 +5,26 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.18.1 - 2026-11-18
+
+### Authorized Retired Preview Removal
+
+- Permanently remove three explicitly retired deployments' identified VPS data,
+  uploads and backup copies, six unattached project volumes, four empty project
+  networks and two exclusive certificate lineages. No broad Docker pruning.
+- Remove 68 retired configuration blobs from 46 shared certificate checkpoints;
+  preserve and sandbox-restore all 1,100 retained blobs. Eight isolated safety
+  fixtures passed; independent verification found no retired blob remaining.
+- Reclaim 1,655,058,432 bytes during removal (about 1.66 GB). Final verified free
+  space is about 38.66 GB. Exclude a separately scheduled retention job's savings.
+- Preserve all 7,862 CV originals, 23 HR tables, 55 retained HR backup files,
+  four cold archive files, 27 container and 11 native-service identities. All
+  26 unrelated route checks match the post-retention baseline; no new AI calls.
+- Keep certificate-free rejection rules for retired names and shared operational
+  audit metadata only. No application rebuild/restart or core/logo/UI changes.
+  Scope, recovery proof and limitations:
+  `docs/RETIRED_PREVIEW_REMOVAL_2026-11-18.md`.
+
 ## v2026.11.16.1 - 2026-11-16
 
 ### Concurrent Backup Review And Recovery Verification

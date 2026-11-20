@@ -5,6 +5,22 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.20.2 - 2026-11-20
+
+### Live Verification Follow-Up
+
+- Recheck Microsoft inbox/calendar access and Teams availability, confirm the
+  previously approved test email in Sent Items, and rerun 319 integration tests.
+  No new mail or meetings were sent or created.
+- Verify two fictional live-model scorecards, three deterministic rejection
+  cases, and ten live read-only retrieval scopes. Record actual token usage,
+  HTTP timing, restored database counts, and the ten previously reviewed PDFs
+  that deliberately remain unindexed.
+- Restore the newest completed on-host PostgreSQL backup in an isolated
+  container and replay the current additive migration. This is not an off-site
+  or full document recovery drill. No application deployment or data changes.
+  Details: `docs/LIVE_WORKFLOW_VERIFICATION_2026-11-20.md`.
+
 ## v2026.11.20.1 - 2026-11-20
 
 ### Recruiter Workflow Reliability

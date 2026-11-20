@@ -26,6 +26,14 @@ try {
   page.on('pageerror', error => pageErrors.push(error.message));
   page.on('console', entry => { if (entry.type() === 'error') console.error(entry.text()); });
   await page.goto(url);
+  const coldRoute = await page.evaluate(async () => {
+    const { assistSavedJob } = await import('/failover.mjs');
+    return (await assistSavedJob({ state: 'busy', saved: true, canAssist: true, jobId: 'fixture-lease',
+      expiresAt: Date.now() + 5000, canonicalText: 'This is canonical text from a fictional saved CV.' }, { optedIn: true })).state;
+  });
+  assert.equal(coldRoute, 'vps');
+  assert(!requests.some(([, request]) => new URL(request).pathname.startsWith('/assets/')), 'Cold assist downloaded the model');
+
   const files = await page.evaluate(async cases => {
     const { processFile } = await import('/pilot.mjs');
     const data = [];
@@ -50,6 +58,33 @@ try {
   }, [...files.map(file => file.text),
     '  Lead développeur à Dubaï — العربية हिन्दी, C++, Node.js and SQL Server.  ',
     'Senior analyst. '.repeat(160) + 'End-of-document token beyond model limit']);
+
+  const assist = await page.evaluate(async canonicalText => {
+    const { assistSavedJob, selectAssistRoute } = await import('/failover.mjs');
+    const { hasWarmModel } = await import('/pilot.mjs');
+    const lease = { state: 'busy', saved: true, canAssist: true, jobId: 'fixture-lease',
+      expiresAt: Date.now() + 5000, canonicalText };
+    const states = [];
+    for (const info of [
+      { ...lease, state: 'healthy' }, { ...lease, state: 'unreachable' }, { ...lease, saved: false },
+      { ...lease, canAssist: false }, { ...lease, expiresAt: Date.now() - 1 }, { ...lease, canonicalText: '' },
+    ]) states.push((await assistSavedJob(info, { optedIn: true })).state);
+    states.push((await assistSavedJob(lease)).state);
+    states.push(selectAssistRoute(lease, { online: true, warm: true, optedIn: true, eligible: false }));
+    states.push(selectAssistRoute(lease, { online: false, warm: true, optedIn: true, eligible: true }));
+    const result = await assistSavedJob(lease, { optedIn: true });
+    const stop = new AbortController();
+    const pending = assistSavedJob(lease, { optedIn: true, signal: stop.signal });
+    stop.abort();
+    const interrupted = await pending;
+    return { states, result: { ...result, vector: Array.from(result.vector || []) }, interrupted, warmAfterStop: hasWarmModel() };
+  }, probes[0].text);
+  assert.deepEqual(assist.states, ['vps', 'wait-for-vps', 'vps', 'vps', 'vps', 'vps', 'vps', 'vps', 'wait-for-vps']);
+  assert.equal(assist.result.state, 'shadow-result');
+  assert.equal(assist.result.jobId, 'fixture-lease');
+  assert.deepEqual(assist.result.vector, probes[0].vector);
+  assert.deepEqual(assist.interrupted, { state: 'vps' });
+  assert.equal(assist.warmAfterStop, false);
 
   for (const { name, bytes, expected } of negatives) {
     await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
@@ -95,7 +130,8 @@ try {
     model_bytes: modelBytes,
     browser_tests: { pdfs: files.length, negative_cases: negatives.length, model_failure_and_retry: true,
       same_origin_read_only: true, device_fallbacks_without_download: skipped,
-      narrow_desktop_width: 412, stop_background_and_reconnect_recovery: true },
+      narrow_desktop_width: 412, stop_background_and_reconnect_recovery: true,
+      staged_desktop_failover_cases: 12 },
   };
   if (host || image) {
     const baseline = await runBaseline('compare', { files: files.map(({ id, pdf, text, vector }) => (

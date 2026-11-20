@@ -7,6 +7,7 @@ const deadlineMs = 30000;
 let pdf;
 let parser;
 let embedder;
+let modelWarm = false;
 
 function closeParser(current = parser) {
   if (!current || parser !== current) return;
@@ -19,6 +20,11 @@ function closeEmbedder(worker = embedder) {
   if (!worker || embedder !== worker) return;
   worker.terminate();
   embedder = null;
+  modelWarm = false;
+}
+
+export function hasWarmModel() {
+  return Boolean(embedder && modelWarm);
 }
 
 async function readPages(doc) {
@@ -109,6 +115,7 @@ export async function embed(text, signal) {
       if (event.data.id !== id) return;
       if (!event.data.vector) return onError();
       cleanup();
+      modelWarm = true;
       resolve(event.data);
     }
     const timer = setTimeout(onError, deadlineMs);

@@ -5,6 +5,17 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.20.8 - 2026-11-20
+
+### Upload Recovery And Dynamic Assist Pilot
+
+- Preserve pending selections, respect busy retry delays, and stop unsafe
+  upload replays after an unconfirmed response. Wrap queue messages and long
+  filenames on narrow screens.
+- Test busy-only desktop assistance with simulated saved jobs and warm models.
+  The pilot cannot write the live index. VPS batching and ranking are unchanged.
+  Details: `docs/UPLOAD_RECOVERY_2026-11-20.md`.
+
 ## v2026.11.20.7 - 2026-11-20
 
 ### VPS Bulk Resume Indexing

@@ -4327,8 +4327,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Start upload
         startUpload.addEventListener('click', async () => {
-            if (!isUploading && selectedFiles.length > 0) {
+            if (!isUploading && selectedFiles.some(item => item.status === 'pending')) {
                 if (!document.getElementById('upload-folder').reportValidity()) return;
+                if (navigator.onLine === false) {
+                    showNotification('You are offline. Keep this tab open and resume the upload when connected.', 'warning');
+                    return;
+                }
                 isUploading = true;
                 startUpload.disabled = true;
                 clearQueue.disabled = true;
@@ -4336,7 +4340,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 // Check if GCS is configured
                 await fetch('/api/gcs-status')
-                    .then(response => response.json())
+                    .then(response => {
+                        if (!response.ok) throw new Error('Upload service unavailable');
+                        return response.json();
+                    })
                     .then(data => {
                         if (!data.configured) {
                             showCredentialsModal();
@@ -4346,13 +4353,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     })
                     .catch(error => {
                         console.error('Error checking GCS status:', error);
-                        showNotification('Upload could not complete. Please check the file statuses and try again.', 'error');
+                        showNotification('Upload service unavailable. Your pending files are still in this tab.', 'warning');
                     })
                     .finally(() => {
                         isUploading = false;
                         clearQueue.disabled = false;
                         updateUploadQueue();
-                        refreshUploadFolders(uploadFolder);
+                        if (startUpload.isConnected) refreshUploadFolders(uploadFolder);
                     });
             }
         });
@@ -4463,177 +4470,113 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         async function performUpload(uploadFolder) {
-            // Adaptive batch size configuration
-            let currentBatchSize = 50; // Start with 50 files per batch
-            const MIN_BATCH_SIZE = 1; // Minimum batch size
-            const MAX_BATCH_SIZE_MB = 32; // 32MB per batch
-            const batchSizeHistory = []; // Track successful batch sizes
-
-            // Show overall progress bar
+            const queue = selectedFiles.filter(item => item.status === 'pending');
+            const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+            let batchLimit = 50;
             const progressContainer = document.getElementById('overall-progress-container');
             const progressBar = document.getElementById('overall-progress-bar');
             const progressText = document.getElementById('overall-progress-text');
             const batchProgressText = document.getElementById('batch-progress-text');
             const filesProgressText = document.getElementById('files-progress-text');
-
             progressContainer.classList.remove('hidden');
-            progressBar.style.width = '0%';
-            progressText.textContent = '0%';
-            batchProgressText.textContent = `Initializing...`;
-            filesProgressText.textContent = `0/${selectedFiles.length} files queued`;
-
             let totalSuccessful = 0;
             let totalFailed = 0;
             let totalNotIndexed = 0;
-            let batchResults = [];
-            let remainingFiles = [...selectedFiles]; // Copy of files to process
+            let offset = 0;
             let batchNumber = 0;
-            let totalBatches = 0; // Will be calculated dynamically
+            let busyRetries = 0;
+            let pauseReason = '';
+            const setProgress = () => {
+                const completed = totalSuccessful + totalFailed;
+                const pct = Math.round(100 * completed / queue.length);
+                progressBar.style.width = `${pct}%`;
+                progressText.textContent = `${pct}%`;
+                filesProgressText.textContent = `${completed}/${queue.length} files confirmed`;
+            };
+            setProgress();
 
-            console.log(`🚀 Starting adaptive batch upload with initial batch size: ${currentBatchSize}`);
-
-            // Process files with adaptive batch sizing
-            while (remainingFiles.length > 0) {
+            while (offset < queue.length && startUpload.isConnected) {
+                if (navigator.onLine === false) {
+                    pauseReason = 'You are offline. Keep this tab open and resume pending files when connected.';
+                    break;
+                }
+                const batch = [];
+                let bytes = 0;
+                for (let i = offset; i < queue.length && batch.length < batchLimit; i++) {
+                    const item = queue[i];
+                    if (batch.length && bytes + item.file.size > 32 * 1024 * 1024) break;
+                    bytes += item.file.size;
+                    batch.push(item);
+                }
                 batchNumber++;
+                batchProgressText.textContent = `Batch ${batchNumber} (${batch.length} files)`;
+                for (const item of batch) {
+                    Object.assign(item, {status: 'uploading', progress: 0, error: null, batchInfo: `Batch ${batchNumber}`});
+                }
+                updateUploadQueue();
 
-                // Create current batch with current batch size
-                const currentBatch = createBatches(remainingFiles, currentBatchSize, MAX_BATCH_SIZE_MB)[0];
-                if (!currentBatch || currentBatch.length === 0) {
-                    console.error('? Unable to create batch - breaking upload loop');
+                let results;
+                try {
+                    results = (await uploadBatch(batch, uploadFolder, batchNumber, '8')).results;
+                } catch (error) {
+                    if (error.kind === 'too-large' && batch.length > 1) {
+                        batchLimit = Math.floor(batch.length / 2);
+                        for (const item of batch) Object.assign(item, {status: 'pending', batchInfo: 'Waiting', error: null});
+                        continue;
+                    }
+                    if (error.kind === 'busy') {
+                        const retryMs = error.retryMs ?? 2500 * (2 ** busyRetries);
+                        if (busyRetries < 2 && retryMs <= 30000 && navigator.onLine !== false && startUpload.isConnected) {
+                            busyRetries++;
+                            for (const item of batch) Object.assign(item, {status: 'retrying', batchInfo: 'Server busy'});
+                            batchProgressText.textContent = 'Server busy. Retrying shortly.';
+                            updateUploadQueue();
+                            await wait(Math.max(250, retryMs));
+                            for (const item of batch) Object.assign(item, {status: 'pending', batchInfo: 'Waiting'});
+                            continue;
+                        }
+                        for (const item of batch) Object.assign(item, {status: 'pending', batchInfo: 'Waiting'});
+                        pauseReason = 'The server is busy. Your pending files are still in this tab.';
+                        break;
+                    }
+                    if (error.kind === 'rejected' || error.kind === 'too-large') {
+                        for (const item of batch) Object.assign(item, {status: 'failed', error: error.message, batchInfo: 'Not uploaded'});
+                        totalFailed += batch.length;
+                        offset += batch.length;
+                        setProgress();
+                        if (offset < queue.length) pauseReason = 'Upload paused. Review the failed files before continuing.';
+                        break;
+                    }
+                    // A missing or ambiguous response can come after a committed upload.
+                    for (const item of batch) Object.assign(item, {status: 'uncertain', batchInfo: '',
+                        error: 'This file may already be saved. Check Resume Library before retrying.'});
+                    pauseReason = 'Upload status could not be confirmed. Check Resume Library before resending these files.';
                     break;
                 }
 
-                console.log(`📤 Uploading batch ${batchNumber} (${currentBatch.length} files, batch size: ${currentBatchSize})`);
-
-                // Update progress UI
-                const completedFiles = selectedFiles.length - remainingFiles.length;
-                const overallProgress = (completedFiles / selectedFiles.length) * 100;
-                progressBar.style.width = `${overallProgress}%`;
-                progressText.textContent = `${Math.round(overallProgress)}%`;
-                batchProgressText.textContent = `Batch ${batchNumber} (${currentBatch.length} files)`;
-
-                // Update UI to show current batch uploading
-                currentBatch.forEach(fileItem => {
-                    fileItem.status = 'uploading';
-                    fileItem.progress = 0;
-                    fileItem.batchInfo = `Batch ${batchNumber} (Size: ${currentBatchSize})`;
-                });
-                updateUploadQueue();
-
-                let batchSuccess = false;
-
-                try {
-                    const batchResult = await uploadBatch(currentBatch, uploadFolder, batchNumber, '8');
-                    batchResults.push(batchResult);
-                    batchSuccess = true;
-
-                    // Update individual file statuses based on batch result
-                    if (batchResult.results) {
-                        batchResult.results.forEach((result, index) => {
-                            if (index < currentBatch.length) {
-                                const notIndexed = result.success && result.vector_indexed === false;
-                                currentBatch[index].status = result.success ? (notIndexed ? 'attention' : 'completed') : 'failed';
-                                currentBatch[index].progress = 100;
-                                currentBatch[index].error = notIndexed ? 'File saved, but not searchable. Text extraction or indexing needs attention.' : result.error;
-                                currentBatch[index].gcs_path = result.gcs_path;
-                                currentBatch[index].batchInfo = `Batch ${batchNumber} · ${notIndexed ? 'Saved, not searchable' : result.success ? 'Success' : 'Failed'}`;
-                            }
-                        });
-
-                        const successful = batchResult.results.filter(r => r.success).length;
-                        const failed = batchResult.results.filter(r => !r.success).length;
-                        totalSuccessful += successful;
-                        totalFailed += failed;
-                        totalNotIndexed += batchResult.results.filter(r => r.success && r.vector_indexed === false).length;
-
-                        // Update files progress
-                        const totalCompleted = totalSuccessful + totalFailed;
-                        filesProgressText.textContent = `${totalCompleted}/${selectedFiles.length} files completed`;
-                    }
-
-                    // Remove successfully processed files from remaining files
-                    remainingFiles = remainingFiles.filter(file => !currentBatch.includes(file));
-
-                    // Track successful batch size
-                    batchSizeHistory.push(currentBatchSize);
-                    console.log(`? Batch ${batchNumber} completed successfully with size ${currentBatchSize}`);
-
-                    // Optionally increase batch size if we've had consecutive successes
-                    if (batchSizeHistory.length >= 2 &&
-                        batchSizeHistory.slice(-2).every(size => size === currentBatchSize) &&
-                        currentBatchSize < 50) {
-                        currentBatchSize = Math.min(currentBatchSize * 2, 50);
-                        console.log(`⬆️ Increasing batch size to ${currentBatchSize} after consecutive successes`);
-                    }
-
-                } catch (error) {
-                    console.error(`? Batch ${batchNumber} failed (size: ${currentBatchSize}):`, error);
-                    batchSuccess = false;
-
-                    // Mark all files in this batch as failed temporarily
-                    currentBatch.forEach(fileItem => {
-                        fileItem.status = 'retrying';
-                        fileItem.error = error.message || 'Batch upload failed - retrying with smaller batch';
-                        fileItem.batchInfo = `Batch ${batchNumber} · Retrying`;
+                busyRetries = 0;
+                results.forEach((result, index) => {
+                    const notIndexed = result.success && result.vector_indexed === false;
+                    Object.assign(batch[index], {
+                        status: result.success ? (notIndexed ? 'attention' : 'completed') : 'failed',
+                        progress: 100, gcs_path: result.gcs_path,
+                        error: notIndexed ? 'File saved, but not searchable. Text extraction or indexing needs attention.' : result.error,
+                        batchInfo: notIndexed ? 'Saved, not searchable' : result.success ? 'Uploaded' : 'Failed',
                     });
-                    updateUploadQueue();
-
-                    // Implement adaptive batch size reduction
-                    if (currentBatchSize > MIN_BATCH_SIZE) {
-                        // Reduce batch size (halve it, but ensure it's at least 1)
-                        const newBatchSize = Math.max(Math.floor(currentBatchSize / 2), MIN_BATCH_SIZE);
-                        console.log(`⬇️ Reducing batch size from ${currentBatchSize} to ${newBatchSize}`);
-                        currentBatchSize = newBatchSize;
-
-                        // Reset batch info for retry
-                        currentBatch.forEach(fileItem => {
-                            fileItem.status = 'pending';
-                            fileItem.error = null;
-                            fileItem.batchInfo = `Retrying with smaller batch (${currentBatchSize})`;
-                        });
-                        updateUploadQueue();
-
-                        // Don't remove files from remaining files - they'll be retried
-                        console.log(`🔄 Retrying failed batch with smaller size: ${currentBatchSize}`);
-
-                        // Small delay before retry
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                        continue; // Retry with smaller batch size
-                    } else {
-                        // Even minimum batch size failed - mark files as failed
-                        console.error(`? Batch failed even with minimum size (${MIN_BATCH_SIZE}) - marking files as failed`);
-                        currentBatch.forEach(fileItem => {
-                            fileItem.status = 'failed';
-                            fileItem.error = error.message || 'Upload failed even with minimum batch size';
-                            fileItem.batchInfo = `Batch ${batchNumber} · Failed`;
-                        });
-                        totalFailed += currentBatch.length;
-
-                        // Remove failed files from remaining files
-                        remainingFiles = remainingFiles.filter(file => !currentBatch.includes(file));
-
-                        // Update files progress
-                        const totalCompleted = totalSuccessful + totalFailed;
-                        filesProgressText.textContent = `${totalCompleted}/${selectedFiles.length} files completed`;
-                    }
-                }
-
+                    if (result.success) totalSuccessful++;
+                    else totalFailed++;
+                    if (notIndexed) totalNotIndexed++;
+                });
+                offset += batch.length;
+                setProgress();
                 updateUploadQueue();
-
-                // Small delay between batches to prevent overwhelming the server
-                if (remainingFiles.length > 0) {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
+                if (offset < queue.length) await wait(1000);
             }
 
-            // Complete progress bar
-            progressBar.style.width = '100%';
-            progressText.textContent = '100%';
-            batchProgressText.textContent = 'Upload complete';
-
-            // Hide progress bar after 3 seconds
-            setTimeout(() => {
-                progressContainer.classList.add('hidden');
+            if (!startUpload.isConnected) return;
+            batchProgressText.textContent = pauseReason ? 'Upload paused' : 'Upload finished';
+            if (!pauseReason) setTimeout(() => {
+                if (!isUploading) progressContainer.classList.add('hidden');
             }, 3000);
 
             // Update final stats
@@ -4641,50 +4584,20 @@ document.addEventListener('DOMContentLoaded', function () {
             const successfulUploads = document.getElementById('successful-uploads');
             const failedUploads = document.getElementById('failed-uploads');
 
-            totalUploaded.textContent = parseInt(totalUploaded.textContent) + selectedFiles.length;
+            totalUploaded.textContent = parseInt(totalUploaded.textContent, 10) + totalSuccessful + totalFailed;
             successfulUploads.textContent = parseInt(successfulUploads.textContent) + totalSuccessful;
             failedUploads.textContent = parseInt(failedUploads.textContent) + totalFailed;
 
             const indexWarning = totalNotIndexed ? ` ${totalNotIndexed} saved file${totalNotIndexed === 1 ? '' : 's'} ${totalNotIndexed === 1 ? 'is' : 'are'} not searchable and need attention.` : '';
             const message = `${totalSuccessful} file${totalSuccessful === 1 ? '' : 's'} uploaded` +
                 (totalFailed ? `; ${totalFailed} failed.` : '.') + indexWarning;
-            if (totalSuccessful > 0) {
+            if (pauseReason) {
+                showLimitNotification(pauseReason, 'warning');
+            } else if (totalSuccessful > 0) {
                 showLimitNotification(message, totalFailed > 0 || totalNotIndexed > 0 ? 'warning' : 'success');
             } else if (totalFailed > 0) {
                 showLimitNotification(`No files uploaded. ${totalFailed} failed. Review the upload queue.`, 'error');
             }
-        }
-
-        function createBatches(files, maxFilesPerBatch, maxBatchSizeMB) {
-            const batches = [];
-            let currentBatch = [];
-            let currentBatchSize = 0;
-            const maxBatchSizeBytes = maxBatchSizeMB * 1024 * 1024;
-
-            for (const fileItem of files) {
-                const fileSize = fileItem.file.size;
-
-                // Check if adding this file would exceed batch limits
-                if (currentBatch.length >= maxFilesPerBatch ||
-                    (currentBatchSize + fileSize > maxBatchSizeBytes && currentBatch.length > 0)) {
-                    // Start new batch
-                    if (currentBatch.length > 0) {
-                        batches.push(currentBatch);
-                    }
-                    currentBatch = [];
-                    currentBatchSize = 0;
-                }
-
-                currentBatch.push(fileItem);
-                currentBatchSize += fileSize;
-            }
-
-            // Don't forget the last batch
-            if (currentBatch.length > 0) {
-                batches.push(currentBatch);
-            }
-
-            return batches;
         }
 
         async function uploadBatch(batch, uploadFolder, batchNumber, totalBatches) {
@@ -4698,21 +4611,34 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const response = await fetch('/api/upload-files', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: globalThis.AbortSignal?.timeout?.(120000),
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                if (response.status === 413) {
-                    // Handle structured 413 error from middleware
-                    const maxSizeMB = errorData.max_size_mb || 100;
-                    const receivedSizeMB = errorData.received_size_mb || 'unknown';
-                    throw new Error(`Batch too large: ${receivedSizeMB}MB exceeds limit of ${maxSizeMB}MB`);
+                if (response.status === 429) {
+                    const header = response.headers?.get('Retry-After')?.trim();
+                    const delay = header ? (/^\d+$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now()) : NaN;
+                    throw Object.assign(new Error('The server is busy.'), {kind: 'busy', retryMs: Number.isFinite(delay) ? delay : undefined});
                 }
-                throw new Error(errorData.detail || `Batch ${batchNumber} upload failed`);
+                if (response.status === 413) {
+                    throw Object.assign(new Error('The file is too large for the upload service.'), {kind: 'too-large'});
+                }
+                if ([400, 401, 403, 404, 405, 409, 415, 422].includes(response.status)) {
+                    const data = await response.json().catch(() => ({}));
+                    const message = typeof data?.detail === 'string' ? data.detail : 'The server rejected this upload.';
+                    throw Object.assign(new Error(message), {kind: 'rejected'});
+                }
+                throw new Error('Upload outcome unavailable');
             }
 
-            return await response.json();
+            const data = await response.json();
+            // The server preserves multipart order; filenames can be encoded by the browser.
+            if (!Array.isArray(data?.results) || data.results.length !== batch.length ||
+                data.results.some(item => typeof item?.success !== 'boolean')) {
+                throw new Error('Upload outcome incomplete');
+            }
+            return data;
         }
 
         function showLimitNotification(message, type = 'error') {
@@ -4736,49 +4662,44 @@ document.addEventListener('DOMContentLoaded', function () {
                     const statusColor = getStatusColor(fileItem.status);
 
                     return `
-                        <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg mb-2">
-                            <div class="flex items-center space-x-3">
-                                <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                                    <i class="fas fa-file-${getFileIcon(fileItem.file.name)} text-gray-600"></i>
-                                </div>
-                                <div>
-                                    <p class="text-sm font-medium text-gray-900 break-all">${escapeHtml(fileItem.file.name)}</p>
-                                    <div class="flex items-center space-x-2 text-xs text-gray-500">
-                                        <span>${formatFileSize(fileItem.file.size)}</span>
-                                        ${fileItem.batchInfo ? `<span class="text-gray-300">·</span><span class="${statusColor}">${escapeHtml(fileItem.batchInfo)}</span>` : ''}
-                                    </div>
-                                </div>
+                        <div class="flex items-start gap-3 p-3 border border-gray-200 rounded-lg mb-2">
+                            <div class="w-10 h-10 shrink-0 bg-gray-100 rounded-lg flex items-center justify-center">
+                                <i class="fas fa-file-${getFileIcon(fileItem.file.name)} text-gray-600" aria-hidden="true"></i>
                             </div>
-                            <div class="flex items-center space-x-3">
-                                <div class="flex items-center space-x-2">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-medium text-gray-900" style="overflow-wrap: anywhere">${escapeHtml(fileItem.file.name)}</p>
+                                <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                                    <span>${formatFileSize(fileItem.file.size)}</span>
                                     <span class="text-xs ${statusColor} capitalize">
-                                        ${statusIcon} ${fileItem.status}
+                                        ${statusIcon} ${fileItem.status === 'uncertain' ? 'Unconfirmed' : fileItem.status}
                                     </span>
-                                    ${fileItem.status === 'uploading' ? `
-                                        <div class="w-20 bg-gray-200 rounded-full h-2">
-                                            <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: ${fileItem.progress}%"></div>
-                                        </div>
-                                    ` : ''}
-                                    ${fileItem.error ? `
-                                        <div class="text-xs ${fileItem.status === 'attention' ? 'text-amber-700' : 'text-red-600'} max-w-xs truncate" title="${escapeHtml(fileItem.error)}">
-                                            ${escapeHtml(fileItem.error)}
-                                        </div>
-                                    ` : ''}
+                                    ${fileItem.batchInfo ? `<span class="${statusColor}">${escapeHtml(fileItem.batchInfo)}</span>` : ''}
                                 </div>
-                                <button class="text-red-600 hover:text-red-800" aria-label="Remove file" ${isUploading ? 'disabled' : ''} onclick="removeFile('${fileItem.id}')">
-                                    <i class="fas fa-trash text-xs"></i>
-                                </button>
+                                ${fileItem.status === 'uploading' ? `
+                                    <div class="w-20 mt-1 bg-gray-200 rounded-full h-2">
+                                        <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: ${fileItem.progress}%"></div>
+                                    </div>
+                                ` : ''}
+                                ${fileItem.error ? `
+                                    <p class="mt-1 text-xs ${['attention', 'uncertain'].includes(fileItem.status) ? 'text-amber-700' : 'text-red-600'}" style="overflow-wrap: anywhere">
+                                        ${escapeHtml(fileItem.error)}
+                                    </p>
+                                ` : ''}
                             </div>
+                            <button class="w-8 h-8 shrink-0 text-red-600 hover:text-red-800" aria-label="Remove file" ${isUploading ? 'disabled' : ''} onclick="removeFile('${fileItem.id}')">
+                                <i class="fas fa-trash text-xs" aria-hidden="true"></i>
+                            </button>
                         </div>
                     `;
                 }).join('')}
                 `;
-                startUpload.disabled = isUploading;
+                startUpload.disabled = isUploading || !selectedFiles.some(item => item.status === 'pending');
             }
         }
 
         function getStatusIcon(status) {
             switch (status) {
+                case 'uncertain':
                 case 'attention': return '<i class="fas fa-exclamation-triangle"></i>';
                 case 'completed': return '<i class="fas fa-check-circle"></i>';
                 case 'failed': return '<i class="fas fa-exclamation-circle"></i>';
@@ -4790,6 +4711,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         function getStatusColor(status) {
             switch (status) {
+                case 'uncertain':
                 case 'attention': return 'text-amber-700';
                 case 'completed': return 'text-green-600';
                 case 'failed': return 'text-red-600';

@@ -57,7 +57,8 @@ async function run(){
   {success:false,error:'<img src=x onerror=alert(1)>'}
  ]})});
  await flush();await flush();
- assert.equal(start.disabled,false);assert.equal(d.getElementById('clear-queue').disabled,false);
+ assert.equal(start.disabled,true,'Reported results cannot be silently submitted again');
+ assert.equal(d.getElementById('clear-queue').disabled,false);
  assert.match(d.getElementById('upload-queue').textContent,/not searchable/);
  assert.equal(d.querySelectorAll('#upload-queue img').length,0,'Provider errors must be escaped');
  assert(uploadNotices.some(([text,type])=>type==='warning' && text.includes('not searchable')));

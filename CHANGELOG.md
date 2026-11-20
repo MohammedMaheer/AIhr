@@ -5,6 +5,16 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.20.6 - 2026-11-20
+
+### Embedding-Only Performance Pilot
+
+- Reuse VPS-extracted text and benchmark full-precision WASM and WebGPU,
+  an 8-bit comparison, and VPS batching on 36 synthetic inputs.
+- Full-precision GPU and four-thread WASM beat the warm VPS baseline on
+  the test workstation and preserved all six search orders. Reject the 8-bit
+  model because it changed ordering. Keep all production paths unchanged.
+
 ## v2026.11.20.5 - 2026-11-20
 
 ### Device-Aware Recruiter CV Pilot

@@ -57,6 +57,63 @@ device/browser conditions, not physical phone or battery benchmarks.
 The VPS comparison rerun reproduced 6/6 ordered search matches, the same
 two-column PDF difference, and no warm speed advantage (41.8 ms vs 26.5 ms).
 
+## Embedding-Only Follow-Up
+
+Keep the VPS's exact PDF text and benchmark only the embedding step. This
+removes the reading-order difference and preserves the existing inputs to
+ranking. The benchmark uses 34 synthetic PDFs and two text probes (Unicode
+and long-input truncation). The actual deployed VPS image ran offline with
+the same 1.75-vCPU quota as the app, two numerical-library threads, and a
+read-only model cache. The desktop ran Chrome on a Core Ultra 9 workstation
+with an NVIDIA RTX 5060 Ti. The table shows the first run; warm figures are
+medians over three trials per run. An independent rerun reproduced parity
+and the major performance differences.
+
+| Embedding path | Warm single median | 36 inputs, best tested mode | Parity |
+| --- | ---: | ---: | --- |
+| VPS, one at a time | 35.62 ms | 1,345 ms | Reference |
+| VPS, groups of eight | N/A | 937 ms | Pass |
+| Browser, standard FP32 WASM, one thread | 26.77 ms | 2,159 ms (sequential) | Pass |
+| Browser, standard FP32 WASM, four threads | 8.58 ms | 619 ms (sequential) | Pass |
+| Browser, optimized FP32 WASM, four threads | 8.76 ms | 626 ms (sequential) | Pass |
+| Browser, compact 8-bit WASM, four threads | 6.11 ms | 404 ms (batch) | **Fail: changed two search orders** |
+| Browser, full-precision WebGPU, verified NVIDIA adapter | 6.97 ms | 71 ms (batch) | Pass |
+
+Parity requires at least 0.9999 cosine similarity on all 36 inputs and identical
+candidate order and criteria status for all six fixed-pool searches (including
+10 exact candidates). All FP32 paths exceeded 0.999999 similarity. The 8-bit
+model was 23.0 MB but changed the ten-candidate strict and semantic orderings;
+it is not a substitute. The compared exports are from the
+[pinned MiniLM revision](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/tree/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/onnx).
+
+- **Desktop opportunity:** warm NVIDIA WebGPU completed the embedding corpus
+  about 13 to 19 times as fast as the batched VPS over two runs. Four-thread
+  FP32 WASM without batching finished about 1.5 to 1.9 times as fast. The WASM
+  test uses isolation headers on the local benchmark only, as required by
+  [ONNX Runtime Web's multithreading](https://onnxruntime.ai/docs/tutorials/web/performance-diagnosis.html).
+- **Broadest benefit:** batching on the VPS took about 16% to 30% less time than
+  one-by-one embedding for the same inputs, with identical test search
+  ordering and no model download on recruiter devices. This is a candidate
+  for a separate server-side ingestion change, not a deployed change.
+- **Hard limit:** WebGPU cold startup took 1.15 to 1.77 seconds over loopback before
+  any real network transfer. The FP32 model alone is 90.4 MB. Initial download,
+  data transfer between VPS and browser, upload, extraction, database writes,
+  and serving load were not included in the warm times. The benchmark does
+  not prove a 13x faster upload or parity on other devices. Do not offload
+  single uploads or cold desktops by default. Prefer a cached, measured
+  desktop accelerator for an eligible repeat bulk session only.
+
+With the same authorized baseline SSH/image variables described below:
+
+```sh
+npm run prepare-assets -- --benchmark
+npm run benchmark
+```
+
+The performance benchmark runs only in a disposable loopback browser origin
+and network-disabled VPS containers. No production credentials, candidate
+files, paid AI requests, index writes, application routes, or settings change.
+
 ## Run Locally
 
 From `tests/local-upload-pilot` with Node.js 22+ and Chrome installed:

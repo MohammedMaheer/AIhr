@@ -16,7 +16,7 @@ const roots = new Map([
   ['tokenizer', resolve(here, 'node_modules/@huggingface/tokenizers/dist')],
 ]);
 
-export async function listen(port = 0) {
+export async function listen(port = 0, { isolated = false } = {}) {
   const server = createServer(async (req, res) => {
     try {
       if (req.method !== 'GET') return res.writeHead(405).end();
@@ -39,6 +39,7 @@ export async function listen(port = 0) {
         'Content-Security-Policy': "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': namespace === 'assets' || namespace === 'ort' ? 'private, max-age=3600' : 'no-store',
+        ...(isolated ? { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' } : {}),
       });
       createReadStream(path).on('error', () => res.destroy()).pipe(res);
     } catch {

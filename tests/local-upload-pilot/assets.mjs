@@ -11,6 +11,12 @@ const files = [
   { sha256: 'be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037', path: 'tokenizer.json' },
   { sha256: 'acb92769e8195aabd29b7b2137a9e6d6e25c476a4f15aa4355c233426c61576b', path: 'tokenizer_config.json' },
 ];
+if (process.argv.includes('--benchmark')) {
+  files.push(
+    { sha256: '1de3905029190b398c7d300b530e320cf4b5e7d3dfb9af1429ebd73fd9a16faf', path: 'onnx/model_O2.onnx' },
+    { sha256: 'b941bf19f1f1283680f449fa6a7336bb5600bdcd5f84d10ddc5cd72218a0fd21', path: 'onnx/model_quint8_avx2.onnx' },
+  );
+}
 
 await mkdir(assets, { recursive: true });
 for (const { path, sha256 } of files) {

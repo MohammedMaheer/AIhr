@@ -1,46 +1,18 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { readFile, stat } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import { once } from 'node:events';
 import { chromium } from 'playwright';
 import { checkDeviceFallbacks, checkInterruptions } from './device-checks.mjs';
 import { corpus, negatives, queries } from './fixtures.mjs';
-import { listen, revision } from './server.mjs';
+import { listen } from './server.mjs';
+import { host, image, runBaseline } from './vps-baseline.mjs';
 
-const host = process.env.PILOT_BASELINE_SSH;
-const image = process.env.PILOT_BASELINE_IMAGE;
 const median = values => {
   const sorted = [...values].sort((a, b) => a - b);
   return (sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.floor(sorted.length / 2)]) / 2;
 };
 const round = value => Number(value.toFixed(2));
 const asInputs = fixtures => fixtures.map(({ id, bytes }) => ({ id, pdf: bytes.toString('base64') }));
-
-async function vpsBaseline(files, probes) {
-  assert(host && /^[\w.-]+@[\w.-]+$/.test(host), 'Set PILOT_BASELINE_SSH to an authorized SSH login');
-  assert(image && /^[\w.-]+:[\w.-]+$/.test(image), 'Set PILOT_BASELINE_IMAGE to the verified cached SmartHR image');
-  const payload = Buffer.from(JSON.stringify({ files, probes, queries, revision })).toString('base64');
-  const source = await readFile(new URL('./baseline.py', import.meta.url), 'utf8');
-  const result = spawnSync('ssh', [
-    '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=8', host,
-    'docker', 'run', '--rm', '-i', '--pull=never', '--network=none', '--read-only', '--user=65534:65534',
-    '--cap-drop=ALL', '--security-opt=no-new-privileges', '--tmpfs=/tmp:rw,noexec,nosuid,size=96m',
-    '--cpus=1', '--memory=1500m', '--memory-swap=1500m', '--pids-limit=64',
-    '-e', 'HF_HUB_OFFLINE=1', '-e', 'TRANSFORMERS_OFFLINE=1', '-e', 'OMP_NUM_THREADS=1',
-    '-e', 'MKL_NUM_THREADS=1', '-e', 'SMARTHR_QUERY_EMBED_CACHE_MAX=0',
-    '-e', 'SMARTHR_EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2',
-    '-e', 'SENTENCE_TRANSFORMERS_HOME=/app/.st_cache',
-    '-v', 'smarthr_stcache:/app/.st_cache:ro', '--entrypoint=timeout', image, '120', 'python', '-',
-  ], {
-    input: `${source}\ncompare(json.loads(base64.b64decode('${payload}')))\n`,
-    encoding: 'utf8', timeout: 135000,
-  });
-  if (result.error) throw result.error;
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  const report = result.stdout.split('\n').find(line => line.startsWith('PILOT_REPORT:'));
-  assert(report, 'No isolated baseline report');
-  return JSON.parse(report.slice('PILOT_REPORT:'.length));
-}
 
 const { server, url } = await listen();
 let browser;
@@ -126,7 +98,8 @@ try {
       narrow_desktop_width: 412, stop_background_and_reconnect_recovery: true },
   };
   if (host || image) {
-    const baseline = await vpsBaseline(files.map(({ id, pdf, text, vector }) => ({ id, pdf, browserText: text, browserVector: vector })), probes);
+    const baseline = await runBaseline('compare', { files: files.map(({ id, pdf, text, vector }) => (
+      { id, pdf, browserText: text, browserVector: vector })), probes, queries });
     Object.assign(report, baseline);
     const ten = baseline.rank_comparisons.find(r => r.case === 'ten-full-stack');
     assert.equal(ten.vps_count, 10);

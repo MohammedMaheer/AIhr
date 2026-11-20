@@ -5,6 +5,21 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.20.3 - 2026-11-20
+
+### Outlook CV Catch-Up
+
+- Resume from the November 11 verified mailbox scan with a one-day overlap.
+  Check 305 PDF/Word attachments, skip 88 exact duplicates and retain six
+  uncertain documents privately for review.
+- Add 211 verified CVs to `Mailbox 2026` with their original attachments,
+  received dates, extraction provenance, tags, local embeddings and bounded
+  email context. No paid AI calls or mailbox changes.
+- Verify all new originals and vectors, all 7,862 prior original file hashes,
+  and 20 deployed retrieval checks. The library now contains 8,063 searchable
+  vectors, including 4,073 in `Mailbox 2026`. Data update only; no app deployment.
+  Details: `docs/MAILBOX_CATCH_UP_2026-11-20.md`.
+
 ## v2026.11.20.2 - 2026-11-20
 
 ### Live Verification Follow-Up

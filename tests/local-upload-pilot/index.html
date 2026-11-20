@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recruiter CV processing pilot</title>
+  <link rel="stylesheet" href="/pilot.css">
+  <script type="module" src="/pilot.mjs"></script>
+</head>
+<body>
+  <main>
+    <h1>Recruiter CV processing pilot</h1>
+    <form>
+      <label for="files">CV files</label>
+      <input id="files" type="file" multiple required>
+      <button type="submit">Process on this device</button>
+    </form>
+    <p id="status" role="status">Local test only. Files are not uploaded or added to your library.</p>
+    <ul id="results" aria-label="File results"></ul>
+  </main>
+</body>
+</html>

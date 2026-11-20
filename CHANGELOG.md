@@ -5,6 +5,17 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.20.4 - 2026-11-20
+
+### Recruiter CV Processing Pilot
+
+- Benchmark local browser PDF extraction and MiniLM embeddings on 18 synthetic
+  CVs against the deployed VPS runtime in a network-isolated container.
+- Verify 20 same-text vector probes, six ordered search comparisons, and local
+  fallbacks. A two-column PDF changed reading order and warm browser processing
+  did not beat the VPS. Production remains unchanged, with zero paid AI calls.
+  Details: `docs/LOCAL_CV_PROCESSING_PILOT_2026-11-20.md`.
+
 ## v2026.11.20.3 - 2026-11-20
 
 ### Outlook CV Catch-Up

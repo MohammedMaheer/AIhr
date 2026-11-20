@@ -6,7 +6,8 @@
     "prepare-assets": "node assets.mjs",
     "start": "node server.mjs",
     "test": "node verify.mjs",
-    "benchmark": "node benchmark.mjs"
+    "benchmark": "node benchmark.mjs",
+    "verify-handoff": "node verify-handoff.mjs"
   },
   "dependencies": {
     "@huggingface/tokenizers": "0.2.0",

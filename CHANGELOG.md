@@ -5,6 +5,16 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.21.1 - 2026-11-21
+
+### Desktop Offload Release Gate
+
+- Test authenticated storage-first handoff, real browser inference, VPS
+  fallback and pgvector ranking with synthetic CVs in an isolated VPS stack.
+- All 49 ranking comparisons matched, but the verifier still needed every VPS
+  embedding. Leave production and the logo unchanged; offload stays disabled.
+  Details: `docs/DESKTOP_OFFLOAD_RELEASE_GATE_2026-11-21.md`.
+
 ## v2026.11.20.8 - 2026-11-20
 
 ### Upload Recovery And Dynamic Assist Pilot

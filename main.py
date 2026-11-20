@@ -6079,8 +6079,7 @@ def _resume_blob_name(folder, safe_name, *, stable_identity=False):
     return f"{folder}{unique_name}"
 
 
-def _store_resume_upload(db, *, bucket_name, blob_name, filename, content, content_type,
-                         user_id, company_id, company_code, source_received=None, source_email=None):
+def _persist_resume_upload(db, *, bucket_name, blob_name, filename, content, content_type, user_id, company_id):
     blob = _get_storage_client().bucket(bucket_name).blob(blob_name)
     with db.resume_upload_lock(company_id) as records:
         existing_id = records.get_resume_upload_id(company_id, blob_name) if company_id is not None else None
@@ -6090,25 +6089,82 @@ def _store_resume_upload(db, *, bucket_name, blob_name, filename, content, conte
         if existing_id is None:
             records.track_resume_upload(file_name=filename, file_path=blob_name, file_size=len(content),
                                         mime_type=content_type, user_id=user_id, company_id=company_id)
-    email_options = {'source_email': source_email} if source_email is not None else {}
-    indexed = upload_to_vector_datastore(file_path=blob_name, company_id=company_id,
-                                         company_code=company_code, user_id=str(user_id),
-                                         display_filename=filename, **email_options)
+
+
+def _record_resume_upload_metadata(db, bucket_name, blob_name, company_id, source_received=None):
     if os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
         from services.resume_filters import record_metadata
         try:
             record_metadata(db, bucket_name, blob_name, company_id, received=source_received)
         except Exception as exc:
             logger.warning('CV stored; search date metadata update needs recovery: %s', type(exc).__name__)
+
+
+def _store_resume_upload(db, *, bucket_name, blob_name, filename, content, content_type,
+                         user_id, company_id, company_code, source_received=None, source_email=None):
+    _persist_resume_upload(db, bucket_name=bucket_name, blob_name=blob_name, filename=filename,
+                           content=content, content_type=content_type, user_id=user_id, company_id=company_id)
+    email_options = {'source_email': source_email} if source_email is not None else {}
+    indexed = upload_to_vector_datastore(file_path=blob_name, company_id=company_id,
+                                         company_code=company_code, user_id=str(user_id),
+                                         display_filename=filename, **email_options)
+    _record_resume_upload_metadata(db, bucket_name, blob_name, company_id, source_received)
     return indexed
 
 
-async def _run_resume_upload(db, **kwargs):
+def _manual_upload_batch_size():
+    if os.getenv('SMARTHR_LOCAL_MODE', '').lower() not in {'1', 'true', 'yes', 'on'}:
+        return 1
+    from vps_local.discovery_shim import MAX_RESUME_EMBED_BATCH
+    try:
+        return max(1, min(MAX_RESUME_EMBED_BATCH, int(os.getenv('SMARTHR_BULK_EMBED_BATCH_SIZE', '1'))))
+    except ValueError:
+        return 1
+
+
+def _store_resume_upload_batch(db, bucket_name, company_id, company_code, user_id, uploads):
+    from vps_local.discovery_shim import Document, index_resume_batch
+    outcomes = [None] * len(uploads)
+    saved = []
+    for i, upload in enumerate(uploads):
+        try:
+            _persist_resume_upload(db, bucket_name=bucket_name, company_id=company_id, user_id=user_id, **upload)
+            saved.append(i)
+            outcomes[i] = False
+        except Exception as exc:
+            logger.warning('Resume upload failed: %s', type(exc).__name__)
+
+    if not saved:
+        return outcomes
+    try:
+        documents = [Document(struct_data={'company_id': company_id}, content=Document.Content(
+            uri=f"gs://{bucket_name}/{uploads[i]['blob_name']}",
+            mime_type=get_mime_type_for_datastore(uploads[i]['blob_name']))) for i in saved]
+        result = index_resume_batch(documents)
+        if len(result) != len(saved):
+            raise ValueError('Unexpected bulk indexing response')
+        for i, operation in zip(saved, result, strict=True):
+            outcomes[i] = operation.indexed
+            if not operation.indexed:
+                logger.warning('Resume indexing did not complete: %s', operation.error_code)
+    except Exception as exc:
+        logger.warning('Bulk indexing unavailable; using individual indexing: %s', type(exc).__name__)
+        for i in saved:
+            upload = uploads[i]
+            outcomes[i] = upload_to_vector_datastore(file_path=upload['blob_name'], company_id=company_id,
+                company_code=company_code, user_id=str(user_id), display_filename=upload['filename'])
+
+    for i in saved:
+        _record_resume_upload_metadata(db, bucket_name, uploads[i]['blob_name'], company_id)
+    return outcomes
+
+
+async def _run_resume_worker(function, *args, **kwargs):
     # Bound CPU indexing and database use without blocking unrelated API requests.
     slots = _resume_upload_slots
     await slots.acquire()
     try:
-        worker = asyncio.create_task(asyncio.to_thread(_store_resume_upload, db, **kwargs))
+        worker = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
     except BaseException:
         slots.release()
         raise
@@ -6123,6 +6179,10 @@ async def _run_resume_upload(db, **kwargs):
     worker.add_done_callback(finished)
     # A disconnected caller must not free capacity while its thread is still writing.
     return await asyncio.shield(worker)
+
+
+async def _run_resume_upload(db, **kwargs):
+    return await _run_resume_worker(_store_resume_upload, db, **kwargs)
 
 
 async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], folder_path: str, user: dict) -> Dict[str, Any]:
@@ -6509,9 +6569,38 @@ async def upload_files(
                               in config['upload']['allowed_extensions'] for f in files)
         await _check_resume_upload_limit(db, company_id, files_to_upload)
 
-        upload_results = []
-        batch_success_count = 0
-        batch_error_count = 0
+        upload_results = [None] * len(files)
+        pending = []
+        pending_bytes = 0
+        batch_size = _manual_upload_batch_size()
+        company = user.get('company')
+        company_code = company.get('company_code') if isinstance(company, dict) else getattr(company, 'company_code', None)
+
+        async def flush_uploads():
+            nonlocal pending_bytes
+            if not pending:
+                return
+            if len(pending) == 1:
+                try:
+                    outcome = await _run_resume_upload(db, bucket_name=bucket_name,
+                        company_id=company_id, company_code=company_code, user_id=user['id'], **pending[0][1])
+                except Exception as exc:
+                    logger.warning('Resume upload failed: %s', type(exc).__name__)
+                    outcome = None
+                outcomes = [outcome]
+            else:
+                outcomes = await _run_resume_worker(_store_resume_upload_batch, db, bucket_name,
+                    company_id, company_code, user['id'], [upload for _, upload in pending])
+            for (index, upload), indexed in zip(pending, outcomes, strict=True):
+                result = {'filename': upload['filename'], 'success': indexed is not None, 'batch_info': batch_info}
+                if indexed is None:
+                    result['error'] = 'Upload could not be completed. Please try again shortly.'
+                else:
+                    result.update(gcs_path=f"gs://{bucket_name}/{upload['blob_name']}",
+                                  size=len(upload['content']), folder=upload_folder, vector_indexed=indexed)
+                upload_results[index] = result
+            pending.clear()
+            pending_bytes = 0
 
         print(f"\n🔄 Processing {len(files)} files in batch{batch_log}")
 
@@ -6525,24 +6614,22 @@ async def upload_files(
 
             if file_ext not in allowed_extensions:
                 print(f"❌ File {file.filename} rejected: unsupported type {file_ext}")
-                upload_results.append({
+                upload_results[i] = {
                     "filename": file.filename,
                     "success": False,
                     "error": f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}"
-                })
-                batch_error_count += 1
+                }
                 continue
 
             # Check file size before reading content
             file_size = file.size if hasattr(file, 'size') else None
             if file_size and file_size > MAX_FILE_SIZE:
                 print(f"❌ File {file.filename} rejected: too large ({file_size:,} bytes > {MAX_FILE_SIZE:,} bytes)")
-                upload_results.append({
+                upload_results[i] = {
                     "filename": file.filename,
                     "success": False,
                     "error": f"File too large. Maximum size allowed: {MAX_FILE_SIZE // (1024*1024)}MB, file size: {file_size // (1024*1024)}MB"
-                })
-                batch_error_count += 1
+                }
                 continue
 
             # Read file content with size validation
@@ -6550,74 +6637,39 @@ async def upload_files(
             content = await file.read(MAX_FILE_SIZE + 1)
             if len(content) > MAX_FILE_SIZE:
                 print(f"❌ File {file.filename} rejected: content too large ({len(content):,} bytes)")
-                upload_results.append({
+                upload_results[i] = {
                     "filename": file.filename,
                     "success": False,
                     "error": f"File too large. Maximum size allowed: {MAX_FILE_SIZE // (1024*1024)}MB, actual size: {len(content) // (1024*1024)}MB"
-                })
-                batch_error_count += 1
+                }
                 continue
 
             is_valid_payload, payload_error = validate_resume_payload(file.filename, content)
             if not is_valid_payload:
                 print(f"❌ File {file.filename} rejected: invalid payload for {file_ext}")
-                upload_results.append({
+                upload_results[i] = {
                     "filename": file.filename,
                     "success": False,
                     "error": payload_error
-                })
-                batch_error_count += 1
+                }
                 continue
 
-            try:
-                # Sanitize filename to prevent path injection via crafted filenames
-                safe_name = _sanitize_object_path(file.filename) or 'unnamed'
-                # Upload to GCS
-                blob_name = _resume_blob_name(upload_folder, safe_name)
-
-                # Upload to vector datastore for immediate searchability (incremental indexing)
-                company_code = None
-                if user.get('company'):
-                    if isinstance(user['company'], dict):
-                        company_code = user['company'].get('company_code')
-                    else:
-                        company_code = getattr(user['company'], 'company_code', None)
-
-                print(f"🔍 Adding {file.filename} to vector datastore")
-                vector_upload_success = await _run_resume_upload(
-                    db, bucket_name=bucket_name, blob_name=blob_name,
-                    filename=file.filename, content=content, content_type=file.content_type,
-                    company_id=company_id,
-                    company_code=company_code,
-                    user_id=user['id']
-                )
-
-                upload_results.append({
-                    "filename": file.filename,
-                    "success": True,
-                    "gcs_path": f"gs://{bucket_name}/{blob_name}",
-                    "size": len(content),
-                    "folder": upload_folder,
-                    "vector_indexed": vector_upload_success,
-                    "batch_info": batch_info
-                })
-
-                batch_success_count += 1
-                print(f"✅ Successfully processed {file.filename}")
-
-            except Exception as e:
-                logger.warning('Resume upload failed: %s', type(e).__name__)
-                upload_results.append({
-                    "filename": file.filename,
-                    "success": False,
-                    "error": "Upload could not be completed. Please try again shortly.",
-                    "batch_info": batch_info
-                })
-                batch_error_count += 1
+            # Bound the memory held by the embedding group independently of the request limit.
+            if pending_bytes + len(content) > 16 * 1024 * 1024:
+                await flush_uploads()
+            safe_name = _sanitize_object_path(file.filename) or 'unnamed'
+            pending.append((i, dict(blob_name=_resume_blob_name(upload_folder, safe_name), filename=file.filename,
+                                    content=content, content_type=file.content_type)))
+            pending_bytes += len(content)
+            if len(pending) == batch_size:
+                await flush_uploads()
 
             # Reset file position for next iteration
             await file.seek(0)
 
+        await flush_uploads()
+        batch_success_count = sum(result['success'] for result in upload_results)
+        batch_error_count = len(files) - batch_success_count
         # Log batch completion
         print(f"\n✅ BATCH UPLOAD COMPLETED{batch_log}")
         print(f"📊 Results: {batch_success_count} successful, {batch_error_count} failed")

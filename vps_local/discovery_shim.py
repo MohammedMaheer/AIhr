@@ -15,6 +15,8 @@ Surface implemented (only what main.py touches):
 from __future__ import annotations
 import os
 import json
+import logging
+import math
 import mimetypes
 import re
 import threading
@@ -536,13 +538,32 @@ class IndexOperation:
     error_code: str = ""
 
 
-def _upsert_document_embedding(document: Document, document_id: str = "") -> IndexOperation:
+MAX_RESUME_EMBED_BATCH = 8
+
+
+@dataclass(frozen=True)
+class _IndexEntry:
+    path: Path
+    filename: str
+    folder: str
+    storage_bucket: str
+    content_type: str
+    company_id: Optional[int]
+    text: str
+    email_context: Any
+
+    @property
+    def searchable(self) -> bool:
+        return bool(self.text and len(self.text) >= 30)
+
+
+def _prepare_document_embedding(document: Document) -> Optional[_IndexEntry]:
     content = getattr(document, "content", None)
     uri = getattr(content, "uri", "") if content else ""
     key, candidates = _paths_for_uri(uri)
     path = next((p for p in candidates if p.is_file()), None)
     if path is None:
-        return IndexOperation("local/operations/create_document_missing_file", error_code="source_missing")
+        return None
 
     text = _extract_text_from_file(path)
     struct = document.struct_data or {}
@@ -565,8 +586,14 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> Ind
     except Exception:
         company_id = None
 
+    return _IndexEntry(path, filename, folder, storage_bucket, ctype, company_id, text, email_context)
+
+
+def _write_document_embedding(entry: _IndexEntry, vec: Optional[List[float]], document_id: str = "") -> IndexOperation:
+    path, filename, folder = entry.path, entry.filename, entry.folder
+    storage_bucket, ctype, company_id = entry.storage_bucket, entry.content_type, entry.company_id
+    text, email_context = entry.text, entry.email_context
     profile = profile_from_text(text, source="text_incremental")
-    vec = _embed_query(text) if text and len(text) >= 30 else None
 
     pool = _get_pool()
     conn = pool.getconn()
@@ -660,6 +687,54 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> Ind
         indexed=vec is not None,
         error_code="" if vec is not None else "no_searchable_text",
     )
+
+
+def _index_failure(code: str) -> IndexOperation:
+    return IndexOperation(f"local/operations/create_document_{code}", error_code=code)
+
+
+def _upsert_document_embedding(document: Document, document_id: str = "") -> IndexOperation:
+    entry = _prepare_document_embedding(document)
+    if entry is None:
+        return IndexOperation("local/operations/create_document_missing_file", error_code="source_missing")
+    return _write_document_embedding(entry, _embed_query(entry.text) if entry.searchable else None, document_id)
+
+
+def index_resume_batch(documents: list[Document]) -> list[IndexOperation]:
+    """Embed a bounded group while retaining independent results and writes."""
+    if not 1 <= len(documents) <= MAX_RESUME_EMBED_BATCH:
+        raise ValueError('Invalid local resume batch size')
+    outcomes = [_index_failure('indexing_failed')] * len(documents)
+    entries = {}
+    for i, document in enumerate(documents):
+        try:
+            entry = _prepare_document_embedding(document)
+            if entry is None:
+                outcomes[i] = _index_failure('source_missing')
+            else:
+                entries[i] = entry
+        except Exception as exc:
+            logging.getLogger(__name__).warning('Batch resume preparation failed: %s', type(exc).__name__)
+
+    ready = [i for i, entry in entries.items() if entry.searchable]
+    vectors = {}
+    if len(ready) > 1:
+        try:
+            model = vertexai_shim.language_models.TextEmbeddingModel.from_pretrained('all-MiniLM-L6-v2')
+            results = [result.values for result in model.get_embeddings([entries[i].text for i in ready])]
+            if len(results) != len(ready) or any(len(vec) != 384 or not all(map(math.isfinite, vec)) for vec in results):
+                raise ValueError('Invalid resume embedding batch output')
+            vectors = dict(zip(ready, results, strict=True))
+        except Exception as exc:
+            logging.getLogger(__name__).warning('Resume batch embedding fell back: %s', type(exc).__name__)
+
+    for i, entry in entries.items():
+        try:
+            vec = vectors[i] if i in vectors else _embed_query(entry.text) if entry.searchable else None
+            outcomes[i] = _write_document_embedding(entry, vec, documents[i].id)
+        except Exception as exc:
+            logging.getLogger(__name__).warning('Batch resume indexing failed: %s', type(exc).__name__)
+    return outcomes
 
 
 def _tenant_scope(filter_str: str) -> tuple[str, list]:

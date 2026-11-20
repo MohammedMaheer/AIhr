@@ -5,6 +5,17 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.20.7 - 2026-11-20
+
+### VPS Bulk Resume Indexing
+
+- Embed up to eight manually uploaded recruiter CVs per VPS inference call,
+  with per-file fallback and no changes to ranking, the UI or desktop offload.
+- Compare six 34-CV uploads on the VPS: median time to searchable fell from
+  4.527 s to 3.853 s. All 12 ranking comparisons matched. Deploy with batch
+  size eight and verify the production index and AI ledger remain unchanged.
+  Details: `docs/VPS_BULK_RESUME_INDEXING_2026-11-20.md`.
+
 ## v2026.11.20.6 - 2026-11-20
 
 ### Embedding-Only Performance Pilot

@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
 import { once } from 'node:events';
-import { chromium, devices } from 'playwright';
+import { chromium } from 'playwright';
+import { checkDeviceFallbacks, checkInterruptions } from './device-checks.mjs';
 import { corpus, negatives, queries } from './fixtures.mjs';
 import { listen, revision } from './server.mjs';
 
@@ -90,23 +91,27 @@ try {
   const modelRequest = await page.request.get(url + '/assets/tokenizer.json');
   assert.match(modelRequest.headers()['content-security-policy'], /connect-src 'self'/);
 
-  const mobile = await browser.newContext(devices['Pixel 7']);
-  const mobilePage = await mobile.newPage();
-  await mobilePage.goto(url);
-  const width = await mobilePage.evaluate(() => ({ viewport: innerWidth, content: document.documentElement.scrollWidth }));
-  assert(width.content <= width.viewport, 'Mobile page horizontally overflows');
-  await mobilePage.route('**/assets/model.onnx', route => route.abort());
-  await mobilePage.locator('#files').setInputFiles([
+  const skipped = await checkDeviceFallbacks(browser, url, corpus[0].bytes);
+  await checkInterruptions(browser, url, corpus[0].bytes);
+
+  const narrowDesktop = await browser.newContext({ viewport: { width: 412, height: 800 } });
+  const narrowPage = await narrowDesktop.newPage();
+  await narrowPage.goto(url);
+  let failedLoads = 0;
+  await narrowPage.route('**/assets/model.onnx', route => { failedLoads++; return route.abort(); });
+  await narrowPage.locator('#files').setInputFiles([
     { name: 'synthetic.pdf', mimeType: 'application/pdf', buffer: corpus[0].bytes },
+    { name: 'synthetic-2.pdf', mimeType: 'application/pdf', buffer: corpus[1].bytes },
     { name: 'word.docx', mimeType: 'application/octet-stream', buffer: negatives[1].bytes },
   ]);
-  await mobilePage.getByRole('button', { name: 'Process on this device' }).click();
-  await mobilePage.getByText('0 of 2 processed locally. No files were uploaded.').waitFor();
-  assert.equal(await mobilePage.getByText('Use the regular upload').count(), 2);
-  await mobilePage.unroute('**/assets/model.onnx');
-  await mobilePage.getByRole('button', { name: 'Process on this device' }).click();
-  await mobilePage.getByText('1 of 2 processed locally. No files were uploaded.').waitFor();
-  assert.equal(await mobilePage.getByText('Use the regular upload').count(), 1);
+  await narrowPage.getByRole('button', { name: 'Process on this device' }).click();
+  await narrowPage.getByText('0 of 3 processed locally. No files were uploaded.').waitFor();
+  assert.equal(await narrowPage.getByText('Use the regular upload').count(), 3);
+  assert.equal(failedLoads, 1, 'A failed model should not be loaded again for the same batch');
+  await narrowPage.unroute('**/assets/model.onnx');
+  await narrowPage.getByRole('button', { name: 'Process on this device' }).click();
+  await narrowPage.getByText('2 of 3 processed locally. No files were uploaded.').waitFor();
+  assert.equal(await narrowPage.getByText('Use the regular upload').count(), 1);
 
   const modelBytes = (await stat(new URL('./assets/model.onnx', import.meta.url))).size;
   const warm = files.slice(1);
@@ -117,7 +122,8 @@ try {
     browser_warm_inference_median_ms: round(median(warm.map(file => file.modelMs))),
     model_bytes: modelBytes,
     browser_tests: { pdfs: files.length, negative_cases: negatives.length, model_failure_and_retry: true,
-      same_origin_read_only: true, mobile_width: width.viewport },
+      same_origin_read_only: true, device_fallbacks_without_download: skipped,
+      narrow_desktop_width: 412, stop_background_and_reconnect_recovery: true },
   };
   if (host || image) {
     const baseline = await vpsBaseline(files.map(({ id, pdf, text, vector }) => ({ id, pdf, browserText: text, browserVector: vector })), probes);

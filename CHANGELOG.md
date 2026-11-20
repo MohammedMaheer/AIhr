@@ -5,6 +5,16 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.20.5 - 2026-11-20
+
+### Device-Aware Recruiter CV Pilot
+
+- Skip local processing on mobile, low-capacity, unsupported, or constrained
+  connections before loading any compute assets. Leave the VPS upload unchanged.
+- Stop backgrounded or interrupted batches and avoid model retries within a
+  failed batch. Verify 12 fallback scenarios and recoverable interruptions.
+  Pilot only; no live changes.
+
 ## v2026.11.20.4 - 2026-11-20
 
 ### Recruiter CV Processing Pilot

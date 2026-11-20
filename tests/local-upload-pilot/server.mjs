@@ -8,7 +8,7 @@ export const revision = '1110a243fdf4706b3f48f1d95db1a4f5529b4d41';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const pdf = fileURLToPath(new URL('../../static/vendor/pdfjs-6.5.438/', import.meta.url));
 const types = { '.html': 'text/html', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm' };
-const paths = new Set(['index.html', 'pilot.css', 'pilot.mjs', 'embed.worker.mjs']);
+const paths = new Set(['index.html', 'pilot.css', 'pilot.mjs', 'eligibility.mjs', 'embed.worker.mjs']);
 const roots = new Map([
   ['pdf', pdf],
   ['assets', resolve(here, 'assets')],

@@ -49,6 +49,7 @@ def job_app_flow(queue_db, tmp_path, monkeypatch):
         cursor.execute(workflow_migration.read_text(encoding='utf-8'))
         screen_migration = Path(__file__).resolve().parents[1] / 'deploy/vps/migrations/20261111_job_application_screen.sql'
         cursor.execute(screen_migration.read_text(encoding='utf-8'))
+        cursor.execute(screen_migration.with_name('20261120_application_answer_questions.sql').read_text(encoding='utf-8'))
     monkeypatch.setattr(db, 'get_company_by_id', lambda company_id: ({
         'id': company_id, 'company_code': 'jobs-one' if company_id == 1 else 'jobs-two',
         'company_name': 'Fictional Hiring Co' if company_id == 1 else 'Other Company',
@@ -112,13 +113,58 @@ def submit_link(flow, url, **changes):
     return flow.client.post(url, data=data)
 
 
+def test_application_edit_rejects_a_stale_form_and_preserves_recorded_questions(job_app_flow):
+    flow = job_app_flow
+    page = publish(flow)
+    url = '/api/public/application-pages/' + page['public_url'].rsplit('/', 1)[1] + '/applications'
+    first = submit_link(flow, url, page_version=str(page['version']))
+    assert first.status_code == 200
+    changed = flow.client.put(f"/api/job-application-pages/{page['id']}", json=page_payload(
+        version=page['version'], custom_questions=['What is your preferred work arrangement?']))
+    assert changed.status_code == 200, changed.text
+    second_email = {'email':'new-applicant@example.invalid'}
+    stale = submit_link(flow, url, page_version=str(page['version']), **second_email)
+    assert stale.status_code == 409 and 'reload' in stale.json()['detail']
+    fresh = submit_link(flow, url, page_version=str(changed.json()['page']['version']),
+                        answers=json.dumps({'0':'Hybrid'}), **second_email)
+    assert fresh.status_code == 200, fresh.text
+    results = flow.client.get(f"/api/job-application-pages/{page['id']}/applications").json()['applications']
+    assert {row['answers']['0']:row['answer_questions']['0'] for row in results} == {
+        'Thirty days':'What is your notice period?', 'Hybrid':'What is your preferred work arrangement?'}
+
+
+@pytest.mark.parametrize(('change','status'), [('edit',409),('pause',404),('deactivate',404)])
+def test_application_rechecks_acceptance_after_async_file_validation(job_app_flow, monkeypatch, change, status):
+    flow = job_app_flow
+    page = publish(flow)
+
+    async def change_during_upload(*_args):
+        with flow.db.get_cursor() as (cursor, _):
+            if change == 'edit':
+                cursor.execute('UPDATE job_application_pages SET version=version+1 WHERE id=%s', (page['id'],))
+            elif change == 'pause':
+                cursor.execute("UPDATE job_application_pages SET status='paused' WHERE id=%s", (page['id'],))
+            else:
+                cursor.execute('UPDATE tenant_companies SET is_active=FALSE WHERE id=1')
+
+    monkeypatch.setattr(main, '_check_resume_upload_limit', change_during_upload)
+    response = submit(flow, '/api/public/application-pages/' + page['public_url'].rsplit('/',1)[1] + '/applications',
+                      page_version=str(page['version']))
+    assert response.status_code == status, response.text
+    flow.upload.assert_not_awaited()
+    with flow.db.get_cursor() as (cursor, _):
+        cursor.execute('SELECT COUNT(*) AS count FROM job_applications')
+        assert cursor.fetchone()['count'] == 0
+
+
 def test_published_page_submission_indexes_cv_and_tenant_manager_reviews(job_app_flow):
     flow = job_app_flow
     page = publish(flow)
     token = page['public_url'].rsplit('/', 1)[1]
     public = flow.client.get('/api/public/application-pages/' + token)
     assert public.status_code == 200
-    assert set(public.json()['page']) == {'title','description','location','employment_type','custom_questions','application_settings','company_name'}
+    assert set(public.json()['page']) == {'title','description','location','employment_type','custom_questions','application_settings','company_name','version'}
+    assert public.json()['page']['version'] == page['version']
     assert public.json()['page']['application_settings']['resume_policy'] == 'either'
     response = submit(flow, '/api/public/application-pages/' + token + '/applications',
                       resume_url='https://files.example.com/candidate-cv.pdf')
@@ -135,6 +181,7 @@ def test_published_page_submission_indexes_cv_and_tenant_manager_reviews(job_app
     result = listed.json()['applications'][0]
     assert result['candidate_name'] == 'Fictional Candidate' and result['normalized_email'] == 'candidate@example.invalid'
     assert result['answers'] == {'0':'Thirty days'} and result['vector_indexed'] is True
+    assert result['answer_questions'] == {'0':'What is your notice period?'}
     assert result['resume_upload_id'] and result['file_name'] == 'candidate.pdf'
     assert result['resume_url'] == 'https://files.example.com/candidate-cv.pdf' and result['portfolio_url'] == ''
     blob_key = Path(flow.storage / 'jobs-one-bucket' / arguments['blob_name'])

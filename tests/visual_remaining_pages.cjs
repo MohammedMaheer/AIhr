@@ -22,6 +22,11 @@ fs.mkdirSync(output,{recursive:true});
   for(const view of ['dashboard','history','jdBuilder','settings','administration']){
    await page.goto(base+'/#/'+view,{waitUntil:'networkidle'});await shot(view);
    if(view==='dashboard'){
+    const matchCounts=page.locator('.dashboard-search-count');await matchCounts.first().waitFor();
+    assert(await matchCounts.evaluateAll(items=>items.every(item=>{
+     const textRange=document.createRange();textRange.selectNodeContents(item);
+     return [...textRange.getClientRects()].filter(rect=>rect.width>0).length===1;
+    })),'Match labels should stay on one line at '+width);
     await page.getByRole('button',{name:'Add to schedule',exact:true}).click();await shot('general-schedule');
     await close('[data-modal="general-schedule"] [aria-label="Close schedule"]');
     await page.evaluate(()=>window.InterviewManager.list());await page.locator('[data-interview-list] table').waitFor();await shot('schedule-history');

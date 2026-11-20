@@ -3077,6 +3077,9 @@ button, input, .glass {
 .job-candidates-table a { color:#1d4ed8; }
 .job-candidates-table select { width:100%; max-width:160px; min-width:0; min-height:38px; border:1px solid #cbd5e1; border-radius:5px; padding:5px 8px; background:white; }
 .job-candidates-table select:focus-visible { outline:3px solid #bfdbfe; border-color:#2563eb; }
+.dashboard-search-query { min-width:0; overflow-wrap:anywhere; }
+.dashboard-search-count { display:inline-flex; white-space:nowrap; }
+.dashboard-search-date, .dashboard-search-open { white-space:nowrap; }
 .job-answers { margin-top:8px; font-size:13px; }
 .job-answers summary { cursor:pointer; color:#315f9b; }
 .job-answers > div { margin-top:6px; overflow-wrap:anywhere; }

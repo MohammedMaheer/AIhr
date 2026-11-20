@@ -46,12 +46,15 @@ async function manager() {
 async function candidate() {
     const dom=new JSDOM('<main id="candidate-application" data-public-token="'+'b'.repeat(42)+'"></main>',{url:'https://qa.invalid/',runScripts:'outside-only'});
     const w=dom.window,d=w.document;
-    let calls=0,complete;
+    let calls=0,complete,loads=0;
     w.fetch=async (url,options={}) => {
         if (options.method==='POST') { calls++; return new Promise(resolve => {complete=resolve;}); }
-        return reply({page:job});
+        if (++loads===1) throw new Error('Offline');
+        return reply({success:true,page:job});
     };
     w.eval(source); await flush();
+    assert.match(d.body.textContent,/Could not load the application/);
+    d.querySelector('button').click(); await flush();
     const form=d.querySelector('form');
     form.elements.candidate_name.value='Fictional Candidate';
     form.elements.email.value='applicant@example.invalid';
@@ -61,7 +64,8 @@ async function candidate() {
     form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
     assert.equal(calls,1,'Repeated submit events must not duplicate candidate applications');
     assert.equal(form.getAttribute('aria-busy'),'true');
-    complete(reply({detail:'Fictional submission failure.'},false)); await flush();
+    complete({ok:true,status:200,headers:{get:()=> 'text/html'}}); await flush();
+    assert.equal(d.querySelector('.application-alert.is-success'),null,'An HTML response must not show a receipt');
     assert.equal(form.dataset.submitting,undefined); assert.equal(form.hasAttribute('aria-busy'),false);
     assert.equal(d.activeElement,d.querySelector('[data-alert]'));
     assert.equal(form.elements.email.value,'applicant@example.invalid');
@@ -72,5 +76,26 @@ async function candidate() {
     dom.window.close();
 }
 
-manager().then(candidate).then(()=>console.log('Application recovery passed: single submissions, pending-save protection, focused failures, retained fields and successful retries.'))
+async function staleCompanyList() {
+    const dom = new JSDOM('<main id="root"></main>',{url:'https://qa.invalid/',runScripts:'outside-only'});
+    const w=dom.window,root=w.document.getElementById('root');
+    w.currentUser={user_type:'super_admin'};w.escapeHtml=esc;w.escapeAttr=esc;
+    let resolvePages, loads=0;
+    w.fetch=async url => {
+        if(url==='/api/companies') return ++loads===1 ? reply({detail:'Temporarily offline'},false) :
+            reply({success:true,companies:[{id:1,company_name:'Fictional Hiring Co',is_active:true}]});
+        return new Promise(resolve=>{resolvePages=resolve;});
+    };
+    w.eval(source); const dispose=w.JobApplications.mount(root); await flush();
+    root.querySelector('[data-retry]').click();await flush();
+    const picker=root.querySelector('select');assert.equal(picker.value,'1');
+    picker.value='';picker.dispatchEvent(new w.Event('change'));
+    resolvePages(reply({success:true,pages:[job]}));await flush();
+    assert.match(root.textContent,/Choose a company/);
+    assert.equal(root.querySelector('[data-edit]'),null);
+    assert.equal(root.querySelector('[data-content]').getAttribute('aria-busy'),'false');
+    dispose();dom.window.close();
+}
+
+manager().then(candidate).then(staleCompanyList).then(()=>console.log('Application recovery passed: single submissions, real receipts, retryable failures and stale workspace protection.'))
     .catch(error=>{console.error(error);process.exitCode=1;});

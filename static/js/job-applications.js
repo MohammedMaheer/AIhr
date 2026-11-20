@@ -9,8 +9,11 @@
         catch (_) { throw new Error('The application workspace could not be reached. Please try again.'); }
         const data = response.headers.get('content-type')?.includes('application/json')
             ? await response.json().catch(() => ({})) : {};
-        if (!response.ok || data.success === false) {
-            throw new Error(typeof data.detail === 'string' ? data.detail : 'The request could not be completed.');
+        const confirmed = url === '/api/companies' ? Array.isArray(data?.companies) : data?.success === true;
+        if (!response.ok || !confirmed) {
+            const error = new Error(typeof data?.detail === 'string' ? data.detail : 'The request could not be confirmed. Please try again.');
+            error.status = response.status;
+            throw error;
         }
         return data;
     }
@@ -50,33 +53,41 @@
         }
 
         async function loadCompanies(picker) {
+            picker.disabled = true;
+            content.setAttribute('aria-busy', 'true');
+            content.innerHTML = '<div class="workspace-loading" role="status">Loading companies...</div>';
             try {
                 const data = await request('/api/companies');
                 if (disposed || !root.isConnected) return;
-                if (!Array.isArray(data.companies)) throw new Error('The company list is temporarily unavailable.');
                 picker.replaceChildren(new Option('Choose a company', ''));
                 data.companies.forEach(company => picker.add(new Option(
                     company.company_name + (company.is_active ? '' : ' (inactive)'), String(company.id))));
                 const available = new Set(data.companies.map(company => String(company.id)));
                 if (!available.has(String(selectedCompanyId))) selectedCompanyId = data.companies.length === 1 ? String(data.companies[0].id) : '';
                 picker.value = String(selectedCompanyId || '');
+                picker.disabled = false;
                 createButton.disabled = !selectedCompanyId;
                 if (selectedCompanyId) loadPages();
                 else showCompanyPrompt();
             } catch (error) {
-                if (!disposed) {
+                if (!disposed && root.isConnected) {
                     picker.replaceChildren(new Option('Companies unavailable', ''));
-                    content.innerHTML = '<div class="workspace-empty is-error" role="alert"><h3>Company list unavailable</h3><p>' + esc(error.message) + '</p></div>';
+                    content.setAttribute('aria-busy', 'false');
+                    content.innerHTML = '<div class="workspace-empty is-error" role="alert"><h3>Company list unavailable</h3><p>' + esc(error.message) + '</p><button type="button" data-retry class="workspace-button">Try again</button></div>';
+                    content.querySelector('[data-retry]').onclick = () => loadCompanies(picker);
                 }
             }
         }
 
         function showCompanyPrompt() {
+            sequence++;
+            content.setAttribute('aria-busy', 'false');
             content.innerHTML = '<div class="workspace-empty"><span class="workspace-empty-icon"><i class="fas fa-building" aria-hidden="true"></i></span><h3>Choose a company</h3><p>Select a company workspace above to manage its job pages and applicants.</p></div>';
         }
 
         function notify(message, kind = 'success') {
             const notice = root.querySelector('[data-notice]');
+            if (disposed || !notice?.isConnected) return;
             window.clearTimeout(noticeTimer);
             notice.className = 'job-application-notice ' + (kind === 'error' ? 'is-error' : 'is-success');
             notice.textContent = message;
@@ -84,6 +95,7 @@
         }
 
         async function loadPages() {
+            selectedPage = null;
             const id = ++sequence;
             content.setAttribute('aria-busy', 'true');
             content.innerHTML = '<div class="workspace-loading" role="status"><i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>Loading job pages...</div>';
@@ -464,7 +476,8 @@
                 renderApplications(page, data.applications, data.total, pageOffset);
             } catch (error) {
                 if (alive(id)) {
-                    content.innerHTML = '<div class="workspace-empty is-error" role="alert"><h3>Applications unavailable</h3><p>' + esc(error.message) + '</p><button type="button" data-back class="workspace-button">Back to job pages</button></div>';
+                    content.innerHTML = '<div class="workspace-empty is-error" role="alert"><h3>Applications unavailable</h3><p>' + esc(error.message) + '</p><button type="button" data-retry class="workspace-button">Try again</button> <button type="button" data-back class="workspace-button">Back to job pages</button></div>';
+                    content.querySelector('[data-retry]').onclick = () => loadApplications(page, pageOffset);
                     content.querySelector('[data-back]').onclick = loadPages;
                 }
             } finally { if (alive(id)) content.setAttribute('aria-busy','false'); }
@@ -474,7 +487,8 @@
             selectedOffset = offset;
             content.innerHTML = '<div class="job-applications-heading"><button type="button" data-back class="workspace-button"><i class="fas fa-arrow-left" aria-hidden="true"></i>Job pages</button><div><h3>' + esc(page.title) + '</h3><p class="workspace-muted">' + Number(total).toLocaleString() + ' applications</p></div><a class="workspace-button" href="' + esc(pageAddress('/api/job-application-pages/' + Number(page.id) + '/applications.csv')) + '"><i class="fas fa-download" aria-hidden="true"></i>Export CSV</a></div>' +
                 (applications.length ? '<table class="workspace-table job-candidates-table"><thead><tr><th scope="col">Candidate</th><th scope="col">Experience</th><th scope="col">CV</th><th scope="col">Interview</th><th scope="col">Status</th><th scope="col">Received</th><th scope="col">Actions</th></tr></thead><tbody>' + applications.map(row => {
-                    const answerRows = Object.entries(row.answers || {}).map(([key, answer]) => '<div><strong>Question ' + (Number(key) + 1) + ':</strong> ' + esc(answer) + '</div>').join('');
+                    const answerRows = Object.entries(row.answers || {}).map(([key, answer]) => '<div><strong>' +
+                        esc(row.answer_questions?.[key] || 'Question ' + (Number(key) + 1)) + '</strong><div>' + esc(answer) + '</div></div>').join('');
                     const received = row.created_at ? new Date(row.created_at).toLocaleDateString() : 'Unavailable';
                     const cvMarkup = row.resume_upload_id
                         ? '<a class="workspace-icon-button" href="/api/resume-library/' + Number(row.resume_upload_id) + '/document" target="_blank" rel="noopener noreferrer" aria-label="Open uploaded CV for ' + esc(row.candidate_name) + '" title="Open uploaded CV"><i class="fas fa-file-alt" aria-hidden="true"></i></a><div class="workspace-muted">' + (row.vector_indexed ? 'Uploaded and searchable' : 'Uploaded; not searchable') + '</div>'
@@ -546,8 +560,6 @@
         const token = root.dataset.publicToken || '';
         const previewPageId = root.dataset.previewPageId || '';
         const previewMode = Boolean(previewPageId);
-        const alert = document.createElement('div');
-        alert.className = 'application-alert'; alert.hidden = true; alert.setAttribute('role','alert');
         try {
             const previewQuery = root.dataset.previewCompanyId
                 ? '?company_id=' + encodeURIComponent(root.dataset.previewCompanyId) : '';
@@ -657,6 +669,7 @@
                     if (input.value.trim()) candidateAnswers[input.dataset.question] = input.value.trim();
                 });
                 formData.set('answers', JSON.stringify(candidateAnswers));
+                if (Number.isSafeInteger(page.version) && page.version > 0) formData.set('page_version', String(page.version));
                 try {
                     await request('/api/public/application-pages/' + encodeURIComponent(token) + '/applications',
                         {method:'POST', body:formData, credentials:'omit'});
@@ -674,7 +687,17 @@
                 }
             });
         } catch (error) {
-            root.innerHTML = '<section class="application-unavailable"><h1>This application page is unavailable</h1><p>This job may have closed or the link may no longer be active.</p></section>';
+            const unavailable = [401, 403, 404, 410].includes(error.status);
+            root.innerHTML = unavailable
+                ? '<section class="application-unavailable"><h1>This application page is unavailable</h1><p>This job may have closed or the link may no longer be active.</p></section>'
+                : '<section class="application-unavailable"><h1>Could not load the application</h1><p role="alert"></p><button type="button" class="application-submit">Try again</button></section>';
+            if (!unavailable) {
+                root.querySelector('[role="alert"]').textContent = error.message;
+                root.querySelector('button').onclick = event => {
+                    event.currentTarget.disabled = true;
+                    initPublicApplicationPage(root);
+                };
+            }
         }
     }
 

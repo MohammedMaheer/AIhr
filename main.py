@@ -11182,9 +11182,11 @@ async def get_search_history(
             "page_size": effective_page_size,
             "has_more": effective_offset + len(history) < total,
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"❌ Error fetching search history: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch search history: {str(e)}")
+        logger.warning('Search history could not be loaded: %s', type(e).__name__)
+        raise HTTPException(status_code=500, detail='Search history is temporarily unavailable.') from None
 
 @app.get("/api/search-results/{search_id}")
 async def get_saved_search_results(search_id: int, user: dict = Depends(require_auth)):
@@ -11641,7 +11643,7 @@ async def get_public_application_page(request: Request, public_token: str):
     db = get_db_manager()
     with db.get_cursor() as (cursor, _conn):
         cursor.execute('''SELECT p.title,p.description,p.location,p.employment_type,p.custom_questions,
-            p.application_settings,c.company_name FROM job_application_pages p JOIN tenant_companies c ON c.id=p.company_id
+            p.application_settings,p.version,c.company_name FROM job_application_pages p JOIN tenant_companies c ON c.id=p.company_id
             WHERE p.public_token=%s AND p.status='published' AND c.is_active IS DISTINCT FROM FALSE''',
             (public_token,))
         page = cursor.fetchone()
@@ -11667,6 +11669,7 @@ async def submit_public_application(
     resume_url: str = Form(''),
     portfolio_url: str = Form(''),
     answers: str = Form('{}'),
+    page_version: Optional[int] = Form(None, ge=1),
     consent: bool = Form(False),
     company_website: str = Form(''),
 ):
@@ -11690,13 +11693,16 @@ async def submit_public_application(
 
     db = get_db_manager()
     with db.get_cursor() as (cursor, _conn):
-        cursor.execute('''SELECT p.id,p.company_id,p.created_by_user_id,p.custom_questions,p.application_settings,c.company_code,
+        cursor.execute('''SELECT p.id,p.company_id,p.created_by_user_id,p.custom_questions,p.application_settings,p.version,c.company_code,
             c.gcs_bucket_name FROM job_application_pages p JOIN tenant_companies c ON c.id=p.company_id
             WHERE p.public_token=%s AND p.status='published' AND c.is_active IS DISTINCT FROM FALSE''',
             (public_token,))
         page = cursor.fetchone()
     if not page:
         raise HTTPException(status_code=404, detail='This application page is unavailable.')
+    changed_message = 'This job page was updated. Keep a copy of your answers, then reload the page to review the latest form.'
+    if page_version is not None and page_version != page['version']:
+        raise HTTPException(status_code=409, detail=changed_message)
     settings = _application_settings(page.get('application_settings'))
     fields = settings['fields']
     phone_value = _sanitize_user_text(phone, 40) if fields['phone'] else ''
@@ -11734,7 +11740,7 @@ async def submit_public_application(
     if set(supplied_answers) - {str(i) for i in range(len(questions))}:
         raise HTTPException(status_code=422, detail='Review your answers and submit again.')
     clean_answers = {}
-    for key, question in enumerate(questions):
+    for key in range(len(questions)):
         raw_answer = supplied_answers.get(str(key), '')
         if not isinstance(raw_answer, str) or len(raw_answer) > 1000:
             raise HTTPException(status_code=422, detail='Keep each application answer to 1,000 characters or fewer.')
@@ -11768,11 +11774,22 @@ async def submit_public_application(
     from psycopg2 import IntegrityError
     try:
         with db.get_cursor() as (cursor, _conn):
+            # File validation may have yielded. Serialize reservation with page edits,
+            # closure and company deactivation, without holding locks during upload.
+            cursor.execute('''SELECT p.version FROM job_application_pages p JOIN tenant_companies c ON c.id=p.company_id
+                WHERE p.id=%s AND p.company_id=%s AND p.status='published' AND c.is_active IS DISTINCT FROM FALSE
+                FOR SHARE OF p,c''', (page['id'], company_id))
+            current_page = cursor.fetchone()
+            if not current_page:
+                raise HTTPException(status_code=404, detail='This application page is no longer accepting submissions.')
+            if current_page['version'] != page['version']:
+                raise HTTPException(status_code=409, detail=changed_message)
             cursor.execute('''INSERT INTO job_applications(page_id,company_id,candidate_name,normalized_email,
-                phone,location,years_experience,linkedin_url,resume_url,portfolio_url,answers,consent_at,status)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NOW(),%s) RETURNING id''',
+                phone,location,years_experience,linkedin_url,resume_url,portfolio_url,answers,answer_questions,consent_at,status)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,NOW(),%s) RETURNING id''',
                 (page['id'], company_id, name, email_value, phone_value, location_value, experience,
                  linkedin_value, resume_link, portfolio_value, json.dumps(clean_answers),
+                 json.dumps({key: questions[int(key)] for key in clean_answers}),
                  'processing' if has_upload else 'received'))
             application_id = cursor.fetchone()['id']
     except IntegrityError as exc:
@@ -12025,7 +12042,7 @@ async def list_job_applications(page_id: int, request: Request, limit: int = 100
                        (page_id, company_id))
         total = cursor.fetchone()['total']
         cursor.execute('''SELECT a.id,a.candidate_name,a.normalized_email,a.phone,a.location,a.years_experience,
-            a.linkedin_url,a.resume_url,a.portfolio_url,a.answers,a.status,a.version,a.vector_indexed,a.created_at,a.resume_upload_id,
+            a.linkedin_url,a.resume_url,a.portfolio_url,a.answers,a.answer_questions,a.status,a.version,a.vector_indexed,a.created_at,a.resume_upload_id,
             u.file_name,i.id AS interview_id,i.interview_date,i.interview_time,i.status AS interview_status
             FROM job_applications a LEFT JOIN resume_uploads u ON u.id=a.resume_upload_id
             LEFT JOIN LATERAL (
@@ -12054,7 +12071,7 @@ async def set_job_application_status(application_id: int, request: Request, comp
     db = get_db_manager()
     with db.get_cursor() as (cursor, _conn):
         cursor.execute('''SELECT status,version,page_id FROM job_applications WHERE id=%s AND company_id=%s
-            AND status <> 'erased' FOR UPDATE''', (application_id, company_id))
+            AND status NOT IN ('erased','processing') FOR UPDATE''', (application_id, company_id))
         old = cursor.fetchone()
         if not old:
             raise HTTPException(status_code=404, detail='Application not found.')

@@ -7,6 +7,7 @@ const schedule = source.slice(source.indexOf('let upcomingEventsRequest ='),sour
 const general = source.slice(source.indexOf('function openGeneralScheduleModal('),source.indexOf('function closeGeneralScheduleModal('));
 const interview = source.slice(source.indexOf('function showInterviewScheduleModal('),source.indexOf('function bindScheduleDialog('));
 const countsCode = source.slice(source.indexOf('let candidateStatusRequest ='),source.indexOf('function updateActivityStatsCards('));
+const historyCode = source.slice(source.indexOf('let dashboardHistoryRequest ='),source.indexOf('let candidateStatusRequest ='));
 const flush = () => new Promise(resolve=>setImmediate(resolve));
 
 async function run(){
@@ -103,6 +104,23 @@ async function run(){
     resolveCount({ok:true,json:async()=>payload(1)});await removedCounts;assert.equal(values()[0],'Replacement');
     cd.body.innerHTML='';cw.fetch=()=>{throw new Error('Must not fetch for a different view');};
     await cw.loadCandidateStatusCounts();counters.window.close();
-    console.log('Dashboard regressions passed: date boundaries, scheduling defaults, escaped text, honest schedule/count failures, valid zero counts, recovery and stale-response isolation.');
+    const history=new JSDOM('<table><tbody id="search-history-table"><tr><td>Loading</td></tr></tbody></table>',{url:'https://qa.invalid',runScripts:'outside-only'});
+    const hw=history.window, body=hw.document.getElementById('search-history-table');
+    hw.eval(historyCode);
+    hw.fetch=async()=>({ok:false,status:503});await hw.loadSearchHistoryForDashboard();
+    assert.match(body.textContent,/Recent searches are unavailable/);
+    assert.equal(body.getAttribute('aria-busy'),'false');
+    const records=title=>({ok:true,json:async()=>({success:true,history:[{id:1,search_query:title,search_timestamp:null,result_count:10}]})});
+    hw.fetch=async()=>records('Latest search');body.querySelector('[data-retry-dashboard-history]').click();await flush();
+    assert.match(body.textContent,/Latest search/);
+    assert.equal(body.querySelector('.dashboard-search-count').textContent.trim(),'10 matches');
+    assert.equal(body.querySelector('.dashboard-search-date').textContent.trim(),'Unavailable');
+    let resolveHistory;
+    hw.fetch=()=>new Promise(resolve=>{resolveHistory=resolve;});const oldHistory=hw.loadSearchHistoryForDashboard();
+    hw.fetch=async()=>records('Newer search');await hw.loadSearchHistoryForDashboard();
+    resolveHistory(records('Stale search'));await oldHistory;
+    assert.match(body.textContent,/Newer search/);assert.doesNotMatch(body.textContent,/Stale search/);
+    history.window.close();
+    console.log('Dashboard regressions passed: date boundaries, scheduling defaults, honest failure states, request recovery and stale-response isolation.');
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

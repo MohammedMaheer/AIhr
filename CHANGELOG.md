@@ -5,6 +5,22 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.20.1 - 2026-11-20
+
+### Recruiter Workflow Reliability
+
+- Reject stale public applications after job-page edits or closure. Keep the
+  original question with each new answer so edits never relabel old answers.
+  Require a confirmed API response before showing an application receipt.
+- Make application load failures retryable, prevent late results from a cleared
+  company workspace, and cancel stale CV-library requests and previews.
+- Keep dashboard dates, match counts and actions readable. Distinguish loading
+  failures from empty history and ignore outdated responses.
+- Deploy to the VPS with an additive database migration and the previous image
+  retained for rollback. Ranking, provider configuration and logo are unchanged.
+  Tested with 1,304 Python/HTTP checks, 27 frontend suites and six widths from
+  320 to 1,440 pixels. Details: `docs/WORKFLOW_RELIABILITY_2026-11-20.md`.
+
 ## v2026.11.18.1 - 2026-11-18
 
 ### Authorized Retired Preview Removal

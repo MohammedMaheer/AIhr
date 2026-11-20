@@ -490,7 +490,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <p class="text-sm text-gray-600">Your latest search activities and results</p>
                                 </div>
                                 <div class="flex items-center space-x-2">
-                                    <button onclick="refreshSearchHistory()" aria-label="Refresh recent searches" title="Refresh recent searches" class="text-gray-400 hover:text-gray-600 p-2">
+                                    <button type="button" onclick="refreshSearchHistory(this)" aria-label="Refresh recent searches" title="Refresh recent searches" class="text-gray-400 hover:text-gray-600 p-2">
                                         <i class="fas fa-sync-alt"></i>
                                     </button>
                                     
@@ -7627,23 +7627,33 @@ function showDashboardLoadingState() {
     }
 }
 
+let dashboardHistoryRequest = 0;
 async function loadSearchHistoryForDashboard() {
+    const table = document.getElementById('search-history-table');
+    if (!table) return;
+    const requestId = ++dashboardHistoryRequest;
+    const isCurrent = () => requestId === dashboardHistoryRequest && document.getElementById(table.id) === table;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    table.setAttribute('aria-busy', 'true');
     try {
-        const response = await fetch('/api/search-history?limit=5', {
-            method: 'GET',
-            credentials: 'same-origin', // Ensure cookies are sent
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        if (response.ok) {
-            const data = await response.json();
-            displaySearchHistoryInTable(data.history || []);
+        const response = await fetch('/api/search-history?limit=5', {credentials: 'same-origin', signal: controller.signal});
+        if (!response.ok) throw new Error('Recent searches unavailable');
+        const data = await response.json();
+        if (data?.success !== true || !Array.isArray(data.history) || data.history.some(row => !row || typeof row !== 'object')) {
+            throw new Error('Invalid recent-search response');
         }
-    } catch (error) {
-        console.error('Error loading search history:', error);
-        // Show empty state if API fails
-        displaySearchHistoryInTable([]);
+        if (isCurrent()) displaySearchHistoryInTable(data.history);
+    } catch (_) {
+        if (!isCurrent()) return;
+        table.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-sm text-gray-600">
+            <p role="status">Recent searches are unavailable.</p>
+            <button type="button" data-retry-dashboard-history class="text-blue-600 hover:text-blue-800 px-2 py-2 font-medium">Try again</button>
+        </td></tr>`;
+        table.querySelector('[data-retry-dashboard-history]').onclick = loadSearchHistoryForDashboard;
+    } finally {
+        clearTimeout(timeout);
+        if (isCurrent()) table.setAttribute('aria-busy', 'false');
     }
 }
 
@@ -7673,7 +7683,8 @@ function displaySearchHistoryInTable(searches) {
     }
 
     tableBody.innerHTML = searches.map(search => {
-        const date = new Date(search.search_timestamp);
+        const date = search.search_timestamp ? new Date(search.search_timestamp) : null;
+        const validDate = date && Number.isFinite(date.getTime());
         const count = search.result_count ?? search.actual_results;
         const resultCount = count != null && Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : null;
         const resultBadgeClass = resultCount == null ? 'bg-gray-100 text-gray-700' : resultCount > 10 ? 'bg-green-100 text-green-800' :
@@ -7689,22 +7700,22 @@ function displaySearchHistoryInTable(searches) {
                 <td class="py-3 px-2">
                     <div class="flex items-center space-x-2">
                         <i class="fas fa-search text-blue-500 text-xs"></i>
-                        <span class="text-sm font-medium text-gray-900" title="${attr(search.search_query)}">${esc(truncatedQuery)}</span>
+                        <span class="dashboard-search-query text-sm font-medium text-gray-900" title="${attr(search.search_query)}">${esc(truncatedQuery)}</span>
                     </div>
                     ${search.job_title ? `<p class="text-xs text-gray-500 mt-1">${esc(search.job_title)}</p>` : ''}
                 </td>
                 <td class="py-3 px-2">
-                    <span class="${resultBadgeClass} px-2 py-1 rounded-full text-xs font-medium">
+                    <span class="dashboard-search-count ${resultBadgeClass} px-2 py-1 rounded-full text-xs font-medium">
                         ${resultCount == null ? 'Unavailable' : resultCount + (resultCount === 1 ? ' match' : ' matches')}
                     </span>
                 </td>
-                <td class="py-3 px-2">
-                    <span class="text-sm text-gray-600">${Number.isFinite(date.getTime()) ? date.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : 'Date unavailable'}</span>
-                    <p class="text-xs text-gray-500">${Number.isFinite(date.getTime()) ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                <td class="dashboard-search-date py-3 px-2">
+                    <span class="text-sm text-gray-600">${validDate ? date.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : 'Unavailable'}</span>
+                    ${validDate ? `<p class="text-xs text-gray-500">${date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>` : ''}
                 </td>
                 <td class="py-3 px-2">
                     <button type="button" data-search-id="${search.id}"
-                            class="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                            class="dashboard-search-open text-blue-600 hover:text-blue-800 text-xs font-medium">
                         View Results
                     </button>
                 </td>
@@ -8004,18 +8015,18 @@ function updateResourceUsageDisplay(resourceUsage) {
     }
 }
 
-function refreshSearchHistory() {
-    loadSearchHistoryForDashboard();
-    loadCandidateStatusCounts();
-
-    // Show a brief loading indicator
-    const refreshButton = event.target.closest('button');
-    const originalHTML = refreshButton.innerHTML;
-    refreshButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-
-    setTimeout(() => {
-        refreshButton.innerHTML = originalHTML;
-    }, 1000);
+async function refreshSearchHistory(button) {
+    if (button?.disabled) return;
+    const icon = button?.querySelector('i');
+    const original = icon?.className;
+    if (button) button.disabled = true;
+    if (icon) icon.className = 'fas fa-spinner fa-spin';
+    try {
+        await Promise.all([loadSearchHistoryForDashboard(), loadCandidateStatusCounts()]);
+    } finally {
+        if (button) button.disabled = false;
+        if (icon) icon.className = original;
+    }
 }
 
 function loadMoreSearchHistory() {

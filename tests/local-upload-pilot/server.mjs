@@ -23,7 +23,9 @@ export async function listen(port = 0, { isolated = false } = {}) {
       const pathname = new URL(req.url, 'http://127.0.0.1').pathname;
       const [, namespace, ...parts] = pathname.split('/');
       let path;
-      if (pathname === '/' || (!parts.length && paths.has(namespace))) {
+      if (pathname === '/minilm.mjs') {
+        path = fileURLToPath(new URL('../../desktop-worker/minilm.mjs', import.meta.url));
+      } else if (pathname === '/' || (!parts.length && paths.has(namespace))) {
         path = resolve(here, namespace || 'index.html');
       } else {
         const root = roots.get(namespace);

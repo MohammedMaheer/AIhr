@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { Tokenizer } from '@huggingface/tokenizers';
 import * as ort from 'onnxruntime-node';
-import { encodeMiniLm } from './minilm.mjs';
+import { encodeMiniLm } from '../../desktop-worker/minilm.mjs';
 import { revision } from './server.mjs';
 
 // This lab worker is isolated from recruiter/browser sessions and has no network client.

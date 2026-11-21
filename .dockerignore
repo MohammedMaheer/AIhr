@@ -109,6 +109,7 @@ scripts/
 deploy/
 audit_out/
 tests/
+desktop-worker/
 output/
 tmp/
 attachments/

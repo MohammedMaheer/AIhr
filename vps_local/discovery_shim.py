@@ -20,6 +20,7 @@ import math
 import mimetypes
 import re
 import threading
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from collections import OrderedDict
 from pathlib import Path
@@ -589,16 +590,16 @@ def _prepare_document_embedding(document: Document) -> Optional[_IndexEntry]:
     return _IndexEntry(path, filename, folder, storage_bucket, ctype, company_id, text, email_context)
 
 
-def _write_document_embedding(entry: _IndexEntry, vec: Optional[List[float]], document_id: str = "") -> IndexOperation:
+def _write_document_embedding(entry: _IndexEntry, vec: Optional[List[float]], document_id: str = "", *, cursor=None) -> IndexOperation:
     path, filename, folder = entry.path, entry.filename, entry.folder
     storage_bucket, ctype, company_id = entry.storage_bucket, entry.content_type, entry.company_id
     text, email_context = entry.text, entry.email_context
     profile = profile_from_text(text, source="text_incremental")
 
-    pool = _get_pool()
-    conn = pool.getconn()
+    pool = _get_pool() if cursor is None else None
+    conn = pool.getconn() if pool is not None else None
     try:
-        with conn.cursor() as cur:
+        with (conn.cursor() if conn is not None else nullcontext(cursor)) as cur:
             _ensure_advanced_search_schema(cur)
             if vec is not None:
                 cur.execute(
@@ -676,12 +677,15 @@ def _write_document_embedding(entry: _IndexEntry, vec: Optional[List[float]], do
                 cur.execute('''UPDATE resume_embeddings SET source_email_context=%s,source_email_metadata=%s::jsonb
                     WHERE storage_bucket=%s AND folder=%s AND filename=%s AND company_id IS NOT DISTINCT FROM %s''',
                             (context_text, json.dumps(metadata), storage_bucket, folder, filename, company_id))
-        conn.commit()
+        if conn is not None:
+            conn.commit()
     except Exception:
-        conn.rollback()
+        if conn is not None:
+            conn.rollback()
         raise
     finally:
-        pool.putconn(conn)
+        if pool is not None:
+            pool.putconn(conn)
     return IndexOperation(
         f"local/operations/create_document_{document_id or filename}",
         indexed=vec is not None,
@@ -698,6 +702,30 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> Ind
     if entry is None:
         return IndexOperation("local/operations/create_document_missing_file", error_code="source_missing")
     return _write_document_embedding(entry, _embed_query(entry.text) if entry.searchable else None, document_id)
+
+
+def _batch_embeddings(texts):
+    model = vertexai_shim.language_models.TextEmbeddingModel.from_pretrained('all-MiniLM-L6-v2')
+    results = [result.values for result in model.get_embeddings(texts)]
+    if len(results) != len(texts) or any(len(vec) != 384 or not all(map(math.isfinite, vec)) for vec in results):
+        raise ValueError('Invalid resume embedding batch output')
+    return results
+
+
+def embed_resume_entries(entries):
+    """Canonical embeddings before an atomic managed-worker fallback commit."""
+    ready = [i for i, entry in enumerate(entries) if entry is not None and entry.searchable]
+    vectors = [None] * len(entries)
+    if len(ready) > 1:
+        try:
+            for i, vector in zip(ready, _batch_embeddings([entries[i].text for i in ready]), strict=True):
+                vectors[i] = vector
+            return vectors
+        except Exception as exc:
+            logging.getLogger(__name__).warning('Resume batch embedding fell back: %s', type(exc).__name__)
+    for i in ready:
+        vectors[i] = _embed_query(entries[i].text)
+    return vectors
 
 
 def index_resume_batch(documents: list[Document]) -> list[IndexOperation]:
@@ -720,10 +748,7 @@ def index_resume_batch(documents: list[Document]) -> list[IndexOperation]:
     vectors = {}
     if len(ready) > 1:
         try:
-            model = vertexai_shim.language_models.TextEmbeddingModel.from_pretrained('all-MiniLM-L6-v2')
-            results = [result.values for result in model.get_embeddings([entries[i].text for i in ready])]
-            if len(results) != len(ready) or any(len(vec) != 384 or not all(map(math.isfinite, vec)) for vec in results):
-                raise ValueError('Invalid resume embedding batch output')
+            results = _batch_embeddings([entries[i].text for i in ready])
             vectors = dict(zip(ready, results, strict=True))
         except Exception as exc:
             logging.getLogger(__name__).warning('Resume batch embedding fell back: %s', type(exc).__name__)

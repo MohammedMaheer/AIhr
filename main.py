@@ -4485,6 +4485,18 @@ async def startup_event():
         worker.start()
         app.state.search_worker = worker
 
+    if os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
+        from services.managed_desktop import DesktopPool, DesktopScheduler, compatible_model, configured_companies
+        try:
+            database = await asyncio.to_thread(get_db_manager)
+            if database and await asyncio.to_thread(DesktopPool.installed, database):
+                companies = configured_companies() if compatible_model() else frozenset()
+                desktop = DesktopScheduler(DesktopPool(database, companies), _run_resume_worker, _search_cache_clear)
+                app.state.managed_desktop_scheduler = desktop
+                desktop.start()  # Drain already-saved jobs even after enrollment/offload is disabled.
+        except Exception as exc:
+            logger.warning('Managed desktop unavailable; keeping normal VPS indexing: %s', type(exc).__name__)
+
     print("🎉 HR Agent API startup completed")
 
 
@@ -4493,6 +4505,9 @@ async def stop_search_worker():
     worker = getattr(app.state, 'search_worker', None)
     if worker:
         await worker.stop()
+    desktop = getattr(app.state, 'managed_desktop_scheduler', None)
+    if desktop:
+        await desktop.stop()
 
 # Health check endpoint for Cloud Run
 async def health_check():
@@ -6122,7 +6137,7 @@ def _manual_upload_batch_size():
         return 1
 
 
-def _store_resume_upload_batch(db, bucket_name, company_id, company_code, user_id, uploads):
+def _store_resume_upload_batch(db, bucket_name, company_id, company_code, user_id, uploads, *, managed_pool=None):
     from vps_local.discovery_shim import Document, index_resume_batch
     outcomes = [None] * len(uploads)
     saved = []
@@ -6136,6 +6151,15 @@ def _store_resume_upload_batch(db, bucket_name, company_id, company_code, user_i
 
     if not saved:
         return outcomes
+    if managed_pool and len(saved) > 1:
+        try:
+            job = managed_pool.enqueue(company_id, bucket_name, [
+                {'key': uploads[i]['blob_name'], 'mime': get_mime_type_for_datastore(uploads[i]['blob_name'])} for i in saved
+            ])
+            if job:
+                return job, saved, outcomes
+        except Exception as exc:
+            logger.warning('Managed queue unavailable; indexing saved originals on VPS: %s', type(exc).__name__)
     try:
         documents = [Document(struct_data={'company_id': company_id}, content=Document.Content(
             uri=f"gs://{bucket_name}/{uploads[i]['blob_name']}",
@@ -6183,6 +6207,12 @@ async def _run_resume_worker(function, *args, **kwargs):
 
 async def _run_resume_upload(db, **kwargs):
     return await _run_resume_worker(_store_resume_upload, db, **kwargs)
+
+
+from services.managed_desktop_routes import create_managed_desktop_router
+
+app.include_router(create_managed_desktop_router(
+    require_tenant_admin, lambda user: _get_company_id(user), _is_secure_request, _run_resume_worker, limiter))
 
 
 async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], folder_path: str, user: dict) -> Dict[str, Any]:
@@ -6589,8 +6619,18 @@ async def upload_files(
                     outcome = None
                 outcomes = [outcome]
             else:
+                desktop = getattr(request.app.state, 'managed_desktop_scheduler', None)
+                scheduling = (desktop is not None and desktop.task is not None and not desktop.task.done()
+                              and company_id in desktop.pool.companies and _resume_upload_slots.locked())
+                options = {'managed_pool': desktop.pool} if scheduling else {}
                 outcomes = await _run_resume_worker(_store_resume_upload_batch, db, bucket_name,
-                    company_id, company_code, user['id'], [upload for _, upload in pending])
+                    company_id, company_code, user['id'], [upload for _, upload in pending], **options)
+                if isinstance(outcomes, tuple):
+                    job, saved, outcomes = outcomes
+                    indexed = await desktop.wait(job)
+                    if indexed is not None:
+                        for i, ready in zip(saved, indexed, strict=True):
+                            outcomes[i] = ready
             for (index, upload), indexed in zip(pending, outcomes, strict=True):
                 result = {'filename': upload['filename'], 'success': indexed is not None, 'batch_info': batch_info}
                 if indexed is None:

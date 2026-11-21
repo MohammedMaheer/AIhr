@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from threading import Thread
 
 here = Path(__file__).resolve().parent
 root = here.parents[1]
@@ -15,9 +16,15 @@ assert re.fullmatch(r'[\w.-]+:[\w.-]+', image)
 paths = ('config.example.json', 'deploy/schema.sql', 'deploy/vps/schema-local-mode.sql',
          'tests/local-upload-pilot/handoff_vps.py')
 managed = sys.argv[1:] == ['managed']
-assert managed or not sys.argv[1:]
+pipeline = sys.argv[1:] == ['pipeline']
+assert managed or pipeline or not sys.argv[1:]
+overlays = ('main.py', 'services/managed_desktop.py', 'services/managed_desktop_routes.py',
+            'services/resume_filters.py', 'vps_local/discovery_shim.py') if pipeline else ()
 if managed:
     paths += ('tests/local-upload-pilot/managed_handoff_vps.py', 'tests/local-upload-pilot/managed_pool_vps.py')
+if pipeline:
+    paths += (*overlays, 'tests/local-upload-pilot/pipeline_vps.py',
+              'deploy/vps/migrations/20261121_managed_desktop.sql')
 payload = {Path(name).name: base64.b64encode((root/name).read_bytes()).decode() for name in paths}
 
 stage = r'''
@@ -57,7 +64,10 @@ with tempfile.TemporaryDirectory(prefix=tag+'-') as temp:
             time.sleep(1)
         else:
             raise RuntimeError('Fixture database did not start')
-        for schema in ('schema.sql','schema-local-mode.sql'):
+        schemas=('schema.sql','schema-local-mode.sql')
+        if pipeline:
+            schemas+=('20261121_managed_desktop.sql',)
+        for schema in schemas:
             run(['docker','exec','-i',db,'psql','-X','-U','desktop_qa','-d','desktop_offload_qa',
                  '-v','ON_ERROR_STOP=1'],(directory/schema).read_text())
         env={'DB_HOST':db,'DB_PORT':'5432','DB_NAME':'desktop_offload_qa','DB_USER':'desktop_qa','DB_PASSWORD':password,
@@ -77,6 +87,11 @@ with tempfile.TemporaryDirectory(prefix=tag+'-') as temp:
             entry='/qa/managed_handoff_vps.py'
             for name in ('managed_handoff_vps.py','managed_pool_vps.py'):
                 options.extend(['-v',str(directory/name)+':/qa/'+name+':ro'])
+        if pipeline:
+            entry='/qa/pipeline_vps.py'
+            options.extend(['-v',str(directory/'pipeline_vps.py')+':'+entry+':ro'])
+            for path in overlays:
+                options.extend(['-v',str(directory/pathlib.Path(path).name)+':/app/'+path+':ro'])
         for k,v in env.items():
             options.extend(['-e',k+'='+v])
         status=subprocess.run(options+['--entrypoint','timeout',image,'210','python','-u',entry],timeout=220).returncode
@@ -90,19 +105,24 @@ with tempfile.TemporaryDirectory(prefix=tag+'-') as temp:
         run(['docker','network','rm',net])
     raise SystemExit(status)
 '''
-bootstrap = f'image={image!r}\npayload={payload!r}\nmanaged={managed!r}\n{stage}'
+bootstrap = f'image={image!r}\npayload={payload!r}\nmanaged={managed!r}\npipeline={pipeline!r}\noverlays={overlays!r}\n{stage}'
 command = "python3 -u -c 'import sys,base64; exec(base64.b64decode(sys.stdin.buffer.readline()))'"
 with subprocess.Popen(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=8',
                        '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', host, command],
                       stdin=subprocess.PIPE) as ssh:
-    try:
-        ssh.stdin.write(base64.b64encode(bootstrap.encode()) + b'\n')
-        ssh.stdin.flush()
-        for line in sys.stdin.buffer:
-            ssh.stdin.write(line)
-            ssh.stdin.flush()
-    except BrokenPipeError:
-        pass
-    finally:
-        ssh.stdin.close()
+    ssh.stdin.write(base64.b64encode(bootstrap.encode()) + b'\n')
+    ssh.stdin.flush()
+
+    def relay():
+        # Stop with the SSH process even if the harness is still waiting for a reply.
+        try:
+            while chunk := os.read(sys.stdin.fileno(), 65536):
+                ssh.stdin.write(chunk)
+                ssh.stdin.flush()
+        except (BrokenPipeError, OSError, ValueError):
+            pass
+        finally:
+            ssh.stdin.close()
+
+    Thread(target=relay, daemon=True).start()
     raise SystemExit(ssh.wait(timeout=240))

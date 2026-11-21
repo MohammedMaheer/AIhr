@@ -84,16 +84,19 @@ def received_date(value):
     return parsed.astimezone(timezone.utc) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
-def record_metadata(db, bucket, key, company_id, *, received=None):
+def record_metadata(db, bucket, key, company_id, *, received=None, cursor=None):
+    if cursor is None:
+        with db.get_cursor() as (cur, _):
+            record_metadata(db, bucket, key, company_id, received=received, cursor=cur)
+        return
     folder, _, filename = key.rpartition('/')
-    with db.get_cursor() as (cur, _):
-        cur.execute('''UPDATE resume_embeddings e SET source_uploaded_at = (
+    cursor.execute('''UPDATE resume_embeddings e SET source_uploaded_at = (
                 SELECT max(upload_timestamp) FROM resume_uploads u
                 WHERE u.company_id IS NOT DISTINCT FROM e.company_id
                   AND (u.file_path=%s OR u.file_path=%s)),
                 source_received_at=COALESCE(%s,source_received_at)
             WHERE storage_bucket=%s AND folder=%s AND filename=%s AND company_id IS NOT DISTINCT FROM %s''',
-                    (key, f'gs://{bucket}/{key}', received_date(received), bucket, folder, filename, company_id))
+                   (key, f'gs://{bucket}/{key}', received_date(received), bucket, folder, filename, company_id))
 
 
 def refresh_existing_metadata(db):

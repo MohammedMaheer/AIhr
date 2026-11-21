@@ -1,0 +1,20 @@
+[Unit]
+Description=SmartHR local readiness and capacity monitor
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Environment=DOCKER_CONFIG=/var/lib/smarthr-monitor/docker
+ExecStart=/usr/bin/python3 /opt/smarthr/ops/smarthr-monitor.py
+StateDirectory=smarthr-monitor
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/smarthr-monitor
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=128M
+CPUQuota=25%
+TimeoutStartSec=45

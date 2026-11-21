@@ -35,9 +35,16 @@ async function filters(){
     root.querySelector('[data-remove="folder"]').click();assert.throws(()=>w.ResumeFolders.validate(),/at least one/);
     assert.equal(root.querySelector('[data-filter-error]').hidden,false);
     root.querySelector('[data-reset]').click();assert.equal(w.ResumeFolders.getSelection(),null);
+    root.querySelector('[data-range]').value='3';root.querySelector('[data-range]').dispatchEvent(new w.Event('change'));
     d.getElementById('opener').focus();w.ResumeFolders.openDialog();await flush();
     const modal=d.querySelector('[data-cv-filter-dialog]');assert(modal);
     assert.equal(modal.getAttribute('role'),'dialog');assert.equal(d.getElementById('app-shell').inert,true);
+    assert.equal(modal.querySelector('[data-range]').value,'3','Reopened dialogs must retain the active date preset');
+    assert.equal(modal.querySelector('[data-from]').value,root.querySelector('[data-from]').value);
+    modal.querySelector('[data-from]').value='2027-04-01';modal.querySelector('[data-from]').dispatchEvent(new w.Event('change'));
+    assert.equal(modal.querySelector('[data-range]').value,'custom');
+    assert.equal(root.querySelector('[data-range]').value,'custom','Manual dates must update the period label in every mounted view');
+    assert.equal(Object.hasOwn(w.ResumeFolders.getFilters(),'period'),false,'The display preset must not change the backend filter payload');
     modal.querySelector('[data-folder="1"]').click();
     assert.equal(root.querySelector('[data-folder="1"]').checked,true,'The results dialog and main filter view must stay synchronized');
     modal.querySelector('[data-tag="Management"]').click();

@@ -106,7 +106,7 @@
                 root.querySelector('[data-from]').value=filters.date_from||'';
                 root.querySelector('[data-to]').value=filters.date_to||'';
                 root.querySelector('[data-basis]').value=filters.date_basis||'uploaded';
-                if(!filters.date_from&&!filters.date_to)root.querySelector('[data-range]').value='any';
+                root.querySelector('[data-range]').value=filters.date_from||filters.date_to?(filters.period||'custom'):'any';
                 const chips=[];
                 (selected||[]).forEach((item,index)=>chips.push({kind:'folder',value:index,label:folderName(item)}));
                 (filters.tags||[]).forEach(tag=>chips.push({kind:'tag',value:tag,label:tag}));
@@ -119,7 +119,7 @@
                 root.querySelectorAll('[data-remove]').forEach(button=>button.onclick=()=>{
                     if(button.dataset.remove==='folder')selected.splice(Number(button.dataset.value),1);
                     if(button.dataset.remove==='tag')filters.tags=filters.tags.filter(tag=>tag!==button.dataset.value);
-                    if(button.dataset.remove==='date'){delete filters.date_from;delete filters.date_to;}
+                    if(button.dataset.remove==='date'){delete filters.date_from;delete filters.date_to;delete filters.period;}
                     announce();
                 });
             }
@@ -153,7 +153,8 @@
             };
             function readFilters(){
                 filters={tags:[...root.querySelectorAll('[data-tag]:checked')].map(input=>input.dataset.tag).sort(),
-                    date_from:root.querySelector('[data-from]').value,date_to:root.querySelector('[data-to]').value,date_basis:root.querySelector('[data-basis]').value};announce();
+                    date_from:root.querySelector('[data-from]').value,date_to:root.querySelector('[data-to]').value,
+                    date_basis:root.querySelector('[data-basis]').value,period:root.querySelector('[data-range]').value};announce();
             }
             root.querySelectorAll('[data-tag],[data-from],[data-to],[data-basis]').forEach(input=>input.onchange=()=>{
                 if(input.matches('[data-from],[data-to]'))root.querySelector('[data-range]').value='custom';readFilters();

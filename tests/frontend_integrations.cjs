@@ -84,7 +84,7 @@ async function run() {
     }
     sw.showNotification=(...args)=>events.push(args);sw.closeInterviewModal=()=>{};
     sw.fetch=async(url,options)=>{requests.push({url,options});return{ok:true,json:async()=>({success:true,meeting:{success:false,error:'Link unavailable'},email:{success:false,error:'Email skipped'}})}};
-    sw.eval(source.slice(source.indexOf('async function saveInterviewSchedule('),source.indexOf('// =============================================================================\n// GLOBAL HANDLER SAFETY NET')));
+    sw.eval(source.slice(source.indexOf('async function saveInterviewSchedule('),source.indexOf('// =============================================================================\n// GLOBAL HANDLER DIAGNOSTIC')));
     await sw.saveInterviewSchedule({preventDefault(){},target:sd.getElementById('f')},'Synthetic Candidate','fictional@example.invalid');
     assert.equal(requests.length,1);
     assert.equal(requests[0].url,'/api/schedule-interview');
@@ -106,7 +106,7 @@ async function run() {
         w.loadUpcomingEvents=async()=>{throw new Error('Synthetic refresh failure after confirmation');};
         w.console.error=()=>{};
         const start=kind==='general'?'async function submitGeneralScheduleForm(':'async function saveInterviewSchedule(';
-        const end=kind==='general'?'function showInterviewScheduleModal(':'// =============================================================================\n// GLOBAL HANDLER SAFETY NET';
+        const end=kind==='general'?'function showInterviewScheduleModal(':'// =============================================================================\n// GLOBAL HANDLER DIAGNOSTIC';
         w.eval(source.slice(source.indexOf(start),source.indexOf(end)));
         let requests=0,resolve;
         w.fetch=()=>{requests++;return new Promise(done=>{resolve=done;});};

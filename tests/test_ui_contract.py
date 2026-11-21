@@ -31,3 +31,23 @@ def test_recruiter_keeps_original_application_logo(api):
     assert 'src="/static/img/ai-logo.png" alt="AI Agent Recruiter"' in response.text
     assert 'Your AI Agent for Seamless Recruitment' in response.text
     assert 'efforts-solutions-logo.png' not in response.text
+
+
+def test_charts_are_local_integrity_checked_and_unused_script_origin_removed(api):
+    import base64
+    import hashlib
+    from html.parser import HTMLParser
+    client,_db=api
+    response=client.get('/')
+    class Scripts(HTMLParser):
+        def __init__(self):super().__init__();self.scripts=[]
+        def handle_starttag(self,tag,attrs):
+            if tag=='script':self.scripts.append(dict(attrs))
+    parser=Scripts();parser.feed(response.text)
+    script=next(s for s in parser.scripts if '/chartjs/' in s.get('src',''))
+    asset=client.get(script['src'])
+    assert asset.status_code==200
+    assert script['integrity']=='sha384-'+base64.b64encode(hashlib.sha384(asset.content).digest()).decode()
+    policy=response.headers['Content-Security-Policy']
+    scripts=next(item.strip() for item in policy.split(';') if item.strip().startswith('script-src '))
+    assert 'cdn.jsdelivr.net' not in scripts

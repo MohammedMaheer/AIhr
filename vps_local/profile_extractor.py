@@ -15,11 +15,13 @@ from typing import Any, Optional
 
 from search_criteria import (
     KNOWN_PLACES,
+    LOCATION_COUNTRY_CITIES,
     SPOKEN_LANGUAGES,
     SearchCriteria,
     _location_match,
     _norm,
     _parse_years_string,
+    _skill_pattern,
     _extract_candidate_years,
     evaluate_criteria,
     uncertain_language,
@@ -71,6 +73,30 @@ COMMON_SKILLS = {
     "project management", "procurement", "inventory", "logistics",
 }
 
+_HEADER_CITIES = sorted({city for cities in LOCATION_COUNTRY_CITIES.values() for city in cities},key=len,reverse=True)
+_HEADER_CITY_RE = re.compile(r'(?<!\w)(' + '|'.join(re.escape(city) for city in _HEADER_CITIES) + r')(?!\w)',re.I)
+_HEADER_NON_ADDRESS_RE = re.compile(
+    r'\b(?:client|project|employer|company|university|college|school|relocat\w*|nationality|born|'
+    r'education|experience|engineer|developer|analyst|manager|consultant|office|holding|headquarters)\b',re.I)
+
+
+def extract_contact_city(text: str) -> str:
+    """Only a city-shaped contact-header segment, never an employer/client mention."""
+    for line in (text or '')[:800].splitlines()[:12]:
+        if re.match(r'^\W*(?:preferred\b|relocat\w*\b|professional\s+(?:summary|experience)\b|work\s+(?:history|experience)\b|employment\b|education\b|projects?\b|clients?\b|skills\b)',line,re.I):
+            break
+        if _HEADER_NON_ADDRESS_RE.search(line):
+            continue
+        for part in re.split(r'[|\u2022]',line):
+            part = re.sub(r'^[^\w]+','',part).strip()
+            part = re.sub(r'^(?:(?:current\s+)?(?:location|address|residence)\s*[:\-]\s*)','',part,flags=re.I)
+            match = _HEADER_CITY_RE.match(part)
+            if match:
+                tail = part[match.end():]
+                if not tail.strip() or re.match(r'\s*[,/;(]',tail):
+                    return _norm(match.group(1))
+    return ''
+
 
 def parse_years(value: Any) -> Optional[float]:
     """Use exactly the same experience interpretation as final filtering."""
@@ -104,6 +130,9 @@ def clean_location(value: Any) -> str:
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" .,-")
     normed = _norm(cleaned)
     if normed in UNKNOWN_LOCATION_VALUES:
+        return ""
+    # Older unbounded address matching captured job-duty fragments as places.
+    if re.search(r'^(?:ed\s+employee|ing(?:\s|$)|ventory\s+management|queries\s+related\s+to|overdue\s+accounts)\b', normed):
         return ""
     return normed
 
@@ -202,8 +231,9 @@ def extract_languages_from_text(text: str) -> list[str]:
 def extract_location_from_text(text: str) -> str:
     head = (text or "")[:5000]
     for pat in (
-        r"(?:current\s+)?location\s*[:\-]\s*([A-Za-z][A-Za-z .,\-]{2,80})",
-        r"(?:address|residence|based\s+in|located\s+in|residing\s+in)\s*[:\-]?\s*([A-Za-z][A-Za-z .,\-]{2,80})",
+        r"\b(?:current\s+)?location\b\s*[:\-]\s*([A-Za-z][A-Za-z .,\-]{2,80})",
+        r"\b(?:address|residence)\b\s*[:\-]\s*([A-Za-z][A-Za-z .,\-]{2,80})",
+        r"\b(?:based\s+in|located\s+in|residing\s+in)\b\s*[:\-]?\s*([A-Za-z][A-Za-z .,\-]{2,80})",
     ):
         m = re.search(pat, head, re.IGNORECASE)
         if m:
@@ -211,11 +241,16 @@ def extract_location_from_text(text: str) -> str:
             if loc:
                 return loc
 
+    contact = extract_contact_city(text)
+    if contact:
+        return contact
+
     lower = head.lower()
     places = sorted(KNOWN_PLACES, key=len, reverse=True)
-    for place in places:
-        if re.search(rf"\b{re.escape(place)}\b", lower):
-            return _norm(place)
+    mentions = [(match.start(), -len(place), _norm(place)) for place in places
+                if (match := re.search(rf"\b{re.escape(place)}\b", lower))]
+    if mentions:
+        return min(mentions)[2]
     return ""
 
 
@@ -240,7 +275,8 @@ def extract_skills_from_text(text: str) -> list[str]:
     lower = (text or "").lower()
     found = []
     for skill in COMMON_SKILLS:
-        if re.search(rf"\b{re.escape(skill)}\b", lower):
+        pattern = _skill_pattern(skill) if skill in {'node', 'react'} else rf"\b{re.escape(skill)}\b"
+        if re.search(pattern, lower):
             found.append(skill)
     return _dedupe(found)
 
@@ -338,7 +374,7 @@ def merge_profiles(primary: dict[str, Any], fallback: dict[str, Any]) -> dict[st
     return merged
 
 
-def profile_from_row(row: dict[str, Any]) -> dict[str, Any]:
+def profile_from_row(row: dict[str, Any], required_skills: Optional[list[str]] = None) -> dict[str, Any]:
     years = row.get("candidate_years")
     if isinstance(years, Decimal):
         years = float(years)
@@ -353,6 +389,17 @@ def profile_from_row(row: dict[str, Any]) -> dict[str, Any]:
     }
     if not any(profile.get(k) for k in ("candidate_years", "candidate_location", "candidate_languages", "candidate_skills")):
         profile = profile_from_text(row.get("text") or "", source="text_runtime")
+    contact_city = extract_contact_city(row.get('text') or row.get('extracted_text') or '')
+    if contact_city and not _location_match(contact_city, profile['candidate_location']):
+        profile['candidate_location'] = contact_city
+    # Indexed skills are a partial vocabulary, not proof that a CV lacks a skill.
+    # Supplement only explicit query terms; the full scorecard still verifies fit.
+    text = row.get("text") or ""
+    if text and required_skills:
+        profile["candidate_skills"] = _dedupe(profile["candidate_skills"] + [
+            skill for skill in required_skills
+            if re.search(_skill_pattern(skill), text, re.IGNORECASE)
+        ])
     return profile
 
 

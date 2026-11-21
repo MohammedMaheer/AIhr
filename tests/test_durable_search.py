@@ -185,7 +185,7 @@ def run_mock_search(*, unreadable_first=False, db_failure=False, criteria='Origi
     with patch.object(main, 'get_db_manager', return_value=database), \
          patch.object(main, '_prepare_search_input', side_effect=lambda kind, *args: {'all_keywords': ['Python']} if kind == 'keywords' else {'optimized_query': 'Python'}), \
          patch.object(main, 'get_search_client', return_value=search), \
-         patch.object(main, 'create_company_search_request', return_value={}), \
+         patch.object(main, 'create_company_search_request', return_value={}) as create_request, \
          patch.object(main, 'get_company_resources', return_value=('qa-bucket', 'qa-store')), \
          patch.object(main, '_get_storage_client') as storage, \
          patch.object(main, 'using_deepseek', return_value=True), \
@@ -195,6 +195,8 @@ def run_mock_search(*, unreadable_first=False, db_failure=False, criteria='Origi
         storage.return_value.bucket.return_value.blob.return_value.generation = 'qa-generation'
         result = asyncio.run(run())
         binary.assert_not_called()
+        assert create_request.call_args_list[0].kwargs['criteria_query'] == criteria
+        assert create_request.call_args_list[0].kwargs['query'] == 'Python'
     return result, database, llm
 
 

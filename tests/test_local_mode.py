@@ -23,11 +23,26 @@ def _enable_local_mode(monkeypatch, tmp_path):
     """Set the env flags ``vps_local`` reads on import."""
     monkeypatch.setenv("SMARTHR_LOCAL_MODE", "1")
     monkeypatch.setenv("SMARTHR_STORAGE_ROOT", str(tmp_path))
-    # Drop any cached modules so the shim's sys.modules patching runs cleanly
+    # Exercise fresh imports without leaving later tests bound to stale modules.
+    prefixes = ("google.cloud", "google.genai", "vertexai", "vps_local", "__smarthr_local_installed__")
+    saved = {name: module for name, module in sys.modules.items() if name.startswith(prefixes)}
+    parents = [(module, attr, getattr(module, attr))
+               for name, attrs in (("google", ("genai", "cloud")),
+                                   ("google.cloud", ("storage", "discoveryengine_v1", "discoveryengine")))
+               if (module := sys.modules.get(name)) is not None
+               for attr in attrs if hasattr(module, attr)]
     for mod in list(sys.modules):
         if mod.startswith(("google.cloud", "vertexai", "vps_local")):
             sys.modules.pop(mod, None)
-    yield
+    try:
+        yield
+    finally:
+        for mod in list(sys.modules):
+            if mod.startswith(prefixes):
+                sys.modules.pop(mod, None)
+        sys.modules.update(saved)
+        for module, attr, value in parents:
+            setattr(module, attr, value)
 
 
 def test_shim_replaces_google_cloud_storage():

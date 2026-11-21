@@ -19,16 +19,21 @@
         const date=value?new Date(value):null;
         return date&&!isNaN(date)?date.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):'Unavailable';
     }
-    async function read(url){
-        let response;
-        try{response=await fetch(url);}
-        catch(_){throw new Error('The CV library could not be reached. Please try again.');}
-        const data=await response.json().catch(()=>({}));
-        if(!response.ok||data.success!==true)throw new Error(typeof data.detail==='string'?data.detail:'CV library is temporarily unavailable.');
-        return data;
+    async function read(url,controller){
+        const timer=setTimeout(()=>controller.abort(),20000);
+        try{
+            let response;
+            try{response=await fetch(url,{signal:controller.signal});}
+            catch(error){
+                throw new Error(error.name==='AbortError'?'The CV library request timed out. Try again.':'The CV library could not be reached. Please try again.');
+            }
+            const data=await response.json().catch(()=>({}));
+            if(!response.ok||data?.success!==true)throw new Error(typeof data?.detail==='string'?data.detail:'CV library is temporarily unavailable.');
+            return data;
+        }finally{clearTimeout(timer);}
     }
     function mount(root){
-        let disposed=false,sequence=0,previewSequence=0,offset=0,query='',timer,modal,total=0;
+        let disposed=false,sequence=0,previewSequence=0,offset=0,query='',timer,modal,total=0,listRequest,previewRequest;
         const limit=25;
         root.classList.add('recruiter-workspace','cv-library-view');
         root.innerHTML='<header class="workspace-header"><h2>CV Library</h2><button type="button" data-upload class="workspace-button is-primary"><i class="fas fa-upload" aria-hidden="true"></i>Upload CVs</button></header>'+
@@ -42,10 +47,12 @@
         const upload=()=>window.loadPage('uploadFiles');
         async function preview(id,button){
             const requestId=++previewSequence,icon=button.querySelector('i'),originalIcon=icon?.className;
+            previewRequest?.abort();
+            const request=new AbortController();previewRequest=request;
             button.disabled=true;button.setAttribute('aria-busy','true');if(icon)icon.className='fas fa-circle-notch fa-spin';
             try{
-                const data=await read('/api/resume-library/'+id);
-                if(disposed||!root.isConnected||requestId!==previewSequence)return;
+                const data=await read('/api/resume-library/'+id,request);
+                if(disposed||!root.isConnected||!button.isConnected||requestId!==previewSequence)return;
                 modal?.remove();modal=document.createElement('div');modal.dataset.libraryDialog='true';modal.className='workspace-overlay';
                 const type=fileType(data.file_name),dialog=modal;
                 const supported=['pdf','text'].includes(data.preview_kind);
@@ -112,7 +119,7 @@
                     loadDocument();
                 }
             }catch(error){if(!disposed&&requestId===previewSequence)window.showNotification?.(error.message,'error');}
-            finally{button.disabled=false;button.removeAttribute('aria-busy');if(icon)icon.className=originalIcon;}
+            finally{if(previewRequest===request)previewRequest=null;button.disabled=false;button.removeAttribute('aria-busy');if(icon)icon.className=originalIcon;}
         }
         function emptyState(list){
             list.innerHTML='<div class="workspace-empty"><span class="workspace-empty-icon"><i class="fas '+(query?'fa-search':'fa-folder-open')+'" aria-hidden="true"></i></span><h3>'+(query?'No matching CVs':'No CVs uploaded')+'</h3>'+
@@ -136,11 +143,13 @@
         }
         async function load(){
             const id=++sequence,list=root.querySelector('[data-list]');
+            listRequest?.abort();previewSequence++;previewRequest?.abort();
+            const request=new AbortController();listRequest=request;
             list.setAttribute('aria-busy','true');
             list.innerHTML='<div class="workspace-loading" role="status"><i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>Loading CVs...</div>';
             root.querySelectorAll('[data-prev],[data-next],[data-page-number]').forEach(control=>{control.disabled=true;});
             try{
-                const data=await read('/api/resume-library?limit='+limit+'&offset='+offset+'&query='+encodeURIComponent(query));
+                const data=await read('/api/resume-library?limit='+limit+'&offset='+offset+'&query='+encodeURIComponent(query),request);
                 if(!alive(id))return;
                 if(!Array.isArray(data.uploads)||!Number.isSafeInteger(data.total)||data.total<0)throw new Error('CV library is temporarily unavailable.');
                 total=data.total;
@@ -159,10 +168,11 @@
                     list.innerHTML='<div class="workspace-empty is-error" role="alert"><span class="workspace-empty-icon"><i class="fas fa-exclamation-circle" aria-hidden="true"></i></span><h3>Library unavailable</h3><p>'+esc(error.message)+'</p><button type="button" data-retry class="workspace-button"><i class="fas fa-redo" aria-hidden="true"></i>Retry</button></div>';
                     list.querySelector('[data-retry]').onclick=load;
                 }
-            }finally{if(alive(id))list.setAttribute('aria-busy','false');}
+            }finally{if(listRequest===request)listRequest=null;if(alive(id))list.setAttribute('aria-busy','false');}
         }
         function setQuery(value){
-            clearTimeout(timer);query=value.trim();offset=0;++sequence;
+            clearTimeout(timer);query=value.trim();offset=0;++sequence;++previewSequence;
+            listRequest?.abort();previewRequest?.abort();
             root.querySelectorAll('[data-prev],[data-next],[data-page-number]').forEach(control=>{control.disabled=true;});
             root.querySelector('[data-count]').textContent='Searching...';
             root.querySelector('[data-clear-query]').hidden=!value;
@@ -178,7 +188,7 @@
         };
         root.querySelector('#library-query').oninput=event=>setQuery(event.target.value);
         root.querySelector('[data-clear-query]').onclick=()=>{const input=root.querySelector('#library-query');input.value='';setQuery('');input.focus();};
-        load();return()=>{disposed=true;++previewSequence;clearTimeout(timer);modal?.remove();};
+        load();return()=>{disposed=true;listRequest?.abort();previewRequest?.abort();clearTimeout(timer);modal?.remove();};
     }
     window.ResumeLibrary={mount};
 })();

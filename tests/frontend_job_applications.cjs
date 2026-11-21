@@ -26,8 +26,9 @@ async function run() {
         if (!options.method) return {
             ok: true,
             headers: { get: () => 'application/json' },
-            json: async () => ({ page: {
+            json: async () => ({ success: true, page: {
                 title: '<img src=x onerror=alert(1)> Engineer',
+                version: 3,
                 company_name: 'Fictional Hiring Team',
                 description: '<script>bad()</script>Build useful software.',
                 location: 'Remote', employment_type: 'Full-time',
@@ -60,7 +61,22 @@ async function run() {
     form.elements.candidate_name.value = 'Fictional Candidate';
     form.elements.email.value = 'candidate@example.invalid';
     form.elements.consent.checked = true;
+    form.reportValidity = () => form.checkValidity();
+    form.dispatchEvent(new w.Event('submit', {bubbles:true,cancelable:true}));
+    assert.match(form.elements.file.validationMessage, /Upload a CV or provide a resume link/);
+    assert.equal(calls.some(call => call.options.method === 'POST'), false);
     form.elements.resume_url.value = 'https://files.example.com/candidate.pdf';
+    form.elements.resume_url.dispatchEvent(new w.Event('input', {bubbles:true}));
+    assert.equal(form.elements.file.validationMessage, '', 'Adding a link must clear the previous missing-resume error before native validation');
+    Object.defineProperty(form.elements.file, 'files', {configurable:true, value:[{name:'notes.exe',size:10}]});
+    form.elements.file.dispatchEvent(new w.Event('change'));
+    assert.match(form.elements.file.validationMessage, /PDF or Word/);
+    Object.defineProperty(form.elements.file, 'files', {configurable:true, value:[{name:'resume.pdf',size:10*1024*1024+1}]});
+    form.elements.file.dispatchEvent(new w.Event('change'));
+    assert.match(form.elements.file.validationMessage, /10 MB/);
+    Object.defineProperty(form.elements.file, 'files', {configurable:true, value:[]});
+    form.elements.file.dispatchEvent(new w.Event('change'));
+    assert.equal(form.elements.file.validationMessage, '');
     form.querySelector('[data-question]').value = 'Two weeks';
     form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
     await flush();
@@ -70,6 +86,7 @@ async function run() {
     assert.equal(submission.options.credentials, 'omit');
     assert.equal(submission.options.body.get('candidate_name'), 'Fictional Candidate');
     assert.equal(submission.options.body.get('resume_url'), 'https://files.example.com/candidate.pdf');
+    assert.equal(submission.options.body.get('page_version'), '3');
     assert.deepEqual(JSON.parse(submission.options.body.get('answers')), { '0': 'Two weeks' });
     assert.equal(root.querySelector('[role="status"] strong').textContent, 'Application received');
     assert.equal(document.activeElement, root.querySelector('[role="status"]'));
@@ -86,7 +103,7 @@ async function run() {
     manager.scheduleInterview = (name, email, context) => { interviewContext = { name, email, ...context }; };
     const applications = [{ id: 21, candidate_name: '<img src=x onerror=alert(1)> Candidate',
         normalized_email: 'candidate@example.invalid', phone: '', location: 'Remote', years_experience: 5,
-        answers: {}, status: 'received', version: 1, vector_indexed: true, resume_upload_id: 42,
+        answers: {'0':'Two weeks'}, answer_questions:{'0':'What is your notice period?'}, status: 'received', version: 1, vector_indexed: true, resume_upload_id: 42,
         created_at: '2026-11-11T00:00:00Z', interview_id: null },
         { id: 22, candidate_name: 'Indexing Needs Attention', normalized_email: 'second@example.invalid',
             answers: {}, status: 'received', version: 1, vector_indexed: false, resume_upload_id: 43,
@@ -114,12 +131,22 @@ async function run() {
     await flush();
     assert.equal(workspace.querySelectorAll('img').length, 0);
     assert.match(workspace.textContent, /Uploaded; not searchable/);
+    assert.equal(workspace.querySelector('.job-answers strong').textContent, 'What is your notice period?');
     workspace.querySelector('[data-email-applicant="21"]').click();
     workspace.querySelector('[data-schedule-applicant="21"]').click();
     assert.equal(emailContext.jobApplicationId, '21');
     assert.equal(emailContext.candidateEmail, 'candidate@example.invalid');
     assert.equal(interviewContext.jobApplicationId, '21');
     assert.equal(interviewContext.jobApplicationPageId, '11');
+    manager.fetch = async url => ({ok:!String(url).includes('/applications?'),
+        headers:{get:()=> 'application/json'},json:async()=>String(url).includes('/applications?')
+            ? {detail:'Fictional temporary outage'} : {success:true,pages:[]}});
+    manager.dispatchEvent(new manager.CustomEvent('job-application-interview-scheduled', {detail:{pageId:11}}));
+    await flush();
+    assert.match(workspace.textContent, /Applications unavailable/);
+    workspace.querySelector('[data-back]').click();
+    await flush();
+    assert.match(workspace.textContent, /No job pages yet/, 'The error-state back button must actually return to job pages');
     dispose();
     managerDom.window.close();
 
@@ -165,6 +192,12 @@ async function run() {
     pageForm.elements.pay_minimum.value = '10000';
     pageForm.elements.pay_maximum.value = '15000';
     pageForm.elements.pay_currency.value = 'AED';
+    pageForm.elements.pay_maximum.setCustomValidity('Maximum pay must be at least the minimum pay.');
+    pageForm.elements.pay_minimum.dispatchEvent(new admin.Event('input',{bubbles:true}));
+    assert.equal(pageForm.elements.pay_maximum.validationMessage,'','Changing either end of the range must clear stale range validation');
+    pageForm.elements.pay_note.setCustomValidity('Enter a pay range or compensation note to show pay.');
+    pageForm.elements.pay_minimum.dispatchEvent(new admin.Event('input',{bubbles:true}));
+    assert.equal(pageForm.elements.pay_note.validationMessage,'','Adding a range must clear stale missing-pay validation');
     pageForm.elements.field_portfolio.checked = true;
     admin.document.querySelector('[data-generate-questions]').click();
     await flush();
@@ -209,7 +242,7 @@ async function run() {
     const previewCalls = [];
     previewWindow.fetch = async (url, options = {}) => {
         previewCalls.push({url:String(url),options});
-        return {ok:true,headers:{get:()=> 'application/json'},json:async()=>({page:{
+        return {ok:true,headers:{get:()=> 'application/json'},json:async()=>({success:true,page:{
             title:'Draft Preview Engineer',company_name:'Fictional Hiring Team',
             description:'A saved draft preview for checking candidate presentation.',location:'Dubai',
             employment_type:'Part-time',custom_questions:[],

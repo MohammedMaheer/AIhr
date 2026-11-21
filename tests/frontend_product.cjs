@@ -57,7 +57,8 @@ async function run(){
   {success:false,error:'<img src=x onerror=alert(1)>'}
  ]})});
  await flush();await flush();
- assert.equal(start.disabled,false);assert.equal(d.getElementById('clear-queue').disabled,false);
+ assert.equal(start.disabled,true,'Reported results cannot be silently submitted again');
+ assert.equal(d.getElementById('clear-queue').disabled,false);
  assert.match(d.getElementById('upload-queue').textContent,/not searchable/);
  assert.equal(d.querySelectorAll('#upload-queue img').length,0,'Provider errors must be escaped');
  assert(uploadNotices.some(([text,type])=>type==='warning' && text.includes('not searchable')));
@@ -133,7 +134,18 @@ async function run(){
  w.console.error=()=>{};
  w.fetch=async()=>{throw new Error('Synthetic unavailable service');};
  generate.click();await flush();assert.equal(generate.disabled,false,'Provider failure must release the guard');
+  let exportedHtml='';
+  w.Blob=class {constructor(parts){exportedHtml=parts.join('');}};
+  w.URL.createObjectURL=()=> 'blob:fixture';w.URL.revokeObjectURL=()=>{};
+  w.HTMLAnchorElement.prototype.click=()=>{};
+  w.sanitizeGeneratedHtml=html=>html.replace(/<img[^>]*>/gi,'');
+  d.getElementById('jd-job-title').value='<img src=x onerror=alert(1)> Synthetic role';
+  preview.innerHTML='<img src=x onerror=alert(1)><p>Approved text</p>';
+  download.click();
+  assert(!exportedHtml.includes('<img src=x'),'Downloaded JD must not retain executable markup');
+  assert(exportedHtml.includes('&lt;img src=x onerror=alert(1)&gt; Synthetic role'));
+  assert(exportedHtml.includes('<p>Approved text</p>'));
  dom.window.close();
- console.log('Product UI passed: safe upload rendering, index warnings, upload concurrency guard, corrupt local cache recovery, server-defined limits, JD empty/export states, paid-submit guard and failure recovery.');
+  console.log('Product UI passed: safe upload rendering, index warnings, upload concurrency guard, corrupt local cache recovery, server-defined limits, safe JD export states, paid-submit guard and failure recovery.');
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

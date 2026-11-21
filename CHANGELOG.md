@@ -5,6 +5,533 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.21.2 - 2026-11-21
+
+### Managed Desktop Worker Pool Pilot
+
+- Test admin-enrolled, tenant-scoped native workers with signed leases and
+  PostgreSQL-backed assignments, reassignment and VPS fallback.
+- Reduce staged VPS CPU by 66.37% with no VPS model calls on the managed path
+  and 70 matching ranked comparisons. Keep production unchanged pending
+  managed agent packaging and live scheduler integration.
+  Details: `docs/MANAGED_DESKTOP_POOL_2026-11-21.md`.
+
+## v2026.11.21.1 - 2026-11-21
+
+### Desktop Offload Release Gate
+
+- Test authenticated storage-first handoff, real browser inference, VPS
+  fallback and pgvector ranking with synthetic CVs in an isolated VPS stack.
+- All 49 ranking comparisons matched, but the verifier still needed every VPS
+  embedding. Leave production and the logo unchanged; offload stays disabled.
+  Details: `docs/DESKTOP_OFFLOAD_RELEASE_GATE_2026-11-21.md`.
+
+## v2026.11.20.8 - 2026-11-20
+
+### Upload Recovery And Dynamic Assist Pilot
+
+- Preserve pending selections, respect busy retry delays, and stop unsafe
+  upload replays after an unconfirmed response. Wrap queue messages and long
+  filenames on narrow screens.
+- Test busy-only desktop assistance with simulated saved jobs and warm models.
+  The pilot cannot write the live index. VPS batching and ranking are unchanged.
+  Details: `docs/UPLOAD_RECOVERY_2026-11-20.md`.
+
+## v2026.11.20.7 - 2026-11-20
+
+### VPS Bulk Resume Indexing
+
+- Embed up to eight manually uploaded recruiter CVs per VPS inference call,
+  with per-file fallback and no changes to ranking, the UI or desktop offload.
+- Compare six 34-CV uploads on the VPS: median time to searchable fell from
+  4.527 s to 3.853 s. All 12 ranking comparisons matched. Deploy with batch
+  size eight and verify the production index and AI ledger remain unchanged.
+  Details: `docs/VPS_BULK_RESUME_INDEXING_2026-11-20.md`.
+
+## v2026.11.20.6 - 2026-11-20
+
+### Embedding-Only Performance Pilot
+
+- Reuse VPS-extracted text and benchmark full-precision WASM and WebGPU,
+  an 8-bit comparison, and VPS batching on 36 synthetic inputs.
+- Full-precision GPU and four-thread WASM beat the warm VPS baseline on
+  the test workstation and preserved all six search orders. Reject the 8-bit
+  model because it changed ordering. Keep all production paths unchanged.
+
+## v2026.11.20.5 - 2026-11-20
+
+### Device-Aware Recruiter CV Pilot
+
+- Skip local processing on mobile, low-capacity, unsupported, or constrained
+  connections before loading any compute assets. Leave the VPS upload unchanged.
+- Stop backgrounded or interrupted batches and avoid model retries within a
+  failed batch. Verify 12 fallback scenarios and recoverable interruptions.
+  Pilot only; no live changes.
+
+## v2026.11.20.4 - 2026-11-20
+
+### Recruiter CV Processing Pilot
+
+- Benchmark local browser PDF extraction and MiniLM embeddings on 18 synthetic
+  CVs against the deployed VPS runtime in a network-isolated container.
+- Verify 20 same-text vector probes, six ordered search comparisons, and local
+  fallbacks. A two-column PDF changed reading order and warm browser processing
+  did not beat the VPS. Production remains unchanged, with zero paid AI calls.
+  Details: `docs/LOCAL_CV_PROCESSING_PILOT_2026-11-20.md`.
+
+## v2026.11.20.3 - 2026-11-20
+
+### Outlook CV Catch-Up
+
+- Resume from the November 11 verified mailbox scan with a one-day overlap.
+  Check 305 PDF/Word attachments, skip 88 exact duplicates and retain six
+  uncertain documents privately for review.
+- Add 211 verified CVs to `Mailbox 2026` with their original attachments,
+  received dates, extraction provenance, tags, local embeddings and bounded
+  email context. No paid AI calls or mailbox changes.
+- Verify all new originals and vectors, all 7,862 prior original file hashes,
+  and 20 deployed retrieval checks. The library now contains 8,063 searchable
+  vectors, including 4,073 in `Mailbox 2026`. Data update only; no app deployment.
+  Details: `docs/MAILBOX_CATCH_UP_2026-11-20.md`.
+
+## v2026.11.20.2 - 2026-11-20
+
+### Live Verification Follow-Up
+
+- Recheck Microsoft inbox/calendar access and Teams availability, confirm the
+  previously approved test email in Sent Items, and rerun 319 integration tests.
+  No new mail or meetings were sent or created.
+- Verify two fictional live-model scorecards, three deterministic rejection
+  cases, and ten live read-only retrieval scopes. Record actual token usage,
+  HTTP timing, restored database counts, and the ten previously reviewed PDFs
+  that deliberately remain unindexed.
+- Restore the newest completed on-host PostgreSQL backup in an isolated
+  container and replay the current additive migration. This is not an off-site
+  or full document recovery drill. No application deployment or data changes.
+  Details: `docs/LIVE_WORKFLOW_VERIFICATION_2026-11-20.md`.
+
+## v2026.11.20.1 - 2026-11-20
+
+### Recruiter Workflow Reliability
+
+- Reject stale public applications after job-page edits or closure. Keep the
+  original question with each new answer so edits never relabel old answers.
+  Require a confirmed API response before showing an application receipt.
+- Make application load failures retryable, prevent late results from a cleared
+  company workspace, and cancel stale CV-library requests and previews.
+- Keep dashboard dates, match counts and actions readable. Distinguish loading
+  failures from empty history and ignore outdated responses.
+- Deploy to the VPS with an additive database migration and the previous image
+  retained for rollback. Ranking, provider configuration and logo are unchanged.
+  Tested with 1,304 Python/HTTP checks, 27 frontend suites and six widths from
+  320 to 1,440 pixels. Details: `docs/WORKFLOW_RELIABILITY_2026-11-20.md`.
+
+## v2026.11.18.1 - 2026-11-18
+
+### Authorized Retired Preview Removal
+
+- Permanently remove three explicitly retired deployments' identified VPS data,
+  uploads and backup copies, six unattached project volumes, four empty project
+  networks and two exclusive certificate lineages. No broad Docker pruning.
+- Remove 68 retired configuration blobs from 46 shared certificate checkpoints;
+  preserve and sandbox-restore all 1,100 retained blobs. Eight isolated safety
+  fixtures passed; independent verification found no retired blob remaining.
+- Reclaim 1,655,058,432 bytes during removal (about 1.66 GB). Final verified free
+  space is about 38.66 GB. Exclude a separately scheduled retention job's savings.
+- Preserve all 7,862 CV originals, 23 HR tables, 55 retained HR backup files,
+  four cold archive files, 27 container and 11 native-service identities. All
+  26 unrelated route checks match the post-retention baseline; no new AI calls.
+- Keep certificate-free rejection rules for retired names and shared operational
+  audit metadata only. No application rebuild/restart or core/logo/UI changes.
+  Scope, recovery proof and limitations:
+  `docs/RETIRED_PREVIEW_REMOVAL_2026-11-18.md`.
+
+## v2026.11.16.1 - 2026-11-16
+
+### Concurrent Backup Review And Recovery Verification
+
+- Reconcile the planned cold-backup review with a user-confirmed concurrent
+  cleanup. Its retention run removed four older manual snapshots; no archival or
+  original-backup deletion was applied by this turn. Historical snapshot-byte
+  preservation is not claimed for those externally removed copies.
+- Retain the last manual recovery copy. Restore-test all four surviving compressed
+  nightly copies using the existing verifier: archive/database hashes, full SQLite
+  integrity, table counts and attachment/history byte totals all passed. The manual
+  copy also passed integrity checks; all 14 backup files stayed unchanged.
+- Backup storage is now about 6.20 GB, including a fresh copy created by the other
+  cleanup. No disk savings are attributed to this audit. Scheduled backup policy,
+  app/core/logo/UI and runtime `2f762d8` are unchanged by this work; no new AI calls.
+- All 7,862 CVs, 23 HR tables, the post-cleanup baseline's 117 retained HR backup
+  files, four cold archive/manifest files, 51 volumes, 27 container and 11 native
+  service identities verified. Existing 48 safety tests passed. Evidence and limits:
+  `docs/ADJACENT_BACKUP_RECOVERY_REVIEW_2026-11-15.md`.
+
+## v2026.11.15.6 - 2026-11-15
+
+### Verified Inactive Swapfile Removal
+
+- Remove only the explicitly authorized, inactive `/swapfile` after verifying its
+  exact root-owned regular-file identity, normal swap signature, lack of open/
+  mapped/loop references, 2,973 configuration/helper files and both boot images.
+  Bind the action to the reviewed plan and recheck inactivity before unlinking.
+- Preserve the separate active swap's inode, capacity, priority and active unit,
+  along with all boot/configuration fingerprints. No swap activation/deactivation,
+  reboot, application restart or core/logo/UI changes. Nineteen private guard
+  tests passed on Windows and Linux; no recurring cleanup was installed.
+- Reclaim 4,294,971,392 bytes at unlink; measured whole-operation net savings are
+  4,294,721,536 bytes. Free space rose from 20.52 GB to 24.82 GB, utilization fell
+  from 80.04% to about 75.9%, and the existing monitor cleared its disk warning.
+- All 7,862 CVs, 23 HR tables, 237 backup/pointer files, four cold archive/manifest
+  files, 51 volumes, 27 container and 11 native-service identities verified. Zero
+  new AI usage; runtime remains `2f762d8`. Detailed evidence and limitations:
+  `docs/INACTIVE_SWAP_REMOVAL_2026-11-15.md`.
+
+## v2026.11.15.5 - 2026-11-15
+
+### Verified Test-Image Cleanup
+
+- Add a dry-run-first cleanup tool limited to old SmartHR QA images whose layers
+  and exact test-only build history match retained production bases. Protect all
+  production/foreign images, registry references, multi-tag aliases, container
+  references, configured image pins and baseline/recent/operations QA images.
+- Remove only reviewed immutable image IDs and exclusive untagged QA ancestors,
+  with Docker's force-free/no-parent-prune guards, fresh container/metadata checks,
+  a retention lock and durable private action receipts. No volume pruning.
+- Forty-eight safety tests pass locally and in the existing isolated Linux QA
+  image. Applied the exact reviewed plan: remove 39 obsolete QA images and 77
+  exclusive intermediates; independently verify all 711 remaining image records.
+- Reclaimed a net 195,080,192 bytes (195 MB), including new evidence/operations
+  files. Free space rose from 20.37 GB to 20.56 GB. Current/rollback source and all
+  production/foreign images remain protected; source dry run found zero targets.
+- All 7,862 CVs, 23 HR tables, 237 backup/pointer files, four cold archive/manifest
+  files, 51 volumes, 27 container and 11 native service identities verified.
+  Zero new AI calls; no app rebuild/restart or logo/UI/core changes. Utilization
+  remains near 80%; detailed proof and limitations are recorded in
+  `docs/QA_IMAGE_CLEANUP_2026-11-15.md`.
+
+## v2026.11.15.4 - 2026-11-15
+
+### Lossless Cold Backup Consolidation
+
+- Add an operations-only, dry-run-first cold archival tool. Keep baseline and
+  recent recovery sets, reject runtime references, mounts, links, genuine CV
+  formats and recent writes, and require an explicitly reviewed plan digest.
+- Verify all archive bytes/metadata and an isolated restore before removing
+  source copies. Leave recovery pointers and retain a self-contained manifest.
+  Coordinate with retention locking; use bounded CPU/memory and idle I/O.
+- No application image rebuild, restart, AI generation, UI/logo or core behavior
+  change. Applied the reviewed operations tool without changing runtime `2f762d8`.
+- Reclaimed a measured net 1,658,961,920 bytes (1.66 GB) across the VPS, including
+  the new archives: free space rose from 18.71 GB to 20.37 GB. Preserve all bytes
+  from 50 old backup/test sets in verified archives and purge only pip downloads.
+- All 7,862 CV originals, 23 HR tables, 576 SmartHR backup files, 11 other-app DB
+  snapshots, 27 container identities and 11 native service identities verified.
+  Both independent archive/restore checks and 28 local / 16 Linux tests passed.
+  No new AI calls. An unrelated DB's normal timer writes are explicitly reviewed,
+  not misreported as byte-identical live data. Disk remains near 80.2% used.
+- Recovery procedure, measured savings, preservation evidence, other-app review
+  and same-host backup limitations are recorded in
+  `docs/ACTUAL_VPS_SPACE_REDUCTION_2026-11-15.md`.
+
+## v2026.11.15.3 - 2026-11-15
+
+### Complete Zero-Result Token Reporting
+
+- Persist the existing token summary and elapsed worker time for both empty-scope
+  and post-preparation zero-hit completion. Cached/unused preparation reports
+  actual zero usage; a billed preparation is no longer hidden by an early return.
+- Add durable persistence and status/results-handler regressions for empty scope,
+  empty retrieval, raw-query fallback, folder rejection and cached preparation.
+  Retrieval, prompts, scorecard signatures, scoring, logo and UI remain unchanged.
+- Reviewed cleanup and live provider-ledger verification are recorded in
+  `docs/ZERO_RESULT_USAGE_SAFE_CLEANUP_2026-11-15.md`.
+- Deployed `2f762d8` after 1,264 tests per provider configuration, 27 frontend
+  suites, three isolated browser workflows and restore/recreation gates. Two
+  live zero-result paths reported exact ledger totals: 1,174 preparation tokens
+  and zero for empty scope. Public task-authentication guards passed.
+- Reclaimed 57,556,992 bytes of redundant source/transfer files around cleanup.
+  All 7,862 CV originals, complete index rows, 575 backup files and unrelated
+  apps were preserved. No images/volumes were pruned. Disk remains at 81.74%;
+  retained rollout growth means cleanup savings are not net whole-VPS savings.
+
+## v2026.11.15.2 - 2026-11-15
+
+### Reviewed-Plan Cleanup And Additional Role Acceptance
+
+- Bind release-source cleanup to an explicitly reviewed dry-run digest. Refuse
+  changed targets, receipt evidence or container identities before deletion.
+  Retain CVs, private configuration, backups, active/mounted releases, rollback
+  source snapshots and all Docker resources. No global pruning.
+- Add cleanup regressions for missing approval, modified receipts, newly eligible
+  releases and successful unchanged plans. Application code, logo, UI, strict
+  criteria and scoring are unchanged.
+- Additional live role searches, source validation, API usage and actual cleanup
+  evidence are recorded in `docs/ADDITIONAL_ROLES_SAFE_CLEANUP_2026-11-15.md`.
+- Deployed `7bdd1d0` after 1,260 backend tests per provider configuration and
+  restore/recreation gates. Twenty-seven frontend suites and seven live jobs
+  passed; the HR search returned ten fresh scorecards and exact credential/skill
+  negatives stayed excluded. A warm networking repeat used zero new tokens.
+- Removed eight verified redundant source artifacts, reclaiming 174,645,248 bytes
+  around the cleanup step. All 7,862 original CVs, immutable index fields, 116
+  backup files and unrelated containers were preserved. Disk remains at 80.52%.
+- Measured real-provider acceptance: 40 successful calls / 126,739 tokens; no
+  provider failures. Missing zero-hit task summaries are not counted as free:
+  totals use the provider ledger. No application/scoring/UI changes were made.
+
+## v2026.11.15.1 - 2026-11-15
+
+### Role Context For Full Job-Description Searches
+
+- Correct an overly restrictive email lookup found against real indexed data:
+  use the explicit role for email context without requiring the message to repeat
+  every requested city, year and skill. Keep the original CV lexical query and
+  hard eligibility rules unchanged, including raw-query fallback scope.
+  Role lookup supplements rather than replaces existing email-query matches.
+- Ground contradictory indexed cities in unambiguous CV contact-header evidence
+  and allow supplemental header retrieval. Ignore employer/client/preferences
+  and preserve equivalent location precision. No reindex, file or row rewrite.
+- Retain generic-title behavior and add bounded completion counters for context
+  matches/cache hits. No body text is exposed or sent to a paid model.
+- Add request, SQL and durable-worker regressions. Preserve the logo, UI, HR
+  scoring weights and original files. Real-provider acceptance, cost deltas and
+  deployment evidence are recorded in
+  `docs/REAL_EMAIL_SCORECARD_ACCEPTANCE_2026-11-15.md`.
+- Deployed runtime `8a00d3a` after 1,256 backend tests per provider configuration,
+  27 frontend suites, three isolated browser workflows and restore/recreation gates.
+  Thirteen live queue jobs verified ten-result accounting ranking, strict city
+  rejection, correct-city recovery, cache reuse and four zero-cost empty scopes.
+  Measured real-provider usage: 23 calls / 38,871 tokens; no provider failures.
+  All 7,862 original CVs and immutable index/context fields were preserved.
+
+## v2026.11.14.8 - 2026-11-14
+
+### Provenance-Aware Email Retrieval And Conservative Cleanup
+
+- Persist bounded, cleaned email context separately from CV text/embeddings and
+  qualifications. Search eligible single-CV messages through a local text index
+  using the same tenant/folder/tag/date scope and existing retrieval weights.
+- Keep quoted/shared-message text out of contextual ranking; keep all email text
+  out of candidate profile facts, snippets and AI scorecard prompts. Preserve
+  strict criteria, HR scoring weights, logo, layouts and original files.
+- Add dry-run-first, hash-verified redundant release-source cleanup. Never prune
+  globally or remove genuine CVs, backups, private configuration, active/mounted
+  releases, Docker resources or another application's files.
+- Add deterministic accuracy/negative-attribution and cleanup safety fixtures.
+  Actual rollout, historical-context recovery and reclaimed bytes are recorded
+  in `docs/EMAIL_CONTEXT_ACCEPTANCE_2026-11-14.md` after verification.
+- Deployed final runtime `7225954` after 1,243 tests passed per provider
+  configuration, 27 frontend suites, three isolated browser workflows and a
+  verified 23-table/context restore plus persistent-volume recreation rehearsal.
+- Recovered context for all 3,862 verified 2026 mailbox CVs using exact attachment
+  identities; 3,538 single-CV messages support local matching, while 324 shared
+  contexts stay non-searchable without excluding those CVs from normal search.
+  All 7,862 original file hashes remain intact; no paid AI calls were added.
+- Reclaimed 740.11 MiB from 36 verified redundant source artifacts, preserving
+  98 backup hashes and all other containers. Corrected mount-order comparison
+  before deletion and retained real-change guards. No global Docker pruning.
+- Final live stored-vector scope probes had no leaks; 32 concurrent retrievals
+  had zero errors and 166.90 ms p95. This is not full AI response time. Disk use
+  remains around 80.20% and is still monitored as a warning.
+
+## v2026.11.14.7 - 2026-11-14
+
+### Bounded Operations And Local Chart Reliability
+
+- Self-host the currently resolved Chart.js 4.6.1 build with exact-byte integrity
+  verification and its license. Remove the unused script origin without changing
+  charts, scores, application branding or layout.
+- Prepare local search schema before readiness with bounded lock/statement time.
+  Keep all retrieval modes free of request-time DDL and schema commits.
+- Add SmartHR-only resource/log policies, local state-change monitoring and a
+  persistent-volume recreation rehearsal for guarded application/database rollout.
+  No Docker-daemon restart, global pruning, external alerting or backup service.
+- Keep error feedback honest; do not claim support was notified automatically.
+- Preserve provider keys, scoring/eligibility behavior, original CVs and unrelated
+  applications. CI billing and off-site backups are excluded by owner direction.
+  Verification is recorded in `docs/PRODUCTION_GUARDRAILS_2026-11-14.md`.
+- Deployed source `8f76f64` after 1,199 backend tests passed per provider
+  configuration, 27 frontend suites, three isolated browser/API workflows and a
+  verified 23-table restore plus persistent-volume recreation rehearsal. All
+  7,862 referenced original file hashes and 22 unrelated containers are intact.
+- Ten live read-only folder/tag/date cases passed without scope leaks; a
+  four-worker, 32-request retrieval probe had zero errors and 116.64 ms p95.
+  This is SQL/vector retrieval, not full AI search or sustained capacity.
+  Installed limits/log rotation and the active local monitor were verified.
+  Health and acceptance checks added no paid AI calls. Existing disk headroom
+  warning remains visible rather than being hidden by cleanup or new thresholds.
+
+## v2026.11.14.6 - 2026-11-14
+
+### Scoped Similar Profiles And Stricter Location Parsing
+
+- Offer an explicit "Search for similar candidates" action after a genuine
+  zero-result exact search. Show local indexed profile suggestions separately,
+  label them unverified, and list unmet or unconfirmed requirements. Never pad
+  exact results or invent verified scorecards or match percentages.
+- Retain the original company, folders, tags and received/uploaded date scope.
+  Support all authorized folders without submitting an invalid empty selection;
+  fail closed for explicit empty selections. No paid AI calls for suggestions.
+- Correct location parsing before numeric experience requirements and stop
+  treating a role preceding "based in" as a location. Treat recognized legacy
+  address-parser job-duty artifacts as unknown, not as proof of a wrong city.
+  Retain final full-document eligibility checks and ranking weights.
+- Add scope, authentication, CSRF, validation, escaping, stale-response,
+  desktop/mobile and SQL regressions. Preserve the logo, existing search UI,
+  candidate data, original files and core scoring functionality.
+- Follow independent review with live-context-only offers, indexed-profile
+  parity when advanced ranking is disabled, tenant-prefiltered ANN previews,
+  disconnect checks, local inference capacity limits and preview SQL deadlines.
+- Keep preview retrieval read-only; remove first-use request-time schema DDL
+  that can contend with concurrent read snapshots. Preserve normal search setup.
+- Verification and deployment evidence are recorded in
+  `docs/STRICT_SEARCH_SIMILAR_ACCEPTANCE_2026-11-14.md`.
+- Final source `fd9cdae` deployed after 1,182 tests passed per runtime provider
+  configuration, 26 frontend suites, isolated desktop/mobile workflows and a
+  verified 23-table restore. Real strict ten-request searches returned 1/0/0/10;
+  final local similar/filter probes added no paid calls. Logo, original CVs,
+  strict score weights, business records and unrelated VPS applications retained.
+
+## v2026.11.14.5 - 2026-11-14
+
+### Clear Stale Search Actions And Clean Outreach Role Prefills
+
+- Replace an old result count with a pending label and remove its export action
+  when a new search starts. Clear the candidate-list progress state on failure;
+  preserve actual counts/results during repeated cleanup and restore export
+  normally when new verified results arrive.
+- Stop copying explicit skills/requirements clauses into outreach job titles,
+  subjects and generated template text. Preserve literal role punctuation such
+  as .NET, Node.js and Sr., the complete original query and manually edited drafts.
+- Preserve complete role names in the title helper and bound fallback keywords
+  to actual words: Data Analyst must not become Data, and required/recruitment
+  must not accidentally classify an HR search as UI/UX. Preserve punctuation in
+  framework names. No role requirement, score weight or eligibility rule changes.
+- Add DOM regressions for loading, failure cleanup, detached views and prefills.
+  No search, scoring, ranking, filtering, token limit, logo or layout changes.
+- Extend controlled real-provider acceptance to HR recruitment (ten exact
+  matches), data analysis (four) and sales management (one), each requesting ten
+  candidates. Retain truthful shortfalls and private source evidence. Runtime
+  gates and post-deploy observations are recorded in
+  `docs/EXPANDED_ROLE_DESKTOP_ACCEPTANCE_2026-11-14.md`.
+- Deployed final source `1d881e2` after 1,152 backend tests passed in each runtime
+  configuration, 25 frontend suites and verified 23-table restore/restart gates.
+  Real corrected-role searches returned 10/4/1 exact matches, all within scope;
+  the identical ten-result HR repeat reused all scores in 2.60 seconds. Empty
+  folder/date scopes blocked cached results without AI calls. Original logo,
+  layout, CVs, business records and unrelated applications were preserved.
+
+## v2026.11.14.4 - 2026-11-14
+
+### Recover Explicit Skills From Partial Search Profiles
+
+- A controlled real design search reproduced a false negative: a CV explicitly
+  listed Adobe Illustrator, but its partial indexed skill vocabulary omitted it.
+- Supplement retrieval profiles with only explicitly requested skills found in
+  the existing CV text using the shared bounded skill matcher. Apply the same
+  evidence fallback in scoped PostgreSQL supplemental retrieval so those CVs do
+  not depend solely on the initial semantic pool. No reindexing or paid AI is
+  required for this check; full-document AI verification still decides eligibility.
+- Preserve boolean requirements, location/experience rejection, tenant/folder/
+  tag/date scope, score weights, result-count shortfalls, logo and UI.
+- Add partial-index, boolean, token-boundary, final-verification and real SQL
+  parity regressions. Local checks: 108 focused tests, 30 PostgreSQL tests and
+  the opt-in desktop/mobile search workflow passed. Full runtime and deployment
+  acceptance are recorded in
+  `docs/AI_MULTIROLE_TEN_CANDIDATE_ACCEPTANCE_2026-11-14.md`.
+- Real accounting acceptance returned ten supported matches; its cached repeat
+  retained all ten scores and reduced measured tokens from 77,343 to 1,138.
+  These are bounded sample measurements, not population-wide accuracy claims.
+- Deployed code `49e4f85` after 1,152 tests passed in each production-runtime
+  provider configuration and a verified 23-table backup restore. The real design
+  rerun recovered the intended match. Accounting retained ten identical cached
+  scorecards after restart and on mobile; post-deploy exclusions still returned
+  zero. Original files, unrelated apps, logo, layout and scoring rules preserved.
+
+## v2026.11.14.3 - 2026-11-14
+
+### Ground Scorecard Facts And Employment Dates
+
+- Stop forcing invented skills, tools and certifications into empty keyword
+  categories. Extract the job's stated competencies using the same JSON shape;
+  retain broad-title core competencies and separate semantic search expansion.
+  This removes misleading required-keyword gaps and unnecessary matching tokens.
+- Keep the date-period label synchronized when reopening search filters or
+  editing dates in another mounted view. Preserve date presets and custom-range
+  labels without changing the backend filter payload or visual layout.
+- Real-provider review recovered both intended matches after the alias fix but
+  exposed a stale assumed reference year and an unsupported promotion claim.
+- Prefix direct and split scorecard generation with a trusted UTC reference
+  month and source-grounding rules. Resolve Present/Current against that month,
+  do not invent candidate facts and label future retention as uncertain.
+- Include the exact grounding context in the existing scorecard prompt hash.
+  Reuse remains available within the month; older ungrounded or different-month
+  assessments cannot masquerade as a current grounded cache hit.
+- Preserve all job/CV input text, scoring weights, ranking, filters, schema,
+  logo and UI. Existing inference can still be uncertain; this is not a claim
+  of error-free hiring predictions. Real acceptance and usage are recorded in
+  PR #1 after the gated deployment and controlled rerun.
+
+## v2026.11.14.2 - 2026-11-14
+
+### Recognize Equivalent JavaScript Framework Skill Names
+
+- A bounded real-provider search exposed false-negative retrieval: indexed
+  `node` did not satisfy an explicit `Node.js` requirement. Recognize Node,
+  Node.js, NodeJS and Node JS consistently in the shared Python/PostgreSQL skill
+  pattern, and do the equivalent for React/React.js/ReactJS/React JS.
+- Use those same patterns when extracting the two framework names locally.
+  Reject generic multi-node network text, reactive programming, node_modules
+  and longer similarly named tokens; preserve sentence-final punctuation.
+- Add fictional positive/negative and real PostgreSQL parity regressions.
+  Do not change scoring prompts, ranking weights, requested-count semantics,
+  tenant/folder/tag/date filters, logo, layout or production schema.
+- Full runtime verification, the controlled real-provider rerun, observed token
+  usage and source/image mapping are recorded with the deployment in PR #1.
+
+## v2026.11.14.1 - 2026-11-14
+
+### Reuse Exact Job Preparation And Preserve Invalid Search Drafts
+
+- Reuse successful keyword/query preparation across verified recruiters in the
+  same company for an identical complete job description and provider/model.
+  Keep the existing bounded 15-minute in-process cache and per-user boundaries
+  for documents, candidate matching and super-admin preparation. Repeated team
+  searches can avoid two preparation calls; candidate scoring is unchanged.
+- Validate folder/tag/date scope before starting search animations or clearing
+  either composer. Invalid selections retain the query and editable form instead
+  of replacing them with a generic search failure. Backend validation remains.
+- Add an opt-in desktop/mobile browser-to-API-to-worker-to-PostgreSQL scope test
+  using real fictional DOCX ingestion, mocked Graph/provider responses and local
+  deterministic vectors. Cover received/uploaded dates, multi-folder/tag scope,
+  filter-dialog follow-up searches, empty results and invalid selections.
+- Verify ten read-only live retrieval cohorts without model inference or paid
+  AI calls. No logo, layout, ranking, scoring prompt, threshold or schema change.
+  See `docs/SEARCH_SCOPE_VERIFICATION_2026-11-14.md` for evidence and boundaries;
+  actual deployment and full runtime results are recorded in GitHub PR #1.
+
+## v2026.11.13.1 - 2026-11-13
+
+### Correct Recent Search And Indexing Regressions
+
+- Restore storage-key identity in the local resume index. Original filenames
+  remain in upload/library records; unique stored filenames continue to drive
+  vector identities, download paths and received/uploaded-date metadata joins.
+  This prevents same-named CVs from overwriting another CV's index record.
+- Use the recruiter's original query for local hard-criteria preselection and
+  profile ranking, independently of the AI-optimized semantic query. Preserve
+  tenant, folder, tag and date restrictions through both retrieval paths.
+- Bind search results, errors and progress to the originating workspace view.
+  Ignore stale responses after newer searches, navigation or identity changes;
+  retain exact-request coalescing with progress for every waiting consumer.
+- Version cached scorecards against the actual keyword set, auxiliary prompts
+  and normalized provider/model selection. Older cache signatures are bypassed;
+  changed assessment inputs may require fresh paid scoring on the next search.
+- Add real PostgreSQL/file regression coverage for same-named CVs, Graph import
+  dates and original criteria outside the rewritten query's nearest-neighbor
+  pool. Keep oversized fixture IDs bounded and validation tests portable.
+- Verification and deployment status are recorded in the release commit.
+  This is a source-only release, not a live deployment or provider acceptance.
+
 ## v2026.11.11.6 - 2026-11-11
 
 ### Keep The Job Page Form Scrollable

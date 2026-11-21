@@ -1,0 +1,13 @@
+* { box-sizing: border-box; }
+body { margin: 0; font: 1rem/1.5 system-ui, sans-serif; color: #152326; background: #f7f9f8; }
+main { max-width: 46rem; margin: 2.5rem auto; padding: 0 1.25rem; }
+h1 { font-size: 1.5rem; }
+form { display: grid; gap: .75rem; justify-items: start; padding: 1rem 0; border-block: 1px solid #cdd7d3; }
+label { font-weight: 600; }
+input { max-width: 100%; }
+button { padding: .65rem 1rem; border: 0; border-radius: .375rem; background: #136952; color: white; font: inherit; }
+button:disabled { opacity: .6; }
+:focus-visible { outline: 2px solid #167b60; outline-offset: 3px; }
+p { color: #435753; }
+ul { padding-inline-start: 1.25rem; overflow-wrap: anywhere; }
+li { margin-block: .5rem; }

@@ -1,0 +1,22 @@
+{
+  "name": "smarthr-local-upload-pilot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare-assets": "node assets.mjs",
+    "start": "node server.mjs",
+    "test": "node verify.mjs",
+    "benchmark": "node benchmark.mjs",
+    "verify-handoff": "node verify-handoff.mjs",
+    "verify-managed-worker": "node verify-managed-worker.mjs",
+    "verify-pipeline": "node verify-pipeline.mjs"
+  },
+  "dependencies": {
+    "@huggingface/tokenizers": "0.2.0",
+    "onnxruntime-web": "1.31.1",
+    "playwright": "1.65.1"
+  },
+  "devDependencies": {
+    "onnxruntime-node": "1.31.1"
+  }
+}

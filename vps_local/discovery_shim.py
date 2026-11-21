@@ -14,9 +14,13 @@ Surface implemented (only what main.py touches):
 """
 from __future__ import annotations
 import os
+import json
+import logging
+import math
 import mimetypes
 import re
 import threading
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from collections import OrderedDict
 from pathlib import Path
@@ -98,9 +102,14 @@ class SearchRequest:
     def __init__(self, *, serving_config: str = "", query: str = "",
                  page_size: int = 10, content_search_spec=None,
                  query_expansion_spec=None, spell_correction_spec=None,
-                 filter: str = "", folder_filters=None, resume_filters=None, **kwargs):
+                 filter: str = "", folder_filters=None, resume_filters=None,
+                 criteria_query=None, email_context_query=None, **kwargs):
         self.serving_config = serving_config
         self.query = query
+        self.criteria_query = criteria_query
+        if email_context_query is not None and (not isinstance(email_context_query, str) or len(email_context_query) > 250):
+            raise ValueError('Invalid email context query')
+        self.email_context_query = email_context_query
         self.page_size = page_size
         self.content_search_spec = content_search_spec
         self.query_expansion_spec = query_expansion_spec
@@ -178,6 +187,7 @@ class _SearchResponse:
 _db_pool_singleton = None
 _db_pool_lock = threading.Lock()
 _advanced_schema_ensured = False
+_schema_lock = threading.Lock()
 _query_embedding_cache: OrderedDict[str, List[float]] = OrderedDict()
 _query_embedding_cache_lock = threading.Lock()
 
@@ -228,6 +238,29 @@ def warm_search_runtime() -> None:
     _embed_query("startup warmup query")
 
 
+def initialize_search_schema() -> None:
+    """Run bounded schema setup before serving requests, not during retrieval."""
+    global _advanced_schema_ensured
+    with _schema_lock:
+        if _advanced_schema_ensured:
+            return
+        pool = _get_pool()
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET LOCAL lock_timeout = '5000ms'")
+                cur.execute("SET LOCAL statement_timeout = '30000ms'")
+                _ensure_advanced_search_schema(cur)
+            conn.commit()
+            _advanced_schema_ensured = True
+        except Exception:
+            _advanced_schema_ensured = False
+            conn.rollback()
+            raise
+        finally:
+            pool.putconn(conn)
+
+
 def _vec_lit(vec: List[float]) -> str:
     return "[" + ",".join(f"{x:.6f}" for x in vec) + "]"
 
@@ -247,11 +280,14 @@ def _ensure_advanced_search_schema(cur) -> None:
         "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS search_tags TEXT[] NOT NULL DEFAULT '{}'",
         "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS source_uploaded_at TIMESTAMP",
         "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS source_received_at TIMESTAMPTZ",
+        "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS source_email_context TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE resume_embeddings ADD COLUMN IF NOT EXISTS source_email_metadata JSONB",
         "CREATE INDEX IF NOT EXISTS idx_resume_emb_candidate_years ON resume_embeddings(candidate_years)",
         "CREATE INDEX IF NOT EXISTS idx_resume_emb_candidate_location ON resume_embeddings(candidate_location)",
         "CREATE INDEX IF NOT EXISTS idx_resume_emb_candidate_languages ON resume_embeddings USING gin(candidate_languages)",
         "CREATE INDEX IF NOT EXISTS idx_resume_emb_candidate_skills ON resume_embeddings USING gin(candidate_skills)",
         "CREATE INDEX IF NOT EXISTS idx_resume_emb_text_fts ON resume_embeddings USING gin(to_tsvector('simple', coalesce(extracted_text, '')))",
+        "CREATE INDEX IF NOT EXISTS idx_resume_emb_email_fts ON resume_embeddings USING gin(to_tsvector('simple', source_email_context)) WHERE source_email_metadata->>'association' = 'single_resume' AND source_email_metadata->>'purpose' = 'retrieval_only'",
     ]
     for stmt in statements:
         cur.execute(stmt)
@@ -302,8 +338,8 @@ def _criteria_sql_where(criteria) -> tuple[str, list[Any]]:
     if location_terms:
         loc_clauses = []
         for term in location_terms:
-            loc_clauses.append("candidate_location ILIKE %s")
-            params.append(f"%{term}%")
+            loc_clauses.append("(candidate_location ILIKE %s OR left(coalesce(extracted_text,''),800) ILIKE %s)")
+            params.extend([f"%{term}%", f"%{term}%"])
         clauses.append("(" + " OR ".join(loc_clauses) + ")")
 
     if criteria.language_expression is not None:
@@ -315,15 +351,15 @@ def _criteria_sql_where(criteria) -> tuple[str, list[Any]]:
             clauses.append("%s = ANY(candidate_languages)")
             params.append(language)
 
-    skill_sql="EXISTS (SELECT 1 FROM unnest(candidate_skills) s WHERE s ~* %s)"
+    skill_sql = "(EXISTS (SELECT 1 FROM unnest(candidate_skills) s WHERE s ~* %s) OR extracted_text ~* %s)"
     if criteria.skill_expression is not None:
         clause,values=requirements_logic.sql(criteria.skill_expression,
-            lambda term:(skill_sql,[_skill_pattern(term)]))
+            lambda term:(skill_sql,[_skill_pattern(term), _skill_pattern(term)]))
         clauses.append(clause);params.extend(values)
     else:
         for skill in criteria.required_skills:
             clauses.append(skill_sql)
-            params.append(_skill_pattern(skill))
+            params.extend([_skill_pattern(skill), _skill_pattern(skill)])
 
     return " AND ".join(clauses), params
 
@@ -345,17 +381,24 @@ def _row_tuple_to_dict(r) -> Dict[str, Any]:
         "candidate_skills": list(r[12] or []),
         "profile_source": r[13] or "",
         "storage_bucket": r[14],
+        "email_context_match": bool(r[15]) if len(r) > 15 else False,
     }
 
 
-def _rank_rows(rows: list[Dict[str, Any]], query: str, page_size: int) -> list[Dict[str, Any]]:
-    criteria = parse_search_criteria(query)
+def _rank_rows(rows: list[Dict[str, Any]], query: str, page_size: int,
+               criteria_query=None) -> list[Dict[str, Any]]:
+    criteria = parse_search_criteria(query if criteria_query is None else criteria_query)
     if criteria.is_empty():
+        if any(row.get('email_context_match') for row in rows):
+            for row in rows:
+                row['vector_score'] = float(row.get('score') or 0.0)
+                row['score'] = _hybrid_score(row['vector_score'], row.get('lexical_score') or 0.0)
+            rows.sort(key=lambda row: (row['score'], row['vector_score']), reverse=True)
         return rows[:page_size]
 
     ranked = []
     for row in rows:
-        profile = profile_from_row(row)
+        profile = profile_from_row(row, required_skills=criteria.required_skills)
         ev, status = evaluate_profile(profile, criteria)
         row["candidate_profile"] = profile
         row["criteria_match_preview"] = ev
@@ -372,7 +415,7 @@ def _rank_rows(rows: list[Dict[str, Any]], query: str, page_size: int) -> list[D
         if ev.get("hard_fail"):
             profile_bonus = -1.25
 
-        row["score"] = (0.68 * vector_score) + (0.20 * lexical_score) + (0.12 * profile_bonus)
+        row["score"] = _hybrid_score(vector_score, lexical_score, profile_bonus)
         row["vector_score"] = vector_score
         row["hybrid_lexical_score"] = lexical_score
         ranked.append(row)
@@ -390,6 +433,56 @@ def _rank_rows(rows: list[Dict[str, Any]], query: str, page_size: int) -> list[D
     if len(exact) >= page_size:
         return exact[:page_size]
     return (exact + unknown)[:page_size]
+
+
+def _hybrid_score(vector_score, lexical_score, profile_bonus=0.0):
+    return (0.68 * vector_score) + (0.20 * min(float(lexical_score), 1.0)) + (0.12 * profile_bonus)
+
+
+def _add_email_context_rows(cur, rows, *, query, qvec, scope_sql, scope_params, limit, email_query=None):
+    # Email text only broadens retrieval. Profiles, snippets and final scorecards
+    # remain CV-only; quoted/shared-message text cannot establish eligibility.
+    context_query = email_query.strip() if isinstance(email_query, str) else ''
+    if context_query.casefold() in {'', 'position', 'the role', 'candidate', 'candidates'}:
+        context_query = query
+    context_query = context_query[:1000]
+    cur.execute(
+        f"""SELECT id, filename, folder, file_size, content_type,
+                   extracted_text, text_length, 1 - (embedding <=> %s::vector) AS vector_score,
+                   GREATEST(ts_rank_cd(to_tsvector('simple', coalesce(extracted_text, '')),
+                                       websearch_to_tsquery('simple', %s)),
+                            ts_rank_cd(to_tsvector('simple', source_email_context),
+                                       websearch_to_tsquery('simple', %s)),
+                            ts_rank_cd(to_tsvector('simple', source_email_context),
+                                       websearch_to_tsquery('simple', %s))) AS lexical_score,
+                   candidate_years, candidate_location, candidate_languages,
+                   candidate_skills, profile_source, storage_bucket, TRUE AS email_context_match
+            FROM resume_embeddings
+            WHERE embedding IS NOT NULL AND {scope_sql}
+              AND source_email_metadata->>'association' = 'single_resume'
+              AND source_email_metadata->>'purpose' = 'retrieval_only'
+              AND to_tsvector('simple', source_email_context) @@
+                  (websearch_to_tsquery('simple', %s) || websearch_to_tsquery('simple', %s))
+            ORDER BY GREATEST(ts_rank_cd(to_tsvector('simple', source_email_context),
+                                        websearch_to_tsquery('simple', %s)),
+                              ts_rank_cd(to_tsvector('simple', source_email_context),
+                                        websearch_to_tsquery('simple', %s))) DESC,
+                     embedding <=> %s::vector, id
+            LIMIT %s""",
+        (_vec_lit(qvec), query[:1000], query[:1000], context_query, *scope_params,
+         query[:1000], context_query, query[:1000], context_query, _vec_lit(qvec), int(limit)),
+    )
+    by_id = {row['id']: row for row in rows}
+    for value in cur.fetchall():
+        row = _row_tuple_to_dict(value)
+        existing = by_id.get(row['id'])
+        if existing is None:
+            rows.append(row)
+            by_id[row['id']] = row
+        else:
+            existing['email_context_match'] = True
+            existing['lexical_score'] = max(float(existing.get('lexical_score') or 0), row['lexical_score'])
+    return rows
 
 
 def _extract_text_from_file(path: Path) -> str:
@@ -446,18 +539,42 @@ class IndexOperation:
     error_code: str = ""
 
 
-def _upsert_document_embedding(document: Document, document_id: str = "") -> IndexOperation:
+MAX_RESUME_EMBED_BATCH = 8
+
+
+@dataclass(frozen=True)
+class _IndexEntry:
+    path: Path
+    filename: str
+    folder: str
+    storage_bucket: str
+    content_type: str
+    company_id: Optional[int]
+    text: str
+    email_context: Any
+
+    @property
+    def searchable(self) -> bool:
+        return bool(self.text and len(self.text) >= 30)
+
+
+def _prepare_document_embedding(document: Document) -> Optional[_IndexEntry]:
     content = getattr(document, "content", None)
     uri = getattr(content, "uri", "") if content else ""
     key, candidates = _paths_for_uri(uri)
     path = next((p for p in candidates if p.is_file()), None)
     if path is None:
-        return IndexOperation("local/operations/create_document_missing_file", error_code="source_missing")
+        return None
 
     text = _extract_text_from_file(path)
     struct = document.struct_data or {}
-    display_filename = struct.get("filename")
-    filename = Path(display_filename).name if isinstance(display_filename, str) and display_filename else Path(key or path.name).name
+    email_context = None
+    if struct.get('source_email') is not None:
+        from services.email_context import validated_context
+        email_context = validated_context(struct['source_email'])
+    # This column is storage identity, not a label: metadata joins, conflict keys
+    # and search-result URIs must all refer to the actual stored object.
+    filename = Path(key or path.name).name
     folder = Path(key).parent.as_posix() if key and len(Path(key).parts) > 1 else ""
     storage_bucket = urlparse(uri).netloc
     ctype = (getattr(content, "mime_type", "") if content else "") or mimetypes.guess_type(str(path))[0] or path.suffix.lstrip(".")
@@ -470,13 +587,19 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> Ind
     except Exception:
         company_id = None
 
-    profile = profile_from_text(text, source="text_incremental")
-    vec = _embed_query(text) if text and len(text) >= 30 else None
+    return _IndexEntry(path, filename, folder, storage_bucket, ctype, company_id, text, email_context)
 
-    pool = _get_pool()
-    conn = pool.getconn()
+
+def _write_document_embedding(entry: _IndexEntry, vec: Optional[List[float]], document_id: str = "", *, cursor=None) -> IndexOperation:
+    path, filename, folder = entry.path, entry.filename, entry.folder
+    storage_bucket, ctype, company_id = entry.storage_bucket, entry.content_type, entry.company_id
+    text, email_context = entry.text, entry.email_context
+    profile = profile_from_text(text, source="text_incremental")
+
+    pool = _get_pool() if cursor is None else None
+    conn = pool.getconn() if pool is not None else None
     try:
-        with conn.cursor() as cur:
+        with (conn.cursor() if conn is not None else nullcontext(cursor)) as cur:
             _ensure_advanced_search_schema(cur)
             if vec is not None:
                 cur.execute(
@@ -549,17 +672,94 @@ def _upsert_document_embedding(document: Document, document_id: str = "") -> Ind
             cur.execute('''UPDATE resume_embeddings SET search_tags=%s
                 WHERE storage_bucket=%s AND folder=%s AND filename=%s AND company_id IS NOT DISTINCT FROM %s''',
                         (tags_from_text(text), storage_bucket, folder, filename, company_id))
-        conn.commit()
+            if email_context is not None:
+                context_text, metadata = email_context
+                cur.execute('''UPDATE resume_embeddings SET source_email_context=%s,source_email_metadata=%s::jsonb
+                    WHERE storage_bucket=%s AND folder=%s AND filename=%s AND company_id IS NOT DISTINCT FROM %s''',
+                            (context_text, json.dumps(metadata), storage_bucket, folder, filename, company_id))
+        if conn is not None:
+            conn.commit()
     except Exception:
-        conn.rollback()
+        if conn is not None:
+            conn.rollback()
         raise
     finally:
-        pool.putconn(conn)
+        if pool is not None:
+            pool.putconn(conn)
     return IndexOperation(
         f"local/operations/create_document_{document_id or filename}",
         indexed=vec is not None,
         error_code="" if vec is not None else "no_searchable_text",
     )
+
+
+def _index_failure(code: str) -> IndexOperation:
+    return IndexOperation(f"local/operations/create_document_{code}", error_code=code)
+
+
+def _upsert_document_embedding(document: Document, document_id: str = "") -> IndexOperation:
+    entry = _prepare_document_embedding(document)
+    if entry is None:
+        return IndexOperation("local/operations/create_document_missing_file", error_code="source_missing")
+    return _write_document_embedding(entry, _embed_query(entry.text) if entry.searchable else None, document_id)
+
+
+def _batch_embeddings(texts):
+    model = vertexai_shim.language_models.TextEmbeddingModel.from_pretrained('all-MiniLM-L6-v2')
+    results = [result.values for result in model.get_embeddings(texts)]
+    if len(results) != len(texts) or any(len(vec) != 384 or not all(map(math.isfinite, vec)) for vec in results):
+        raise ValueError('Invalid resume embedding batch output')
+    return results
+
+
+def embed_resume_entries(entries):
+    """Canonical embeddings before an atomic managed-worker fallback commit."""
+    ready = [i for i, entry in enumerate(entries) if entry is not None and entry.searchable]
+    vectors = [None] * len(entries)
+    if len(ready) > 1:
+        try:
+            for i, vector in zip(ready, _batch_embeddings([entries[i].text for i in ready]), strict=True):
+                vectors[i] = vector
+            return vectors
+        except Exception as exc:
+            logging.getLogger(__name__).warning('Resume batch embedding fell back: %s', type(exc).__name__)
+    for i in ready:
+        vectors[i] = _embed_query(entries[i].text)
+    return vectors
+
+
+def index_resume_batch(documents: list[Document]) -> list[IndexOperation]:
+    """Embed a bounded group while retaining independent results and writes."""
+    if not 1 <= len(documents) <= MAX_RESUME_EMBED_BATCH:
+        raise ValueError('Invalid local resume batch size')
+    outcomes = [_index_failure('indexing_failed')] * len(documents)
+    entries = {}
+    for i, document in enumerate(documents):
+        try:
+            entry = _prepare_document_embedding(document)
+            if entry is None:
+                outcomes[i] = _index_failure('source_missing')
+            else:
+                entries[i] = entry
+        except Exception as exc:
+            logging.getLogger(__name__).warning('Batch resume preparation failed: %s', type(exc).__name__)
+
+    ready = [i for i, entry in entries.items() if entry.searchable]
+    vectors = {}
+    if len(ready) > 1:
+        try:
+            results = _batch_embeddings([entries[i].text for i in ready])
+            vectors = dict(zip(ready, results, strict=True))
+        except Exception as exc:
+            logging.getLogger(__name__).warning('Resume batch embedding fell back: %s', type(exc).__name__)
+
+    for i, entry in entries.items():
+        try:
+            vec = vectors[i] if i in vectors else _embed_query(entry.text) if entry.searchable else None
+            outcomes[i] = _write_document_embedding(entry, vec, documents[i].id)
+        except Exception as exc:
+            logging.getLogger(__name__).warning('Batch resume indexing failed: %s', type(exc).__name__)
+    return outcomes
 
 
 def _tenant_scope(filter_str: str) -> tuple[str, list]:
@@ -572,7 +772,8 @@ def _tenant_scope(filter_str: str) -> tuple[str, list]:
 
 
 def _vector_search(query: str, page_size: int = 10,
-                   filter_str: str = "", folder_filters=None, resume_filters=None) -> List[Dict[str, Any]]:
+                   filter_str: str = "", folder_filters=None, resume_filters=None,
+                   criteria_query=None, profile_preview=False, email_context_query=None) -> List[Dict[str, Any]]:
     """Run pgvector ANN search; return list of dicts shaped like Discovery results."""
     scope_sql, scope_params = _tenant_scope(filter_str)
     from services.resume_folders import folder_sql
@@ -583,8 +784,9 @@ def _vector_search(query: str, page_size: int = 10,
     filtered_sql, filtered_params = filters_sql(resume_filters)
     scope_sql += f' AND ({filtered_sql})'
     scope_params.extend(filtered_params)
+    email_scope_sql, email_scope_params = scope_sql, tuple(scope_params)
     source_sql, source_params = 'resume_embeddings', []
-    if folder_filters or resume_filters:
+    if folder_filters or resume_filters or profile_preview:
         # Rank the complete selected subset. An ANN index can otherwise filter
         # after its global nearest-neighbour pool and miss eligible folder CVs.
         source_sql = f'(SELECT * FROM resume_embeddings WHERE {scope_sql} OFFSET 0) AS scoped_resumes'
@@ -592,15 +794,17 @@ def _vector_search(query: str, page_size: int = 10,
     if not query.strip():
         return []
     qvec = _embed_query(query)
-    criteria = parse_search_criteria(query)
+    criteria = parse_search_criteria(query if criteria_query is None else criteria_query)
     pool_size = _candidate_pool_size(page_size, not criteria.is_empty())
     pool = _get_pool()
     conn = pool.getconn()
     try:
         with conn.cursor() as cur:
+            if profile_preview:
+                cur.execute("SET LOCAL statement_timeout = '10000ms'")
             # Keep the lightweight path for semantic-only searches, but hard
             # criteria require profile evaluation even when hybrid ranking is off.
-            if not ADVANCED_SEARCH_ENABLED and criteria.is_empty():
+            if not ADVANCED_SEARCH_ENABLED and criteria.is_empty() and not profile_preview:
                 cur.execute(
                     f"""
                     SELECT id, filename, folder, file_size, content_type,
@@ -614,7 +818,7 @@ def _vector_search(query: str, page_size: int = 10,
                     (_vec_lit(qvec), *source_params, *scope_params, _vec_lit(qvec), int(page_size or 10)),
                 )
                 rows = cur.fetchall()
-                return [
+                light_rows = [
                     {
                         "id": str(r[0]),
                         "filename": r[1],
@@ -628,9 +832,10 @@ def _vector_search(query: str, page_size: int = 10,
                     }
                     for r in rows
                 ]
-
-            _ensure_advanced_search_schema(cur)
-            conn.commit()
+                light_rows = _add_email_context_rows(cur, light_rows, query=query, qvec=qvec,
+                    scope_sql=email_scope_sql, scope_params=email_scope_params, limit=pool_size,
+                    email_query=email_context_query)
+                return _rank_rows(light_rows, query, int(page_size or 10), criteria_query=criteria_query)
 
             # Cosine distance uses the HNSW vector_cosine_ops index. In
             # advanced mode we pull a deeper semantic pool, add full-text rank
@@ -697,8 +902,12 @@ def _vector_search(query: str, page_size: int = 10,
                     if row[0] not in seen_ids:
                         rows.append(row)
                         seen_ids.add(row[0])
-        row_dicts = [_row_tuple_to_dict(r) for r in rows]
-        return _rank_rows(row_dicts, query, int(page_size or 10))
+            row_dicts = [_row_tuple_to_dict(r) for r in rows]
+            if not profile_preview:
+                row_dicts = _add_email_context_rows(cur, row_dicts, query=query, qvec=qvec,
+                    scope_sql=email_scope_sql, scope_params=email_scope_params, limit=pool_size,
+                    email_query=email_context_query)
+        return _rank_rows(row_dicts, query, int(page_size or 10), criteria_query=criteria_query)
     finally:
         conn.rollback()
         pool.putconn(conn)
@@ -722,6 +931,7 @@ def _row_to_result(row: Dict[str, Any]) -> _Result:
         "candidate_profile": row.get("candidate_profile") or {},
         "criteria_match_preview": row.get("criteria_match_preview") or {},
         "criteria_profile_status": row.get("criteria_profile_status") or "",
+        "email_context_match": bool(row.get('email_context_match')),
     }
     doc = Document(
         id=row["id"],
@@ -743,7 +953,9 @@ class SearchServiceClient:
         rows = _vector_search(query=request.query, page_size=request.page_size,
                               filter_str=getattr(request, "filter", "") or "",
                               folder_filters=getattr(request, 'folder_filters', None),
-                              resume_filters=getattr(request, 'resume_filters', None))
+                              resume_filters=getattr(request, 'resume_filters', None),
+                              criteria_query=getattr(request, 'criteria_query', None),
+                              email_context_query=getattr(request, 'email_context_query', None))
         return _SearchResponse(
             results=[_row_to_result(r) for r in rows],
             total_size=len(rows),

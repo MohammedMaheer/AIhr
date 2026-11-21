@@ -56,6 +56,7 @@ async function run(){
  assert.equal(requests.at(-1).options.body.get('company_id'),'1');
  resolveWrite({ok:false,json:async()=>({detail:'Synthetic rejected request'})});await flush();
  assert(modal.textContent.includes('Synthetic rejected request'));assert.equal(form.querySelector('[type="submit"]').disabled,false);
+ assert.equal(d.activeElement,modal.querySelector('[data-error]'),'Failed admin saves must focus the visible error without losing entered fields');
  modal.querySelector('[data-close]').click();await flush();
  root.querySelector('[data-connections]').click();assert.equal(navigation.at(-1)[0],'settings');
  dispose();root.innerHTML='';w.currentUser={id:9,user_type:'tenant_user'};

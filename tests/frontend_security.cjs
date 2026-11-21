@@ -37,4 +37,40 @@ assert.equal(window.sanitizeGeneratedHtml(safe), safe);
 assert.equal(window.escapeHtml('<CV>'), '&lt;CV&gt;');
 window.DOMPurify = null;
 assert.equal(window.sanitizeGeneratedHtml('<script>bad</script>'), '&lt;script&gt;bad&lt;/script&gt;');
-console.log('11 frontend DOM security checks passed; safe formatting preserved.');
+
+const mainBundle = fs.readFileSync('static/js/main.js', 'utf8');
+assert(!/\beval\s*\(/.test(mainBundle), 'main bundle must not dynamically evaluate handler names');
+const failureStart = mainBundle.indexOf('    function renderSearchFailure(');
+const failureEnd = mainBundle.indexOf('    function handleSendMessage()', failureStart);
+assert(failureStart >= 0 && failureEnd > failureStart, 'search failure renderer must remain independently testable');
+window.eval(mainBundle.slice(failureStart, failureEnd) + ';window.qaRenderSearchFailure = renderSearchFailure;');
+const failureContainer = window.document.createElement('div');
+const injectedMessage = '<img src=x onerror=alert(1)> maximum search limit';
+window.qaRenderSearchFailure(failureContainer, { message: injectedMessage });
+assert.equal(failureContainer.querySelectorAll('img,script').length, 0, 'API error text must not become markup');
+assert(failureContainer.textContent.includes(injectedMessage));
+
+window.document.body.innerHTML = '<div id="results-container"></div>';
+const resultsStart = mainBundle.indexOf('    window.generateEnhancedResults = function (data) {');
+const resultsEnd = mainBundle.indexOf('    // Helper function to extract candidate name', resultsStart);
+assert(resultsStart >= 0 && resultsEnd > resultsStart, 'candidate results renderer must remain independently testable');
+window.eval(mainBundle.slice(resultsStart, resultsEnd));
+window.generateEnhancedResults({
+    results: [],
+    total_results: 0,
+    empty_datastore: true,
+    message: '<img src=x onerror=alert(1)> No resumes uploaded',
+});
+assert.equal(window.document.querySelectorAll('#results-container img,[onerror]').length, 0, 'empty search messages must not become markup');
+assert(window.document.getElementById('results-container').textContent.includes('No resumes uploaded'));
+window.generateEnhancedResults({ results: [], total_results: 0, message: { unexpected: true } });
+assert(window.document.getElementById('results-container').textContent.includes('No resumes found matching your search criteria.'));
+
+const legacyDashboard = fs.readFileSync('templates/dashboard.html', 'utf8');
+const legacyDownloadStart = legacyDashboard.indexOf('        function downloadJD()');
+const legacyDownloadEnd = legacyDashboard.indexOf('        // Save JD as template', legacyDownloadStart);
+const legacyDownload = legacyDashboard.slice(legacyDownloadStart, legacyDownloadEnd);
+assert(legacyDownload.includes('const safeTitle = escapeHtml(jobTitle);'));
+assert(legacyDownload.includes('const safeContent = typeof window.sanitizeGeneratedHtml'));
+assert(!legacyDownload.includes('>${jobTitle}</h1>'));
+console.log('Frontend DOM security checks passed; safe formatting and error boundaries preserved.');

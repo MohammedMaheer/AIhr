@@ -490,7 +490,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <p class="text-sm text-gray-600">Your latest search activities and results</p>
                                 </div>
                                 <div class="flex items-center space-x-2">
-                                    <button onclick="refreshSearchHistory()" aria-label="Refresh recent searches" title="Refresh recent searches" class="text-gray-400 hover:text-gray-600 p-2">
+                                    <button type="button" onclick="refreshSearchHistory(this)" aria-label="Refresh recent searches" title="Refresh recent searches" class="text-gray-400 hover:text-gray-600 p-2">
                                         <i class="fas fa-sync-alt"></i>
                                     </button>
                                     
@@ -1396,13 +1396,75 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    let candidateSearchView = null;
+
+    function beginCandidateSearchView() {
+        const view = {
+            root: document.getElementById('results-area'),
+            identity: JSON.stringify(window.currentUser || null),
+        };
+        candidateSearchView = view;
+        return () => candidateSearchView === view && view.root?.isConnected &&
+            document.getElementById('results-area') === view.root &&
+            JSON.stringify(window.currentUser || null) === view.identity;
+    }
+
+    function renderSearchFailure(container, error) {
+        if (!container) return;
+        const rawMessage = typeof error?.message === 'string' ? error.message : '';
+        const limitReached = rawMessage.toLowerCase().includes('maximum search limit');
+        const escape = window.escapeHtml || ((value) => {
+            const node = document.createElement('div');
+            node.textContent = value == null ? '' : String(value);
+            return node.innerHTML;
+        });
+        const title = limitReached ? 'Search Limit Reached' : 'Oops! Something went wrong';
+        const message = limitReached
+            ? rawMessage
+            : 'We encountered an issue while searching for candidates. Our technical team has been notified and will resolve this shortly.';
+
+        container.innerHTML = `
+            <div class="flex items-center justify-center h-full min-h-[400px]">
+                <div class="text-center max-w-md mx-auto p-8">
+                    <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <i class="fas fa-exclamation-triangle text-red-500 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-4">${escape(title)}</h3>
+                    <p class="text-gray-600 mb-6 leading-relaxed">${escape(message)}</p>
+                    <div class="space-y-3">
+                        <button onclick="location.reload()" class="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">
+                            <i class="fas fa-refresh mr-2"></i>
+                            Try Again
+                        </button>
+                        <p class="text-sm text-gray-500">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            If the problem persists, our support team will be in touch.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function validateCandidateSearchScope() {
+        try {
+            window.ResumeFolders?.validate();
+            return true;
+        } catch (error) {
+            showNotification(error.message, 'warning');
+            return false;
+        }
+    }
+
     function handleSendMessage() {
         const countInput = document.getElementById('result-count');
         if (countInput && !countInput.reportValidity()) return;
+        if (!validateCandidateSearchScope()) return;
         const chatInput = document.getElementById('chat-input');
         const message = chatInput.value.trim();
 
         if (message) {
+            const isCurrentView = beginCandidateSearchView();
 
             // Show the bottom chat container for new searches
             const bottomChatContainer = document.getElementById('bottom-chat-container');
@@ -1415,6 +1477,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Show results area
             setTimeout(() => {
+                if (!isCurrentView()) return;
                 const resultsArea = document.getElementById('results-area');
                 resultsArea.classList.remove('opacity-0', 'pointer-events-none');
                 resultsArea.classList.add('opacity-100');
@@ -1428,8 +1491,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
                 // Try real search first
-                performRealSearch(message)
+                performRealSearch(message, status => {
+                    if (isCurrentView()) window.updateSearchProgress?.(status);
+                })
                     .then(data => {
+                        if (!isCurrentView()) return;
                         hideLoadingMessage();
 
                         // Check if we have valid data (including empty results array)
@@ -1462,42 +1528,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
                         // Ensure proper scrolling after results are added
                         setTimeout(() => {
-                            resultsArea.scrollTop = resultsArea.scrollHeight;
+                            if (isCurrentView()) resultsArea.scrollTop = resultsArea.scrollHeight;
                         }, 100);
                     })
                     .catch(error => {
+                        if (!isCurrentView()) return;
                         console.error('Search failed:', error);
                         hideLoadingMessage();
 
 
 
-                        // Show proper error message instead of mock results
                         const resultsContainerDiv = document.getElementById('results-container');
-                        resultsContainerDiv.innerHTML = `
-                            <div class="flex items-center justify-center h-full min-h-[400px]">
-                                <div class="text-center max-w-md mx-auto p-8">
-                                    <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                                        <i class="fas fa-exclamation-triangle text-red-500 text-2xl"></i>
-                                    </div>
-                                    <h3 class="text-xl font-semibold text-gray-800 mb-4">
-                                        ${error.message && error.message.includes('maximum search limit') ? 'Search Limit Reached' : 'Oops! Something went wrong'}
-                                    </h3>
-                                    <p class="text-gray-600 mb-6 leading-relaxed">
-                                        ${error.message && error.message.includes('maximum search limit') ? error.message : 'We encountered an issue while searching for candidates. Our technical team has been notified and will resolve this shortly.'}
-                                    </p>
-                                    <div class="space-y-3">
-                                        <button onclick="location.reload()" class="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">
-                                            <i class="fas fa-refresh mr-2"></i>
-                                            Try Again
-                                        </button>
-                                        <p class="text-sm text-gray-500">
-                                            <i class="fas fa-info-circle mr-1"></i>
-                                            If the problem persists, our support team will be in touch.
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                        renderSearchFailure(resultsContainerDiv, error);
 
                         // Log error details for debugging
                         console.error('Search error details:', {
@@ -1517,9 +1559,11 @@ document.addEventListener('DOMContentLoaded', function () {
     function handleBottomSendMessage() {
         const countInput = document.getElementById('result-count');
         if (countInput && !countInput.reportValidity()) return;
+        if (!validateCandidateSearchScope()) return;
         const bottomChatInput = document.getElementById('bottom-chat-input');
         const message = bottomChatInput.value.trim();
         if (message) {
+            const isCurrentView = beginCandidateSearchView();
 
             // Ensure the bottom chat container is visible for new searches
             const bottomChatContainer = document.getElementById('bottom-chat-container');
@@ -1533,8 +1577,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
             // Try real search first
-            performRealSearch(message)
+            performRealSearch(message, status => {
+                if (isCurrentView()) window.updateSearchProgress?.(status);
+            })
                 .then(data => {
+                    if (!isCurrentView()) return;
                     hideLoadingMessage();
 
                     // Check if we have valid data (including empty results array)
@@ -1566,44 +1613,20 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Ensure proper scrolling after results are added
                     const resultsScrollArea = document.getElementById('results-area');
                     setTimeout(() => {
-                        if (resultsScrollArea) {
+                        if (isCurrentView() && resultsScrollArea) {
                             resultsScrollArea.scrollTop = resultsScrollArea.scrollHeight;
                         }
                     }, 100);
                 })
                 .catch(error => {
+                    if (!isCurrentView()) return;
                     console.error('Search failed:', error);
                     hideLoadingMessage();
 
 
 
-                    // Show proper error message instead of mock results
                     const resultsArea = document.getElementById('results-container');
-                    resultsArea.innerHTML = `
-                        <div class="flex items-center justify-center h-full min-h-[400px]">
-                            <div class="text-center max-w-md mx-auto p-8">
-                                <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                                    <i class="fas fa-exclamation-triangle text-red-500 text-2xl"></i>
-                                </div>
-                                <h3 class="text-xl font-semibold text-gray-800 mb-4">
-                                    ${error.message && error.message.includes('maximum search limit') ? 'Search Limit Reached' : 'Oops! Something went wrong'}
-                                </h3>
-                                <p class="text-gray-600 mb-6 leading-relaxed">
-                                    ${error.message && error.message.includes('maximum search limit') ? error.message : 'We encountered an issue while searching for candidates. Our technical team has been notified and will resolve this shortly.'}
-                                </p>
-                                <div class="space-y-3">
-                                    <button onclick="location.reload()" class="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">
-                                        <i class="fas fa-refresh mr-2"></i>
-                                        Try Again
-                                    </button>
-                                    <p class="text-sm text-gray-500">
-                                        <i class="fas fa-info-circle mr-1"></i>
-                                        If the problem persists, our support team will be in touch.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    `;
+                    renderSearchFailure(resultsArea, error);
 
                     // Log error details for debugging
                     console.error('Search error details:', {
@@ -1670,6 +1693,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Make showLoadingMessage available globally
     window.showLoadingMessage = function () {
+        const candidateCount = document.getElementById('candidate-count');
+        if (candidateCount) {
+            candidateCount.textContent = 'Searching...';
+            candidateCount.setAttribute('aria-busy', 'true');
+        }
+        document.getElementById('export-all-btn')?.remove();
+
         // Show loading in the candidate list
         const candidateList = document.getElementById('candidate-list');
         if (candidateList) {
@@ -1802,8 +1832,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Make hideLoadingMessage available globally
     window.hideLoadingMessage = function () {
-        // In split view, loading is handled by the generateEnhancedResults function
-        // No need to hide loading messages as they are replaced by actual content
+        const candidateCount = document.getElementById('candidate-count');
+        if (candidateCount?.getAttribute('aria-busy') === 'true') {
+            candidateCount.textContent = '0 results';
+            candidateCount.removeAttribute('aria-busy');
+        }
+        document.querySelector('#candidate-list .ai-search-state')?.remove();
     }
 
     // Make showFinalResultsNotification available globally
@@ -1825,12 +1859,12 @@ document.addEventListener('DOMContentLoaded', function () {
             // Direct matches
             /(?:looking for|seeking|hiring|need|want)\s+(?:a\s+|an\s+)?([^.;,]+?)(?:\s+with|\s+having|\s+who|\s+that|$)/i,
             /(?:position|role|job)(?:\s+of|\s+for)?\s*:?\s*([^.;,]+?)(?:\s+with|\s+having|\s+who|\s+that|$)/i,
-            /([a-zA-Z\s]+?)\s+(?:developer|engineer|analyst|manager|specialist|coordinator|director|lead|senior|junior|intern)/i,
+            /(?<![\w.])((?:[a-zA-Z]|\.NET\b)[a-zA-Z0-9.+#/\s-]*?\s+(?:developer|engineer|analyst|manager|specialist|coordinator|director|lead|senior|junior|intern|recruiter|accountant|designer|consultant|administrator|technician|nurse))\b/i,
             /(senior|junior|lead|principal|staff)\s+([a-zA-Z\s]+?)(?:\s+with|\s+having|\s+who|\s+that|$)/i,
             /([a-zA-Z\s]+?)\s+(?:with|having)\s+\d+\+?\s*years/i,
 
             // Common job titles
-            /(data scientist|software engineer|full stack developer|backend developer|frontend developer|devops engineer|product manager|business analyst|machine learning engineer|ai engineer|cloud architect|technical lead|scrum master|qa engineer|mobile developer|web developer|ui\/ux designer|systems administrator|network engineer|database administrator|security analyst|project manager)/i
+            /\b(data scientist|software engineer|full stack developer|backend developer|frontend developer|devops engineer|product manager|business analyst|machine learning engineer|ai engineer|cloud architect|technical lead|scrum master|qa engineer|mobile developer|web developer|ui\/ux designer|systems administrator|network engineer|database administrator|security analyst|project manager|accountant|recruiter)\b/i
         ];
 
         // Try to match patterns
@@ -1884,7 +1918,7 @@ document.addEventListener('DOMContentLoaded', function () {
         };
 
         for (const [keyword, title] of Object.entries(roleKeywords)) {
-            if (lowerQuery.includes(keyword)) {
+            if (new RegExp(`\\b${keyword}\\b`, 'i').test(lowerQuery)) {
                 return title;
             }
         }
@@ -1895,7 +1929,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const pendingCandidateSearches = new Map();
 
-    function performRealSearch(query) {
+    function performRealSearch(query, onProgress) {
+        const similarIdentity = JSON.stringify([window.currentUser?.id, window.currentUser?.user_type, window.currentUser?.company]);
         let folders = null, filters = {};
         try {
             window.ResumeFolders?.validate();
@@ -1928,9 +1963,14 @@ document.addEventListener('DOMContentLoaded', function () {
             user.id, user.user_type, user.company, query, resultCount, jobTitle, folders, filters
         ]) : null;
         const copyResult = value => JSON.parse(JSON.stringify(value));
+        const progressListener = typeof onProgress === 'function'
+            ? onProgress : status => window.updateSearchProgress?.(status);
         if (key && pendingCandidateSearches.has(key)) {
-            return pendingCandidateSearches.get(key).then(copyResult);
+            const pending = pendingCandidateSearches.get(key);
+            pending.listeners.add(progressListener);
+            return pending.request.then(copyResult);
         }
+        const pending = {listeners: new Set([progressListener]), request: null};
 
         // Use HR scorecard search with keyword analysis (instead of smart-search-stream)
         const request = fetch('/api/hr-scorecard-search', {
@@ -1958,7 +1998,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 // and then fetch results.
                 if (data && data.task_id && (data.status === 'pending' || data.success === true) && !Array.isArray(data.results)) {
                     console.log('HR Scorecard task submitted, polling status:', data.task_id);
-                    return pollHRScorecardTask(data.task_id);
+                    return pollHRScorecardTask(data.task_id, {onProgress: status => {
+                        for (const listener of pending.listeners) {
+                            try { listener(status); } catch (_) { /* A detached view must not stop polling. */ }
+                        }
+                    }});
                 }
 
                 // Legacy/synchronous path
@@ -1979,10 +2023,14 @@ document.addEventListener('DOMContentLoaded', function () {
                     top_scorecard: data.top_scorecard || null
                 };
             }).then(value => ({...value, query: value.query || query, job_title: value.job_title || jobTitle,
-                folder_filters: folders || [], resume_filters: filters})).finally(() => {
-                if (key && pendingCandidateSearches.get(key) === request) pendingCandidateSearches.delete(key);
+                folder_filters: folders || [], resume_filters: filters,
+                requested_result_count: value.requested_result_count || resultCount,
+                similar_scope_identity: similarIdentity})).finally(() => {
+                pending.listeners.clear();
+                if (key && pendingCandidateSearches.get(key) === pending) pendingCandidateSearches.delete(key);
             });
-        if (key && pendingCandidateSearches.size < 16) pendingCandidateSearches.set(key, request);
+        pending.request = request;
+        if (key && pendingCandidateSearches.size < 16) pendingCandidateSearches.set(key, pending);
         return request.then(copyResult);
     }
 
@@ -2052,7 +2100,10 @@ document.addEventListener('DOMContentLoaded', function () {
             return fetchStatus().then(function (status) {
                 const s = status && status.status;
                 console.log('HR Scorecard task status:', s, status && status.progress);
-                try { if (window.updateSearchProgress) window.updateSearchProgress(status); } catch (e) {}
+                try {
+                    if (typeof opts.onProgress === 'function') opts.onProgress(status);
+                    else window.updateSearchProgress?.(status);
+                } catch (_) { /* Progress is optional; keep recovering the backend result. */ }
 
                 if (s === 'completed') {
                     return fetchResults().then(function (data) {
@@ -2301,12 +2352,24 @@ document.addEventListener('DOMContentLoaded', function () {
                     selectCandidate(0, data.results);
                 } else {
                     // Show no results message with specific handling for empty datastore
-                    const isEmptyDatastore = data.empty_datastore || (data.total_results === 0 && data.message && data.message.includes('upload resumes'));
+                    const providerMessage = typeof data.message === 'string' ? data.message : '';
+                    const isEmptyDatastore = data.empty_datastore ||
+                        (data.total_results === 0 && providerMessage.includes('upload resumes'));
                     const iconClass = isEmptyDatastore ? 'fas fa-upload text-blue-600' : 'fas fa-search text-yellow-600';
                     const bgColor = isEmptyDatastore ? 'bg-blue-50 border-blue-200' : 'bg-yellow-50 border-yellow-200';
                     const textColor = isEmptyDatastore ? 'text-blue-800' : 'text-yellow-800';
                     const messageColor = isEmptyDatastore ? 'text-blue-700' : 'text-yellow-700';
                     const actionColor = isEmptyDatastore ? 'text-blue-600' : 'text-yellow-600';
+                    const esc = window.escapeHtml || ((value) => {
+                        const node = document.createElement('div');
+                        node.textContent = value == null ? '' : String(value);
+                        return node.innerHTML;
+                    });
+                    const emptyStateMessage = isEmptyDatastore
+                        ? (providerMessage || 'No resumes have been uploaded to your company datastore yet.')
+                        : (data.results && data.results.length > 0
+                            ? `We found ${data.results.length} candidates but could not process their analysis.`
+                            : 'No resumes found matching your search criteria.');
 
                     resultsContainer.innerHTML = `
                         <div class="${bgColor} border rounded-xl p-6 text-center fade-in-up">
@@ -2317,11 +2380,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 ${isEmptyDatastore ? 'No Resumes Uploaded' : 'No Candidates Found'}
                             </h3>
                             <p class="${messageColor} text-sm mb-4">
-                                ${isEmptyDatastore
-                            ? (data.message || 'No resumes have been uploaded to your company datastore yet.')
-                            : (data.results && data.results.length > 0
-                                ? `We found ${data.results.length} candidates but could not process their analysis.`
-                                : 'No resumes found matching your search criteria.')}
+                                ${esc(emptyStateMessage)}
                             </p>
                             <p class="${actionColor} text-xs">
                                 ${isEmptyDatastore
@@ -2338,6 +2397,9 @@ document.addEventListener('DOMContentLoaded', function () {
                             ` : ''}
                         </div>
                     `;
+                    if (!isEmptyDatastore && data.results.length === 0) {
+                        window.SimilarCandidates?.offer(resultsContainer, data);
+                    }
                 }
             }
             return;
@@ -3102,7 +3164,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             </button>
                             <p class="text-sm text-gray-500">
                                 <i class="fas fa-info-circle mr-1"></i>
-                                Our support team has been notified about this issue.
+                                Contact your administrator if this issue continues.
                             </p>
                         </div>
                     </div>
@@ -4265,8 +4327,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Start upload
         startUpload.addEventListener('click', async () => {
-            if (!isUploading && selectedFiles.length > 0) {
+            if (!isUploading && selectedFiles.some(item => item.status === 'pending')) {
                 if (!document.getElementById('upload-folder').reportValidity()) return;
+                if (navigator.onLine === false) {
+                    showNotification('You are offline. Keep this tab open and resume the upload when connected.', 'warning');
+                    return;
+                }
                 isUploading = true;
                 startUpload.disabled = true;
                 clearQueue.disabled = true;
@@ -4274,7 +4340,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 // Check if GCS is configured
                 await fetch('/api/gcs-status')
-                    .then(response => response.json())
+                    .then(response => {
+                        if (!response.ok) throw new Error('Upload service unavailable');
+                        return response.json();
+                    })
                     .then(data => {
                         if (!data.configured) {
                             showCredentialsModal();
@@ -4284,13 +4353,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     })
                     .catch(error => {
                         console.error('Error checking GCS status:', error);
-                        showNotification('Upload could not complete. Please check the file statuses and try again.', 'error');
+                        showNotification('Upload service unavailable. Your pending files are still in this tab.', 'warning');
                     })
                     .finally(() => {
                         isUploading = false;
                         clearQueue.disabled = false;
                         updateUploadQueue();
-                        refreshUploadFolders(uploadFolder);
+                        if (startUpload.isConnected) refreshUploadFolders(uploadFolder);
                     });
             }
         });
@@ -4401,177 +4470,113 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         async function performUpload(uploadFolder) {
-            // Adaptive batch size configuration
-            let currentBatchSize = 50; // Start with 50 files per batch
-            const MIN_BATCH_SIZE = 1; // Minimum batch size
-            const MAX_BATCH_SIZE_MB = 32; // 32MB per batch
-            const batchSizeHistory = []; // Track successful batch sizes
-
-            // Show overall progress bar
+            const queue = selectedFiles.filter(item => item.status === 'pending');
+            const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+            let batchLimit = 50;
             const progressContainer = document.getElementById('overall-progress-container');
             const progressBar = document.getElementById('overall-progress-bar');
             const progressText = document.getElementById('overall-progress-text');
             const batchProgressText = document.getElementById('batch-progress-text');
             const filesProgressText = document.getElementById('files-progress-text');
-
             progressContainer.classList.remove('hidden');
-            progressBar.style.width = '0%';
-            progressText.textContent = '0%';
-            batchProgressText.textContent = `Initializing...`;
-            filesProgressText.textContent = `0/${selectedFiles.length} files queued`;
-
             let totalSuccessful = 0;
             let totalFailed = 0;
             let totalNotIndexed = 0;
-            let batchResults = [];
-            let remainingFiles = [...selectedFiles]; // Copy of files to process
+            let offset = 0;
             let batchNumber = 0;
-            let totalBatches = 0; // Will be calculated dynamically
+            let busyRetries = 0;
+            let pauseReason = '';
+            const setProgress = () => {
+                const completed = totalSuccessful + totalFailed;
+                const pct = Math.round(100 * completed / queue.length);
+                progressBar.style.width = `${pct}%`;
+                progressText.textContent = `${pct}%`;
+                filesProgressText.textContent = `${completed}/${queue.length} files confirmed`;
+            };
+            setProgress();
 
-            console.log(`🚀 Starting adaptive batch upload with initial batch size: ${currentBatchSize}`);
-
-            // Process files with adaptive batch sizing
-            while (remainingFiles.length > 0) {
+            while (offset < queue.length && startUpload.isConnected) {
+                if (navigator.onLine === false) {
+                    pauseReason = 'You are offline. Keep this tab open and resume pending files when connected.';
+                    break;
+                }
+                const batch = [];
+                let bytes = 0;
+                for (let i = offset; i < queue.length && batch.length < batchLimit; i++) {
+                    const item = queue[i];
+                    if (batch.length && bytes + item.file.size > 32 * 1024 * 1024) break;
+                    bytes += item.file.size;
+                    batch.push(item);
+                }
                 batchNumber++;
+                batchProgressText.textContent = `Batch ${batchNumber} (${batch.length} files)`;
+                for (const item of batch) {
+                    Object.assign(item, {status: 'uploading', progress: 0, error: null, batchInfo: `Batch ${batchNumber}`});
+                }
+                updateUploadQueue();
 
-                // Create current batch with current batch size
-                const currentBatch = createBatches(remainingFiles, currentBatchSize, MAX_BATCH_SIZE_MB)[0];
-                if (!currentBatch || currentBatch.length === 0) {
-                    console.error('? Unable to create batch - breaking upload loop');
+                let results;
+                try {
+                    results = (await uploadBatch(batch, uploadFolder, batchNumber, '8')).results;
+                } catch (error) {
+                    if (error.kind === 'too-large' && batch.length > 1) {
+                        batchLimit = Math.floor(batch.length / 2);
+                        for (const item of batch) Object.assign(item, {status: 'pending', batchInfo: 'Waiting', error: null});
+                        continue;
+                    }
+                    if (error.kind === 'busy') {
+                        const retryMs = error.retryMs ?? 2500 * (2 ** busyRetries);
+                        if (busyRetries < 2 && retryMs <= 30000 && navigator.onLine !== false && startUpload.isConnected) {
+                            busyRetries++;
+                            for (const item of batch) Object.assign(item, {status: 'retrying', batchInfo: 'Server busy'});
+                            batchProgressText.textContent = 'Server busy. Retrying shortly.';
+                            updateUploadQueue();
+                            await wait(Math.max(250, retryMs));
+                            for (const item of batch) Object.assign(item, {status: 'pending', batchInfo: 'Waiting'});
+                            continue;
+                        }
+                        for (const item of batch) Object.assign(item, {status: 'pending', batchInfo: 'Waiting'});
+                        pauseReason = 'The server is busy. Your pending files are still in this tab.';
+                        break;
+                    }
+                    if (error.kind === 'rejected' || error.kind === 'too-large') {
+                        for (const item of batch) Object.assign(item, {status: 'failed', error: error.message, batchInfo: 'Not uploaded'});
+                        totalFailed += batch.length;
+                        offset += batch.length;
+                        setProgress();
+                        if (offset < queue.length) pauseReason = 'Upload paused. Review the failed files before continuing.';
+                        break;
+                    }
+                    // A missing or ambiguous response can come after a committed upload.
+                    for (const item of batch) Object.assign(item, {status: 'uncertain', batchInfo: '',
+                        error: 'This file may already be saved. Check Resume Library before retrying.'});
+                    pauseReason = 'Upload status could not be confirmed. Check Resume Library before resending these files.';
                     break;
                 }
 
-                console.log(`📤 Uploading batch ${batchNumber} (${currentBatch.length} files, batch size: ${currentBatchSize})`);
-
-                // Update progress UI
-                const completedFiles = selectedFiles.length - remainingFiles.length;
-                const overallProgress = (completedFiles / selectedFiles.length) * 100;
-                progressBar.style.width = `${overallProgress}%`;
-                progressText.textContent = `${Math.round(overallProgress)}%`;
-                batchProgressText.textContent = `Batch ${batchNumber} (${currentBatch.length} files)`;
-
-                // Update UI to show current batch uploading
-                currentBatch.forEach(fileItem => {
-                    fileItem.status = 'uploading';
-                    fileItem.progress = 0;
-                    fileItem.batchInfo = `Batch ${batchNumber} (Size: ${currentBatchSize})`;
-                });
-                updateUploadQueue();
-
-                let batchSuccess = false;
-
-                try {
-                    const batchResult = await uploadBatch(currentBatch, uploadFolder, batchNumber, '8');
-                    batchResults.push(batchResult);
-                    batchSuccess = true;
-
-                    // Update individual file statuses based on batch result
-                    if (batchResult.results) {
-                        batchResult.results.forEach((result, index) => {
-                            if (index < currentBatch.length) {
-                                const notIndexed = result.success && result.vector_indexed === false;
-                                currentBatch[index].status = result.success ? (notIndexed ? 'attention' : 'completed') : 'failed';
-                                currentBatch[index].progress = 100;
-                                currentBatch[index].error = notIndexed ? 'File saved, but not searchable. Text extraction or indexing needs attention.' : result.error;
-                                currentBatch[index].gcs_path = result.gcs_path;
-                                currentBatch[index].batchInfo = `Batch ${batchNumber} · ${notIndexed ? 'Saved, not searchable' : result.success ? 'Success' : 'Failed'}`;
-                            }
-                        });
-
-                        const successful = batchResult.results.filter(r => r.success).length;
-                        const failed = batchResult.results.filter(r => !r.success).length;
-                        totalSuccessful += successful;
-                        totalFailed += failed;
-                        totalNotIndexed += batchResult.results.filter(r => r.success && r.vector_indexed === false).length;
-
-                        // Update files progress
-                        const totalCompleted = totalSuccessful + totalFailed;
-                        filesProgressText.textContent = `${totalCompleted}/${selectedFiles.length} files completed`;
-                    }
-
-                    // Remove successfully processed files from remaining files
-                    remainingFiles = remainingFiles.filter(file => !currentBatch.includes(file));
-
-                    // Track successful batch size
-                    batchSizeHistory.push(currentBatchSize);
-                    console.log(`? Batch ${batchNumber} completed successfully with size ${currentBatchSize}`);
-
-                    // Optionally increase batch size if we've had consecutive successes
-                    if (batchSizeHistory.length >= 2 &&
-                        batchSizeHistory.slice(-2).every(size => size === currentBatchSize) &&
-                        currentBatchSize < 50) {
-                        currentBatchSize = Math.min(currentBatchSize * 2, 50);
-                        console.log(`⬆️ Increasing batch size to ${currentBatchSize} after consecutive successes`);
-                    }
-
-                } catch (error) {
-                    console.error(`? Batch ${batchNumber} failed (size: ${currentBatchSize}):`, error);
-                    batchSuccess = false;
-
-                    // Mark all files in this batch as failed temporarily
-                    currentBatch.forEach(fileItem => {
-                        fileItem.status = 'retrying';
-                        fileItem.error = error.message || 'Batch upload failed - retrying with smaller batch';
-                        fileItem.batchInfo = `Batch ${batchNumber} · Retrying`;
+                busyRetries = 0;
+                results.forEach((result, index) => {
+                    const notIndexed = result.success && result.vector_indexed === false;
+                    Object.assign(batch[index], {
+                        status: result.success ? (notIndexed ? 'attention' : 'completed') : 'failed',
+                        progress: 100, gcs_path: result.gcs_path,
+                        error: notIndexed ? 'File saved, but not searchable. Text extraction or indexing needs attention.' : result.error,
+                        batchInfo: notIndexed ? 'Saved, not searchable' : result.success ? 'Uploaded' : 'Failed',
                     });
-                    updateUploadQueue();
-
-                    // Implement adaptive batch size reduction
-                    if (currentBatchSize > MIN_BATCH_SIZE) {
-                        // Reduce batch size (halve it, but ensure it's at least 1)
-                        const newBatchSize = Math.max(Math.floor(currentBatchSize / 2), MIN_BATCH_SIZE);
-                        console.log(`⬇️ Reducing batch size from ${currentBatchSize} to ${newBatchSize}`);
-                        currentBatchSize = newBatchSize;
-
-                        // Reset batch info for retry
-                        currentBatch.forEach(fileItem => {
-                            fileItem.status = 'pending';
-                            fileItem.error = null;
-                            fileItem.batchInfo = `Retrying with smaller batch (${currentBatchSize})`;
-                        });
-                        updateUploadQueue();
-
-                        // Don't remove files from remaining files - they'll be retried
-                        console.log(`🔄 Retrying failed batch with smaller size: ${currentBatchSize}`);
-
-                        // Small delay before retry
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                        continue; // Retry with smaller batch size
-                    } else {
-                        // Even minimum batch size failed - mark files as failed
-                        console.error(`? Batch failed even with minimum size (${MIN_BATCH_SIZE}) - marking files as failed`);
-                        currentBatch.forEach(fileItem => {
-                            fileItem.status = 'failed';
-                            fileItem.error = error.message || 'Upload failed even with minimum batch size';
-                            fileItem.batchInfo = `Batch ${batchNumber} · Failed`;
-                        });
-                        totalFailed += currentBatch.length;
-
-                        // Remove failed files from remaining files
-                        remainingFiles = remainingFiles.filter(file => !currentBatch.includes(file));
-
-                        // Update files progress
-                        const totalCompleted = totalSuccessful + totalFailed;
-                        filesProgressText.textContent = `${totalCompleted}/${selectedFiles.length} files completed`;
-                    }
-                }
-
+                    if (result.success) totalSuccessful++;
+                    else totalFailed++;
+                    if (notIndexed) totalNotIndexed++;
+                });
+                offset += batch.length;
+                setProgress();
                 updateUploadQueue();
-
-                // Small delay between batches to prevent overwhelming the server
-                if (remainingFiles.length > 0) {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
+                if (offset < queue.length) await wait(1000);
             }
 
-            // Complete progress bar
-            progressBar.style.width = '100%';
-            progressText.textContent = '100%';
-            batchProgressText.textContent = 'Upload complete';
-
-            // Hide progress bar after 3 seconds
-            setTimeout(() => {
-                progressContainer.classList.add('hidden');
+            if (!startUpload.isConnected) return;
+            batchProgressText.textContent = pauseReason ? 'Upload paused' : 'Upload finished';
+            if (!pauseReason) setTimeout(() => {
+                if (!isUploading) progressContainer.classList.add('hidden');
             }, 3000);
 
             // Update final stats
@@ -4579,50 +4584,20 @@ document.addEventListener('DOMContentLoaded', function () {
             const successfulUploads = document.getElementById('successful-uploads');
             const failedUploads = document.getElementById('failed-uploads');
 
-            totalUploaded.textContent = parseInt(totalUploaded.textContent) + selectedFiles.length;
+            totalUploaded.textContent = parseInt(totalUploaded.textContent, 10) + totalSuccessful + totalFailed;
             successfulUploads.textContent = parseInt(successfulUploads.textContent) + totalSuccessful;
             failedUploads.textContent = parseInt(failedUploads.textContent) + totalFailed;
 
             const indexWarning = totalNotIndexed ? ` ${totalNotIndexed} saved file${totalNotIndexed === 1 ? '' : 's'} ${totalNotIndexed === 1 ? 'is' : 'are'} not searchable and need attention.` : '';
             const message = `${totalSuccessful} file${totalSuccessful === 1 ? '' : 's'} uploaded` +
                 (totalFailed ? `; ${totalFailed} failed.` : '.') + indexWarning;
-            if (totalSuccessful > 0) {
+            if (pauseReason) {
+                showLimitNotification(pauseReason, 'warning');
+            } else if (totalSuccessful > 0) {
                 showLimitNotification(message, totalFailed > 0 || totalNotIndexed > 0 ? 'warning' : 'success');
             } else if (totalFailed > 0) {
                 showLimitNotification(`No files uploaded. ${totalFailed} failed. Review the upload queue.`, 'error');
             }
-        }
-
-        function createBatches(files, maxFilesPerBatch, maxBatchSizeMB) {
-            const batches = [];
-            let currentBatch = [];
-            let currentBatchSize = 0;
-            const maxBatchSizeBytes = maxBatchSizeMB * 1024 * 1024;
-
-            for (const fileItem of files) {
-                const fileSize = fileItem.file.size;
-
-                // Check if adding this file would exceed batch limits
-                if (currentBatch.length >= maxFilesPerBatch ||
-                    (currentBatchSize + fileSize > maxBatchSizeBytes && currentBatch.length > 0)) {
-                    // Start new batch
-                    if (currentBatch.length > 0) {
-                        batches.push(currentBatch);
-                    }
-                    currentBatch = [];
-                    currentBatchSize = 0;
-                }
-
-                currentBatch.push(fileItem);
-                currentBatchSize += fileSize;
-            }
-
-            // Don't forget the last batch
-            if (currentBatch.length > 0) {
-                batches.push(currentBatch);
-            }
-
-            return batches;
         }
 
         async function uploadBatch(batch, uploadFolder, batchNumber, totalBatches) {
@@ -4636,21 +4611,34 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const response = await fetch('/api/upload-files', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: globalThis.AbortSignal?.timeout?.(120000),
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                if (response.status === 413) {
-                    // Handle structured 413 error from middleware
-                    const maxSizeMB = errorData.max_size_mb || 100;
-                    const receivedSizeMB = errorData.received_size_mb || 'unknown';
-                    throw new Error(`Batch too large: ${receivedSizeMB}MB exceeds limit of ${maxSizeMB}MB`);
+                if (response.status === 429) {
+                    const header = response.headers?.get('Retry-After')?.trim();
+                    const delay = header ? (/^\d+$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now()) : NaN;
+                    throw Object.assign(new Error('The server is busy.'), {kind: 'busy', retryMs: Number.isFinite(delay) ? delay : undefined});
                 }
-                throw new Error(errorData.detail || `Batch ${batchNumber} upload failed`);
+                if (response.status === 413) {
+                    throw Object.assign(new Error('The file is too large for the upload service.'), {kind: 'too-large'});
+                }
+                if ([400, 401, 403, 404, 405, 409, 415, 422].includes(response.status)) {
+                    const data = await response.json().catch(() => ({}));
+                    const message = typeof data?.detail === 'string' ? data.detail : 'The server rejected this upload.';
+                    throw Object.assign(new Error(message), {kind: 'rejected'});
+                }
+                throw new Error('Upload outcome unavailable');
             }
 
-            return await response.json();
+            const data = await response.json();
+            // The server preserves multipart order; filenames can be encoded by the browser.
+            if (!Array.isArray(data?.results) || data.results.length !== batch.length ||
+                data.results.some(item => typeof item?.success !== 'boolean')) {
+                throw new Error('Upload outcome incomplete');
+            }
+            return data;
         }
 
         function showLimitNotification(message, type = 'error') {
@@ -4674,49 +4662,44 @@ document.addEventListener('DOMContentLoaded', function () {
                     const statusColor = getStatusColor(fileItem.status);
 
                     return `
-                        <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg mb-2">
-                            <div class="flex items-center space-x-3">
-                                <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                                    <i class="fas fa-file-${getFileIcon(fileItem.file.name)} text-gray-600"></i>
-                                </div>
-                                <div>
-                                    <p class="text-sm font-medium text-gray-900 break-all">${escapeHtml(fileItem.file.name)}</p>
-                                    <div class="flex items-center space-x-2 text-xs text-gray-500">
-                                        <span>${formatFileSize(fileItem.file.size)}</span>
-                                        ${fileItem.batchInfo ? `<span class="text-gray-300">·</span><span class="${statusColor}">${escapeHtml(fileItem.batchInfo)}</span>` : ''}
-                                    </div>
-                                </div>
+                        <div class="flex items-start gap-3 p-3 border border-gray-200 rounded-lg mb-2">
+                            <div class="w-10 h-10 shrink-0 bg-gray-100 rounded-lg flex items-center justify-center">
+                                <i class="fas fa-file-${getFileIcon(fileItem.file.name)} text-gray-600" aria-hidden="true"></i>
                             </div>
-                            <div class="flex items-center space-x-3">
-                                <div class="flex items-center space-x-2">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-medium text-gray-900" style="overflow-wrap: anywhere">${escapeHtml(fileItem.file.name)}</p>
+                                <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                                    <span>${formatFileSize(fileItem.file.size)}</span>
                                     <span class="text-xs ${statusColor} capitalize">
-                                        ${statusIcon} ${fileItem.status}
+                                        ${statusIcon} ${fileItem.status === 'uncertain' ? 'Unconfirmed' : fileItem.status}
                                     </span>
-                                    ${fileItem.status === 'uploading' ? `
-                                        <div class="w-20 bg-gray-200 rounded-full h-2">
-                                            <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: ${fileItem.progress}%"></div>
-                                        </div>
-                                    ` : ''}
-                                    ${fileItem.error ? `
-                                        <div class="text-xs ${fileItem.status === 'attention' ? 'text-amber-700' : 'text-red-600'} max-w-xs truncate" title="${escapeHtml(fileItem.error)}">
-                                            ${escapeHtml(fileItem.error)}
-                                        </div>
-                                    ` : ''}
+                                    ${fileItem.batchInfo ? `<span class="${statusColor}">${escapeHtml(fileItem.batchInfo)}</span>` : ''}
                                 </div>
-                                <button class="text-red-600 hover:text-red-800" aria-label="Remove file" ${isUploading ? 'disabled' : ''} onclick="removeFile('${fileItem.id}')">
-                                    <i class="fas fa-trash text-xs"></i>
-                                </button>
+                                ${fileItem.status === 'uploading' ? `
+                                    <div class="w-20 mt-1 bg-gray-200 rounded-full h-2">
+                                        <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: ${fileItem.progress}%"></div>
+                                    </div>
+                                ` : ''}
+                                ${fileItem.error ? `
+                                    <p class="mt-1 text-xs ${['attention', 'uncertain'].includes(fileItem.status) ? 'text-amber-700' : 'text-red-600'}" style="overflow-wrap: anywhere">
+                                        ${escapeHtml(fileItem.error)}
+                                    </p>
+                                ` : ''}
                             </div>
+                            <button class="w-8 h-8 shrink-0 text-red-600 hover:text-red-800" aria-label="Remove file" ${isUploading ? 'disabled' : ''} onclick="removeFile('${fileItem.id}')">
+                                <i class="fas fa-trash text-xs" aria-hidden="true"></i>
+                            </button>
                         </div>
                     `;
                 }).join('')}
                 `;
-                startUpload.disabled = isUploading;
+                startUpload.disabled = isUploading || !selectedFiles.some(item => item.status === 'pending');
             }
         }
 
         function getStatusIcon(status) {
             switch (status) {
+                case 'uncertain':
                 case 'attention': return '<i class="fas fa-exclamation-triangle"></i>';
                 case 'completed': return '<i class="fas fa-check-circle"></i>';
                 case 'failed': return '<i class="fas fa-exclamation-circle"></i>';
@@ -4728,6 +4711,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         function getStatusColor(status) {
             switch (status) {
+                case 'uncertain':
                 case 'attention': return 'text-amber-700';
                 case 'completed': return 'text-green-600';
                 case 'failed': return 'text-red-600';
@@ -5136,6 +5120,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Global function to show analysis modal
     window.showAnalysisModal = function (candidateName, analysisData) {
+        if (document.getElementById('analysisModal')) return;
         const esc = window.escapeHtml || ((value) => {
             const div = document.createElement('div');
             div.textContent = value == null ? '' : String(value);
@@ -5153,7 +5138,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <h2 class="text-xl font-bold text-gray-900">Complete AI Analysis</h2>
                                 <p class="text-gray-600 text-sm">${esc(candidateName)}</p>
                             </div>
-                            <button onclick="closeAnalysisModal()" class="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors">
+                            <button type="button" onclick="closeAnalysisModal()" aria-label="Close candidate analysis" title="Close analysis" class="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors">
                                 <i class="fas fa-times text-gray-600"></i>
                             </button>
                         </div>
@@ -5170,8 +5155,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Add modal to body
         document.body.insertAdjacentHTML('beforeend', modalHTML);
 
-        // Prevent body scroll
-        document.body.style.overflow = 'hidden';
+        bindScheduleDialog(document.getElementById('analysisModal'), 'Complete candidate analysis');
     };
 
     // Global function to close analysis modal
@@ -5179,7 +5163,6 @@ document.addEventListener('DOMContentLoaded', function () {
         const modal = document.getElementById('analysisModal');
         if (modal) {
             modal.remove();
-            document.body.style.overflow = 'auto';
         }
     };
 
@@ -6910,6 +6893,9 @@ function initializeJDBuilderPage() {
         const safeTitle = String(jobTitle).replace(/[<>&"']/g, (c) => ({
             '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;'
         })[c]);
+        const safeContent = typeof window.sanitizeGeneratedHtml === 'function'
+            ? window.sanitizeGeneratedHtml(content)
+            : (window.escapeHtml ? window.escapeHtml(content) : '');
         const generatedAt = new Date().toLocaleString();
         const fullDoc = [
             '<!DOCTYPE html>',
@@ -6936,7 +6922,7 @@ function initializeJDBuilderPage() {
             '</style>',
             '</head>',
             '<body>',
-            content,
+            safeContent,
             `<div class="jd-footer">Generated ${generatedAt} · Smart HR JD Builder</div>`,
             '</body>',
             '</html>',
@@ -7563,23 +7549,33 @@ function showDashboardLoadingState() {
     }
 }
 
+let dashboardHistoryRequest = 0;
 async function loadSearchHistoryForDashboard() {
+    const table = document.getElementById('search-history-table');
+    if (!table) return;
+    const requestId = ++dashboardHistoryRequest;
+    const isCurrent = () => requestId === dashboardHistoryRequest && document.getElementById(table.id) === table;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    table.setAttribute('aria-busy', 'true');
     try {
-        const response = await fetch('/api/search-history?limit=5', {
-            method: 'GET',
-            credentials: 'same-origin', // Ensure cookies are sent
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        if (response.ok) {
-            const data = await response.json();
-            displaySearchHistoryInTable(data.history || []);
+        const response = await fetch('/api/search-history?limit=5', {credentials: 'same-origin', signal: controller.signal});
+        if (!response.ok) throw new Error('Recent searches unavailable');
+        const data = await response.json();
+        if (data?.success !== true || !Array.isArray(data.history) || data.history.some(row => !row || typeof row !== 'object')) {
+            throw new Error('Invalid recent-search response');
         }
-    } catch (error) {
-        console.error('Error loading search history:', error);
-        // Show empty state if API fails
-        displaySearchHistoryInTable([]);
+        if (isCurrent()) displaySearchHistoryInTable(data.history);
+    } catch (_) {
+        if (!isCurrent()) return;
+        table.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-sm text-gray-600">
+            <p role="status">Recent searches are unavailable.</p>
+            <button type="button" data-retry-dashboard-history class="text-blue-600 hover:text-blue-800 px-2 py-2 font-medium">Try again</button>
+        </td></tr>`;
+        table.querySelector('[data-retry-dashboard-history]').onclick = loadSearchHistoryForDashboard;
+    } finally {
+        clearTimeout(timeout);
+        if (isCurrent()) table.setAttribute('aria-busy', 'false');
     }
 }
 
@@ -7609,7 +7605,8 @@ function displaySearchHistoryInTable(searches) {
     }
 
     tableBody.innerHTML = searches.map(search => {
-        const date = new Date(search.search_timestamp);
+        const date = search.search_timestamp ? new Date(search.search_timestamp) : null;
+        const validDate = date && Number.isFinite(date.getTime());
         const count = search.result_count ?? search.actual_results;
         const resultCount = count != null && Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : null;
         const resultBadgeClass = resultCount == null ? 'bg-gray-100 text-gray-700' : resultCount > 10 ? 'bg-green-100 text-green-800' :
@@ -7625,22 +7622,22 @@ function displaySearchHistoryInTable(searches) {
                 <td class="py-3 px-2">
                     <div class="flex items-center space-x-2">
                         <i class="fas fa-search text-blue-500 text-xs"></i>
-                        <span class="text-sm font-medium text-gray-900" title="${attr(search.search_query)}">${esc(truncatedQuery)}</span>
+                        <span class="dashboard-search-query text-sm font-medium text-gray-900" title="${attr(search.search_query)}">${esc(truncatedQuery)}</span>
                     </div>
                     ${search.job_title ? `<p class="text-xs text-gray-500 mt-1">${esc(search.job_title)}</p>` : ''}
                 </td>
                 <td class="py-3 px-2">
-                    <span class="${resultBadgeClass} px-2 py-1 rounded-full text-xs font-medium">
+                    <span class="dashboard-search-count ${resultBadgeClass} px-2 py-1 rounded-full text-xs font-medium">
                         ${resultCount == null ? 'Unavailable' : resultCount + (resultCount === 1 ? ' match' : ' matches')}
                     </span>
                 </td>
-                <td class="py-3 px-2">
-                    <span class="text-sm text-gray-600">${Number.isFinite(date.getTime()) ? date.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : 'Date unavailable'}</span>
-                    <p class="text-xs text-gray-500">${Number.isFinite(date.getTime()) ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                <td class="dashboard-search-date py-3 px-2">
+                    <span class="text-sm text-gray-600">${validDate ? date.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : 'Unavailable'}</span>
+                    ${validDate ? `<p class="text-xs text-gray-500">${date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>` : ''}
                 </td>
                 <td class="py-3 px-2">
                     <button type="button" data-search-id="${search.id}"
-                            class="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                            class="dashboard-search-open text-blue-600 hover:text-blue-800 text-xs font-medium">
                         View Results
                     </button>
                 </td>
@@ -7940,18 +7937,18 @@ function updateResourceUsageDisplay(resourceUsage) {
     }
 }
 
-function refreshSearchHistory() {
-    loadSearchHistoryForDashboard();
-    loadCandidateStatusCounts();
-
-    // Show a brief loading indicator
-    const refreshButton = event.target.closest('button');
-    const originalHTML = refreshButton.innerHTML;
-    refreshButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-
-    setTimeout(() => {
-        refreshButton.innerHTML = originalHTML;
-    }, 1000);
+async function refreshSearchHistory(button) {
+    if (button?.disabled) return;
+    const icon = button?.querySelector('i');
+    const original = icon?.className;
+    if (button) button.disabled = true;
+    if (icon) icon.className = 'fas fa-spinner fa-spin';
+    try {
+        await Promise.all([loadSearchHistoryForDashboard(), loadCandidateStatusCounts()]);
+    } finally {
+        if (button) button.disabled = false;
+        if (icon) icon.className = original;
+    }
 }
 
 function loadMoreSearchHistory() {
@@ -8023,8 +8020,8 @@ async function openCandidatesByStatus(status) {
 
     // Render shell with loading state immediately
     mainContent.innerHTML = `
-        <div class="p-6 max-w-7xl mx-auto">
-            <div class="mb-6 flex items-start justify-between">
+        <div class="candidate-status-view p-6 max-w-7xl mx-auto">
+            <div class="candidate-status-header mb-6 flex items-start justify-between">
                 <div class="flex items-center space-x-4">
                     <div class="w-12 h-12 flex items-center justify-center rounded-xl bg-${meta.color}-100">
                         <i class="fas ${meta.icon} text-${meta.color}-600 text-2xl"></i>
@@ -8049,16 +8046,23 @@ async function openCandidatesByStatus(status) {
         </div>
     `;
 
+    const viewBody = document.getElementById('candidates-by-status-body');
+    const identity = JSON.stringify(window.currentUser || null);
+    const currentView = () => viewBody?.isConnected && document.getElementById('candidates-by-status-body') === viewBody
+        && JSON.stringify(window.currentUser || null) === identity;
+
     try {
         const resp = await fetch(`/api/candidates-by-status?status=${encodeURIComponent(status)}`, {
             credentials: 'same-origin',
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
+        if (!currentView()) return;
         renderCandidatesByStatusList(data.candidates || [], status, meta);
     } catch (err) {
         console.error('openCandidatesByStatus failed:', err);
-        const body = document.getElementById('candidates-by-status-body');
+        if (!currentView()) return;
+        const body = viewBody;
         if (body) {
             body.innerHTML = `
                 <div class="text-center py-12 text-gray-500">
@@ -8108,17 +8112,17 @@ function renderCandidatesByStatusList(candidates, status, meta) {
         const srcId = c.search_id ? String(Number(c.search_id)) : '';
         return `
             <tr class="hover:bg-gray-50">
-                <td class="py-3 px-3">
+                <td data-label="Candidate" class="py-3 px-3">
                     <div class="font-semibold text-gray-900">${escFn(c.candidate_name)}</div>
                     <div class="text-xs text-gray-500 mt-0.5">${contactBits.join(' &nbsp;·&nbsp; ')}</div>
                 </td>
-                <td class="py-3 px-3 text-sm text-gray-700">${escFn(c.position_applied || '—')}</td>
-                <td class="py-3 px-3">
+                <td data-label="Position" class="py-3 px-3 text-sm text-gray-700">${escFn(c.position_applied || '—')}</td>
+                <td data-label="Score" class="py-3 px-3">
                     <span class="${scoreBadge} px-2 py-1 rounded-full text-xs font-medium">${score}%</span>
                 </td>
-                <td class="py-3 px-3 text-xs text-gray-500">${escFn(actioned)}</td>
-                <td class="py-3 px-3 text-right">
-                    <div class="inline-flex items-center space-x-2">
+                <td data-label="Actioned" class="py-3 px-3 text-xs text-gray-500">${escFn(actioned)}</td>
+                <td data-label="Actions" class="py-3 px-3 text-right">
+                    <div class="candidate-status-actions inline-flex items-center">
                         ${srcId ? `<button type="button" class="text-blue-600 hover:text-blue-800 text-xs font-medium" data-action="source" data-search-id="${attrFn(srcId)}" data-search-query="${attrFn(c.search_query || '')}" title="Open source search"><i class="fas fa-external-link-alt mr-1"></i>Source</button>` : ''}
                         ${fileBase ? `<button type="button" class="text-gray-600 hover:text-gray-900 text-xs font-medium" data-action="resume" data-file="${attrFn(fileBase)}" title="Download resume"><i class="fas fa-download mr-1"></i>Resume</button>` : ''}
                         <button type="button" class="text-emerald-700 hover:text-emerald-900 text-xs font-medium" data-action="schedule" data-name="${attrFn(c.candidate_name || '')}" data-email="${attrFn(c.candidate_email || '')}" title="Schedule with this candidate"><i class="fas fa-calendar-plus mr-1"></i>Schedule</button>
@@ -8133,7 +8137,7 @@ function renderCandidatesByStatusList(candidates, status, meta) {
             <p class="text-sm text-gray-600">${candidates.length} candidate${candidates.length === 1 ? '' : 's'}</p>
         </div>
         <div class="overflow-x-auto">
-            <table class="w-full">
+            <table class="candidate-status-table w-full">
                 <thead>
                     <tr class="border-b border-gray-200">
                         <th class="text-left py-3 px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Candidate</th>
@@ -8590,7 +8594,16 @@ function bindScheduleDialog(modal, label, returnFocus = document.activeElement) 
     invite?.addEventListener('change', syncRequired);
     syncRequired();
     const shell = document.getElementById('app-shell');
-    const wasInert = shell?.inert || false;
+    const shellStates = bindScheduleDialog.shellStates || (bindScheduleDialog.shellStates = new WeakMap());
+    let shellState;
+    if (shell) {
+        shellState = shellStates.get(shell);
+        if (!shellState) {
+            shellState = {wasInert:shell.inert || false, modals:new Set()};
+            shellStates.set(shell, shellState);
+        }
+        shellState.modals.add(modal);
+    }
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-label', label);
     modal.setAttribute('aria-modal', 'true');
@@ -8605,7 +8618,7 @@ function bindScheduleDialog(modal, label, returnFocus = document.activeElement) 
     modal.addEventListener('keydown', event => {
         if (event.key === 'Escape') {
             event.preventDefault();
-            if (!modal.querySelector('form[data-submitting="true"]')) modal.remove();
+            if (!modal.matches('[data-submitting="true"]') && !modal.querySelector('[data-submitting="true"]')) modal.remove();
             return;
         }
         if (event.key !== 'Tab') return;
@@ -8616,8 +8629,16 @@ function bindScheduleDialog(modal, label, returnFocus = document.activeElement) 
     const observer = new MutationObserver(() => {
         if (modal.isConnected) return;
         observer.disconnect();
-        if (shell) shell.inert = wasInert;
-        if (previous?.isConnected) previous.focus();
+        shellState?.modals.delete(modal);
+        const currentState = shell && shellStates.get(shell);
+        const remaining = [...(currentState?.modals || [])].filter(dialog => dialog.isConnected);
+        if (shell && currentState === shellState) {
+            shell.inert = remaining.length ? true : shellState.wasInert;
+            if (!remaining.length) shellStates.delete(shell);
+        }
+        const topDialog = remaining[remaining.length - 1];
+        if (previous?.isConnected && (topDialog ? topDialog.contains(previous) : !shell?.inert)) previous.focus();
+        else if (topDialog) topDialog.querySelector('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]')?.focus();
     });
     observer.observe(document.body, {childList:true});
 }
@@ -8730,42 +8751,13 @@ async function saveInterviewSchedule(event, candidateName, candidateEmail) {
 }
 
 // =============================================================================
-// GLOBAL HANDLER SAFETY NET
-// Many onclick="foo(...)" attributes in dynamically-rendered HTML need their
-// targets on `window`. Functions defined inside DOMContentLoaded are NOT
-// global by default. Re-export them defensively here. Also surface a
-// diagnostic for any onclick name that resolves to undefined.
+// GLOBAL HANDLER DIAGNOSTIC
+// Dynamically-rendered markup still contains a few inline onclick handlers.
+// Their functions are explicitly exported near the end of DOMContentLoaded;
+// this audit only reports a missed export. Do not resolve names dynamically
+// here: it would require eval and weaken the page's Content Security Policy.
 // =============================================================================
 (function () {
-    const handlerNames = [
-        'showLoadingMessage', 'hideLoadingMessage', 'updateSearchProgress',
-        'generateEnhancedResults', 'addUserMessage',
-        'pollHRScorecardTask',
-        'exportCandidateReport', 'exportAllCandidatesReport',
-        'downloadResume', 'setCandidateStatus',
-        'editUser', 'refreshSearchHistory',
-        'scheduleInterview', 'closeInterviewModal',
-        'loadPage', 'removeFile', 'closeAnalysisModal', 'removeSkill',
-        'loadSavedSearch', 'showNotification', 'submitInterviewForm',
-        'loadCandidateStatusCounts', 'loadUpcomingEvents',
-        'openCandidatesByStatus', 'renderCandidatesByStatusList',
-        'openGeneralScheduleModal', 'closeGeneralScheduleModal', 'submitGeneralScheduleForm',
-    ];
-    handlerNames.forEach(function (name) {
-        try {
-            // If a closure-scoped binding exists, eval pulls it; if it's
-            // already on window, this is a no-op. Wrapped so a single missing
-            // symbol does not break the rest.
-            // eslint-disable-next-line no-eval
-            const fn = (typeof window[name] === 'function')
-                ? window[name]
-                : (function () { try { return eval(name); } catch (_) { return undefined; } })();
-            if (typeof fn === 'function' && typeof window[name] !== 'function') {
-                window[name] = fn;
-            }
-        } catch (_) { /* noop */ }
-    });
-
     // Diagnostic: log any onclick attribute whose primary identifier is not
     // resolvable on window. Helps catch new buttons that ship broken.
     function auditOnclickHandlers() {

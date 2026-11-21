@@ -55,7 +55,8 @@ def flow(queue_db, tmp_path, monkeypatch):
                 extracted_text TEXT,text_length INTEGER,embedding vector(3),candidate_years NUMERIC,
                 candidate_location TEXT,candidate_languages TEXT[],candidate_skills TEXT[],profile_source TEXT,
                 profile_updated_at TIMESTAMP,embedded_at TIMESTAMP,embed_model TEXT,extraction_error TEXT,
-                search_tags TEXT[] DEFAULT '{}',source_uploaded_at TIMESTAMP,source_received_at TIMESTAMPTZ);
+                search_tags TEXT[] DEFAULT '{}',source_uploaded_at TIMESTAMP,source_received_at TIMESTAMPTZ,
+                source_email_context TEXT NOT NULL DEFAULT '',source_email_metadata JSONB);
             CREATE UNIQUE INDEX e2e_identity ON resume_embeddings
                 (storage_bucket,folder,filename,(COALESCE(company_id,0)));''')
     monkeypatch.setenv('SMARTHR_LOCAL_MODE', '1')
@@ -125,7 +126,7 @@ def flow(queue_db, tmp_path, monkeypatch):
 
 
 def seed(flow):
-    flow.bulk(FOLDER, [('same-name.docx', cv('bulk-good')), ('wrong-tag.docx', cv('finance', 'Accountant with accounts payable experience'))])
+    bulk = flow.bulk(FOLDER, [('same-name.docx', cv('bulk-good')), ('wrong-tag.docx', cv('finance', 'Accountant with accounts payable experience'))])
     flow.bulk(FOLDER + '/sub', [('child.docx', cv('child', 'Web designer using WordPress and Webflow'))])
     flow.bulk(FOLDER + '-old', [('sibling.docx', cv('sibling'))])
     flow.bulk('Other folder', [('same-name.docx', cv('different-original'))])
@@ -137,9 +138,13 @@ def seed(flow):
     assert response.json()['email_stats']['successful_uploads'] == 3
     with flow.db.get_cursor() as (cur, _):
         cur.execute("UPDATE resume_uploads SET upload_timestamp='2026-04-15' WHERE file_name='same-name.docx'")
-        cur.execute('SELECT id,filename,folder,company_id,search_tags,source_received_at FROM resume_embeddings')
+        cur.execute('''SELECT e.id,e.filename,e.folder,e.company_id,e.search_tags,e.source_received_at,
+            u.file_name AS original_filename FROM resume_embeddings e JOIN resume_uploads u
+            ON u.company_id IS NOT DISTINCT FROM e.company_id
+            AND u.file_path=concat_ws('/',NULLIF(e.folder,''),e.filename)''')
         rows = [dict(row) for row in cur.fetchall()]
-    record_metadata(flow.db, BUCKET, FOLDER + '/same-name.docx', 1)
+    key = bulk['results'][0]['gcs_path'].removeprefix('gs://' + BUCKET + '/')
+    record_metadata(flow.db, BUCKET, key, 1)
     return rows
 
 
@@ -155,8 +160,8 @@ def test_real_bulk_graph_ingestion_and_scoped_retrieval(flow, monkeypatch, advan
     monkeypatch.setattr(index, 'ADVANCED_SEARCH_ENABLED', advanced)
     rows = seed(flow)
     assert len(list(flow.root.rglob('*.docx'))) == 9
-    good = next(row for row in rows if row['folder'] == FOLDER and row['filename'] == 'same-name.docx')
-    emails = {row['filename'].split('_')[-1]: row for row in rows if row['filename'].startswith('graph_')}
+    good = next(row for row in rows if row['folder'] == FOLDER and row['original_filename'] == 'same-name.docx')
+    emails = {row['original_filename']: row for row in rows if row['filename'].startswith('graph_')}
     assert good['search_tags'] == ['UI design']
     assert emails['within.docx']['source_received_at'].isoformat() == '2026-04-30T23:59:59+00:00'
     assert emails['unknown-date.docx']['source_received_at'] is None
@@ -215,7 +220,7 @@ def test_durable_worker_scores_and_persists_only_the_selected_cohort(flow, monke
         return value
     monkeypatch.setattr(main, 'analyze_resume_with_hr_scorecard', analyze)
     monkeypatch.setattr(main, 'using_deepseek', lambda: True)
-    response = flow.client.post('/api/hr-scorecard-search', data={'query': 'candidate profiles', 'result_count': '10',
+    response = flow.client.post('/api/hr-scorecard-search', data={'query': 'candidate profiles', 'job_title': 'Designer', 'result_count': '10',
         'folders': json.dumps(FOLDERS), 'filters': json.dumps(filters)})
     assert response.status_code == 200, response.text
     task_id = response.json()['task_id']
@@ -227,9 +232,28 @@ def test_durable_worker_scores_and_persists_only_the_selected_cohort(flow, monke
     assert seen == [FOLDER + '/' + expected['filename']]
     assert len(requests) == (2 if fallback else 1)
     assert all(request.folder_filters == FOLDERS and request.resume_filters == filters for request in requests)
+    assert all(request.email_context_query == 'Designer' for request in requests)
     response = flow.client.get('/api/search-results/' + str(status['search_id']))
     assert response.status_code == 200, response.text
     data = response.json()
     assert data['folder_filters'] == FOLDERS and data['resume_filters'] == filters
     assert len(data['results']) == 1
     assert data['results'][0]['file_path'] == seen[0]
+
+
+def test_same_named_bulk_cvs_have_distinct_searchable_objects_and_dates(flow):
+    first = flow.bulk(FOLDER, [('candidate.docx', cv('first-candidate'))])
+    second = flow.bulk(FOLDER, [('candidate.docx', cv('second-candidate'))])
+    expected = {batch['results'][0]['gcs_path'] for batch in (first, second)}
+    assert len(expected) == 2
+    with flow.db.get_cursor() as (cursor, _):
+        cursor.execute('SELECT id,filename,folder,storage_bucket,source_uploaded_at FROM resume_embeddings')
+        rows = [dict(row) for row in cursor.fetchall()]
+        cursor.execute('SELECT file_name FROM resume_uploads')
+        assert [row['file_name'] for row in cursor.fetchall()] == ['candidate.docx', 'candidate.docx']
+    assert len(rows) == 2, 'Display-name collisions must not overwrite a different CV vector'
+    assert all(row['source_uploaded_at'] is not None for row in rows)
+    locations = {index._row_to_result(row).document.content.uri for row in rows}
+    assert locations == expected
+    for uri in locations:
+        assert (flow.root / BUCKET / uri.removeprefix('gs://' + BUCKET + '/')).is_file()

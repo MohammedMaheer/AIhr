@@ -1,0 +1,27 @@
+# SmartHR-only defaults for the inspected 2-core/8GB shared VPS.
+# Validate capacity and existing persistent volumes before applying elsewhere.
+services:
+  smarthr-app:
+    cpus: 1.75
+    cpu_shares: 1024
+    mem_limit: 3g
+    mem_reservation: 1536m
+    memswap_limit: 4g
+    pids_limit: 384
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+  smarthr-postgres:
+    cpus: 1.0
+    cpu_shares: 1024
+    mem_limit: 2g
+    mem_reservation: 512m
+    memswap_limit: 2g
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

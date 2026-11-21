@@ -147,3 +147,65 @@ def test_main_preparation_reuses_both_operations_without_counting_cached_tokens(
     assert len(calls) == 2
     assert first.get_summary()["total_tokens"] == 260
     assert repeated.get_summary()["total_tokens"] == 0
+
+
+def test_company_preparation_is_explicit_and_does_not_share_document_caches():
+    peer = {**USER, 'id': 2, 'user_type': 'tenant_user'}
+    for operation in ('query', 'keywords'):
+        assert PreparationCache.key(operation, 'Exact JD', USER, company_preparation=True) == PreparationCache.key(
+            operation, 'Exact JD', peer, company_preparation=True)
+        assert PreparationCache.key(operation, 'Exact JD', USER) != PreparationCache.key(operation, 'Exact JD', peer)
+    assert PreparationCache.key('document-text-v1', 'Exact bytes', USER, company_preparation=True) != PreparationCache.key(
+        'document-text-v1', 'Exact bytes', peer, company_preparation=True)
+    assert PreparationCache.key('keywords', 'Exact JD', USER, company_preparation=True) != PreparationCache.key(
+        'keywords', 'Exact JD changed', peer, company_preparation=True)
+
+
+def test_company_preparation_keeps_provider_model_and_operation_separate(monkeypatch):
+    monkeypatch.setenv('LLM_PROVIDER', 'deepseek')
+    monkeypatch.setenv('DEEPSEEK_MODEL', 'model-one')
+    original = PreparationCache.key('keywords', 'Exact JD', USER, company_preparation=True)
+    assert original != PreparationCache.key('query', 'Exact JD', USER, company_preparation=True)
+    monkeypatch.setenv('DEEPSEEK_MODEL', 'model-two')
+    assert original != PreparationCache.key('keywords', 'Exact JD', USER, company_preparation=True)
+    monkeypatch.setenv('LLM_PROVIDER', 'gemini')
+    assert original != PreparationCache.key('keywords', 'Exact JD', USER, company_preparation=True)
+
+
+@pytest.mark.parametrize('user', [
+    {**USER, 'company': {'company_id': 8}},
+    {**USER, 'user_type': 'super_admin'},
+    {**USER, 'company': {'company_code': 'no-verified-id'}},
+    {**USER, 'company': {'company_id': True}},
+    {**USER, 'company': {'company_id': '9' * 5000}},
+])
+def test_company_preparation_never_crosses_unverified_scope(user):
+    peer = {**user, 'id': 2}
+    original = PreparationCache.key('keywords', 'Exact JD', USER, company_preparation=True)
+    changed = PreparationCache.key('keywords', 'Exact JD', peer, company_preparation=True)
+    assert original != changed
+    if user.get('user_type') == 'super_admin' or not isinstance((user.get('company') or {}).get('company_id'), int):
+        assert PreparationCache.key('keywords', 'Exact JD', user, company_preparation=True) != changed
+
+
+def test_team_reuses_exact_preparation_without_changing_outputs_or_charging_tokens(monkeypatch):
+    import main
+    monkeypatch.setattr(main, '_jd_preparation_cache', PreparationCache())
+    calls = []
+    def prepare(query, tracker):
+        calls.append(query)
+        tracker.add_call('preparation', 'unchanged-model', 1000, 200)
+        return {'success': True, 'all_keywords': ['Python', 'SQL'], 'optimized_query': query}
+    monkeypatch.setattr(main, 'extract_standardized_keywords_from_jd', prepare)
+    monkeypatch.setattr(main, 'extract_keywords_for_single_query', prepare)
+    first, peer = main.TokenTracker(), main.TokenTracker()
+    for operation in ('keywords', 'query'):
+        original = main._prepare_search_input(operation, 'Same complete original JD', USER, first)
+        repeated = main._prepare_search_input(operation, 'Same complete original JD', {**USER, 'id': 2, 'user_type': 'tenant_user'}, peer)
+        assert original == repeated
+    assert len(calls) == 2
+    assert first.get_summary()['total_tokens'] == 2400
+    assert peer.get_summary()['total_tokens'] == 0
+    other = main.TokenTracker()
+    main._prepare_search_input('keywords', 'Same complete original JD', {**USER, 'company': {'company_id': 8}}, other)
+    assert len(calls) == 3 and other.get_summary()['total_tokens'] == 1200

@@ -49,6 +49,8 @@
                 const message = modal.querySelector('[data-error]');
                 message.textContent = error.message || 'The request could not be completed.';
                 message.classList.remove('hidden');
+                message.tabIndex = -1;
+                message.focus();
             } finally {
                 pending = false;
                 delete modal.dataset.submitting;

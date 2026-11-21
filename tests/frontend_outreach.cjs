@@ -20,6 +20,20 @@ async function run(){
  };
  w.eval(source.slice(source.indexOf('function bindScheduleDialog('),source.indexOf('function closeInterviewModal()')));
  w.eval(moduleSource);
+ for (const [query,role] of [
+  ['Sales Manager. Required skills: Sales and CRM.','Sales Manager'],
+  ['HR Recruiter. Required skills: Recruitment.','HR Recruiter'],
+  ['Data Analyst. Skills: SQL and Power BI.','Data Analyst'],
+  ['Senior .NET Developer. Mandatory skills: C# and SQL.','Senior .NET Developer'],
+  ['Node.js Developer Required skills: JavaScript.','Node.js Developer'],
+  ['Sr. HR Specialist; Requirements: Recruitment.','Sr. HR Specialist'],
+ ]) {
+  const roleContext=w.RecruiterOutreach.context({query});
+  assert.equal(roleContext.position,role);
+  assert.equal(roleContext.query,query,'Prefill cleanup must not alter the original search');
+  const draft=w.RecruiterOutreach.message('details',roleContext);
+  assert(!/Required skills:|Mandatory skills:|Requirements:/.test(draft.subject));
+ }
  const ctx=w.RecruiterOutreach.context({candidateName:'Fictional Candidate',candidateEmail:'fixture@example.invalid',searchResultId:'23',jobApplicationId:'314'});
  assert.equal(ctx.position,'Networks and Information Security Team Lead');
  assert.equal(ctx.location,'Riyadh, KSA');

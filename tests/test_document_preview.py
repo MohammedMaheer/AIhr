@@ -165,7 +165,11 @@ def test_document_viewer_runtime_assets_are_packaged():
         assert (root/name).is_file(), 'Missing self-hosted viewer asset: '+name
 
 
-def test_worker_rejects_non_word_and_macro_packages_without_running_a_process():
+def test_worker_rejects_non_word_and_macro_packages_without_running_a_process(monkeypatch):
+    import socket
+    # Validation is platform-independent; this test never starts the Unix server.
+    if not hasattr(socket, 'AF_UNIX'):
+        monkeypatch.setattr(socket, 'AF_UNIX', socket.AF_INET, raising=False)
     spec=spec_from_file_location('preview_worker',Path(__file__).resolve().parents[1]/'deploy/vps/preview/worker.py')
     worker=module_from_spec(spec);spec.loader.exec_module(worker)
     assert not worker.valid_word(b'<html>not Word</html>','doc')

@@ -9,6 +9,20 @@ from vps_local.discovery_shim import _rank_rows
 from vps_local.profile_extractor import merge_profiles, parse_years, profile_from_analysis, profile_to_analysis
 
 
+@pytest.mark.parametrize('role',['HR Recruiter','Designer','Consultant','Nurse'])
+def test_location_followed_by_experience_is_not_the_job_title(role):
+    criteria=parse_search_criteria(role+' based in Dubai with 3-5 years of experience. Required skills: Python.')
+    assert criteria.location=='dubai'
+    assert (criteria.min_years,criteria.max_years)==(3,5)
+    assert criteria.required_skills==['python']
+    assert evaluate_criteria(analysis(location='Chennai',skills=['Python']),criteria)['hard_fail']
+
+
+@pytest.mark.parametrize('clause',['location: Dubai','must be in Dubai','located in Dubai','in the Dubai'])
+def test_explicit_location_ends_before_numeric_qualification(clause):
+    assert parse_search_criteria('Recruiter '+clause+' with 3-5 years.').location=='dubai'
+
+
 def analysis(location='', skills=None, languages=None):
     return {'hr_scorecard': {
         'candidate_overview': {'location': location, 'skills': skills or []},
@@ -76,6 +90,13 @@ def test_only_explicit_location_alternatives_expand_the_query(query, location, e
     ('.NET', 'ASP.NET Core', True), ('.NET', '.NET 8', True),
     ('AWS', 'AWS Lambda', True), ('R', 'CRM', False), ('R', 'R', True),
     ('React', 'Reactive programming', False), ('React', 'React.js', True),
+    ('Node.js', 'Node', True), ('Node.js', 'NodeJS 20', True),
+    ('NodeJS', 'Node.js', True), ('Node', 'Node JS', True),
+    ('Node.js', 'multi-node SDN networks', False), ('Node', 'node_modules', False),
+    ('React.js', 'React', True), ('ReactJS', 'React.js 18', True),
+    ('React', 'ReactJS', True), ('React.js', 'Reactive programming', False),
+    ('Node.js', 'Node.jsOther', False), ('React.js', 'React.jsOther', False),
+    ('Node.js', 'Node.js.', True), ('React.js', 'React.js.', True),
     ('Machine Learning', 'Machine Learning / Python', True),
 ])
 def test_required_skill_tokens_are_bounded_without_losing_versions(wanted, have, expected):

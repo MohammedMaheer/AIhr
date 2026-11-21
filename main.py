@@ -104,6 +104,7 @@ from google.protobuf import timestamp_pb2
 from search_criteria import parse_search_criteria, apply_criteria_to_results
 from services.llm_cache import PreparationCache
 from services.search_reuse import SearchReuse
+from services.assessment_context import assessment_prompt
 from services.document_validation import validate_docx_archive
 from services.resume_folders import normalize_folders, source_in_folders
 from services.resume_filters import normalize_filters
@@ -452,7 +453,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers.setdefault(
                 "Content-Security-Policy",
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
+                "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
                 "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://cdn.jsdelivr.net; "
                 "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
                 "img-src 'self' data: https: blob:; "
@@ -627,6 +628,7 @@ def _compute_asset_versions() -> dict[str, str]:
                       ("job_applications_js", "static/js/job-applications.js"),
                       ("notifications_js", "static/js/notifications.js"),
                       ("outreach_js", "static/js/recruiter-outreach.js"),
+                      ("similar_candidates_js", "static/js/similar-candidates.js"),
                       ("interview_manager_js", "static/js/interview-manager.js"),
                       ("components_css", "static/css/components.css"),
                       ("candidate_state_js", "static/js/candidate-state.js"),
@@ -726,7 +728,7 @@ def _prepare_search_input(operation: str, query: str, user: dict,
     compute = functions[operation]
     expected_field = "all_keywords" if operation == "keywords" else "optimized_query"
     return _jd_preparation_cache.get_or_compute(
-        PreparationCache.key(operation, query, user),
+        PreparationCache.key(operation, query, user, company_preparation=True),
         lambda: compute(query, token_tracker),
         lambda value: (isinstance(value, dict) and value.get("success") is True
                        and not value.get("fallback_used") and bool(value.get(expected_field))),
@@ -2420,7 +2422,7 @@ def get_mime_type_for_datastore(file_path: str) -> str:
     return mime_type
 
 def upload_to_vector_datastore(file_path: str, company_id: int = None, company_code: str = None,
-                               user_id: str = None, display_filename: str = None) -> bool:
+                               user_id: str = None, display_filename: str = None, source_email=None) -> bool:
     """
     Upload a document to the company-specific vector datastore with proper metadata.
     This enables incremental indexing during file upload.
@@ -2477,6 +2479,8 @@ def upload_to_vector_datastore(file_path: str, company_id: int = None, company_c
         filename = display_filename or file_path.split('/')[-1]
         structured_data["filename"] = filename
         structured_data["file_extension"] = filename.split('.')[-1] if '.' in filename else "unknown"
+        if source_email is not None and os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
+            structured_data['source_email'] = source_email
 
         # Create the document
         document = discoveryengine_v1.Document(
@@ -2500,7 +2504,7 @@ def upload_to_vector_datastore(file_path: str, company_id: int = None, company_c
 
         print(f"📤 Uploading to datastore: {datastore_id}")
         print(f"🆔 Document ID: {document_id}")
-        print(f"🏷️ Metadata: {structured_data}")
+        print(f"🏷️ Metadata fields: {', '.join(sorted(structured_data))}")
 
         # Create the document
         operation = client.create_document(request=request)
@@ -2525,6 +2529,8 @@ def create_company_search_request(
     user_context: dict = None,
     folder_filters=None,
     resume_filters=None,
+    criteria_query: Optional[str] = None,
+    email_context_query: Optional[str] = None,
 ) -> 'discoveryengine_v1.SearchRequest':
     """
     Create a search request using company-specific datastore for automatic tenant isolation.
@@ -2549,6 +2555,12 @@ def create_company_search_request(
     # Base serving config
     serving_config = f"projects/{PROJECT_ID}/locations/{LOCATION}/collections/default_collection/dataStores/{datastore_id}/servingConfigs/default_config"
 
+    request_options = _folder_request_options(folder_filters, resume_filters)
+    if criteria_query is not None and os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
+        request_options['criteria_query'] = criteria_query
+    if email_context_query is not None and os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
+        request_options['email_context_query'] = _sanitize_user_text(email_context_query, max_len=250)
+
     # Create the search request
     request = discoveryengine_v1.SearchRequest(
         serving_config=serving_config,
@@ -2556,7 +2568,7 @@ def create_company_search_request(
         page_size=result_count,
         filter=_local_company_search_filter(user_context),
         content_search_spec=build_discovery_content_search_spec(discoveryengine_v1),
-        **_folder_request_options(folder_filters, resume_filters),
+        **request_options,
     )
 
     print(f"✅ Search will automatically be isolated to company datastore")
@@ -3263,10 +3275,10 @@ Education: {entities.get('education', {}).get('degree', 'Not available')}
 Work History: {', '.join([f"{exp.get('company', 'Company')} ({exp.get('duration', 'Duration')})" for exp in entities.get('work_experience', [])[:3]])}
 """
 
-        scorecard_prompt = SCORECARD_PROMPT.format(
+        scorecard_prompt = assessment_prompt(SCORECARD_PROMPT.format(
             job_posting=_untrusted_prompt_data(query, "job requirements", max_len=4000),
             resume_content=_untrusted_prompt_data(resume_content, "candidate profile")
-        )
+        ))
 
         contents = [
             types.Content(
@@ -3874,10 +3886,10 @@ async def analyze_resume_with_hr_scorecard(resume_content: str, query: str, job_
             print(f"🧠 Using model: {model} for HR scorecard generation")
 
             # Create comprehensive HR scorecard prompt
-            hr_scorecard_prompt = HR_SCORECARD_PROMPT.format(
+            hr_scorecard_prompt = assessment_prompt(HR_SCORECARD_PROMPT.format(
                 job_posting=_untrusted_prompt_data(query, "job requirements", max_len=4000),
                 resume_content=_untrusted_prompt_data(resume_content, "resume")
-            )
+            ))
 
             contents = [
                 types.Content(
@@ -4450,9 +4462,9 @@ async def startup_event():
     except Exception as e:
         print(f"⚠️ Database setup error: {e} - continuing with limited functionality")
 
-    print("🎉 HR Agent API startup completed")
-
     if os.getenv("SMARTHR_LOCAL_MODE", "").lower() in {"1", "true", "yes", "on"}:
+        from vps_local.discovery_shim import initialize_search_schema
+        await asyncio.to_thread(initialize_search_schema)
         try:
             import asyncio as _asyncio
             from vps_local.discovery_shim import warm_search_runtime
@@ -4473,12 +4485,29 @@ async def startup_event():
         worker.start()
         app.state.search_worker = worker
 
+    if os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
+        from services.managed_desktop import DesktopPool, DesktopScheduler, compatible_model, configured_companies
+        try:
+            database = await asyncio.to_thread(get_db_manager)
+            if database and await asyncio.to_thread(DesktopPool.installed, database):
+                companies = configured_companies() if compatible_model() else frozenset()
+                desktop = DesktopScheduler(DesktopPool(database, companies), _run_resume_worker, _search_cache_clear)
+                app.state.managed_desktop_scheduler = desktop
+                desktop.start()  # Drain already-saved jobs even after enrollment/offload is disabled.
+        except Exception as exc:
+            logger.warning('Managed desktop unavailable; keeping normal VPS indexing: %s', type(exc).__name__)
+
+    print("🎉 HR Agent API startup completed")
+
 
 @app.on_event("shutdown")
 async def stop_search_worker():
     worker = getattr(app.state, 'search_worker', None)
     if worker:
         await worker.stop()
+    desktop = getattr(app.state, 'managed_desktop_scheduler', None)
+    if desktop:
+        await desktop.stop()
 
 # Health check endpoint for Cloud Run
 async def health_check():
@@ -6065,8 +6094,7 @@ def _resume_blob_name(folder, safe_name, *, stable_identity=False):
     return f"{folder}{unique_name}"
 
 
-def _store_resume_upload(db, *, bucket_name, blob_name, filename, content, content_type,
-                         user_id, company_id, company_code, source_received=None):
+def _persist_resume_upload(db, *, bucket_name, blob_name, filename, content, content_type, user_id, company_id):
     blob = _get_storage_client().bucket(bucket_name).blob(blob_name)
     with db.resume_upload_lock(company_id) as records:
         existing_id = records.get_resume_upload_id(company_id, blob_name) if company_id is not None else None
@@ -6076,24 +6104,91 @@ def _store_resume_upload(db, *, bucket_name, blob_name, filename, content, conte
         if existing_id is None:
             records.track_resume_upload(file_name=filename, file_path=blob_name, file_size=len(content),
                                         mime_type=content_type, user_id=user_id, company_id=company_id)
-    indexed = upload_to_vector_datastore(file_path=blob_name, company_id=company_id,
-                                         company_code=company_code, user_id=str(user_id),
-                                         display_filename=filename)
+
+
+def _record_resume_upload_metadata(db, bucket_name, blob_name, company_id, source_received=None):
     if os.getenv('SMARTHR_LOCAL_MODE', '').lower() in {'1', 'true', 'yes', 'on'}:
         from services.resume_filters import record_metadata
         try:
             record_metadata(db, bucket_name, blob_name, company_id, received=source_received)
         except Exception as exc:
             logger.warning('CV stored; search date metadata update needs recovery: %s', type(exc).__name__)
+
+
+def _store_resume_upload(db, *, bucket_name, blob_name, filename, content, content_type,
+                         user_id, company_id, company_code, source_received=None, source_email=None):
+    _persist_resume_upload(db, bucket_name=bucket_name, blob_name=blob_name, filename=filename,
+                           content=content, content_type=content_type, user_id=user_id, company_id=company_id)
+    email_options = {'source_email': source_email} if source_email is not None else {}
+    indexed = upload_to_vector_datastore(file_path=blob_name, company_id=company_id,
+                                         company_code=company_code, user_id=str(user_id),
+                                         display_filename=filename, **email_options)
+    _record_resume_upload_metadata(db, bucket_name, blob_name, company_id, source_received)
     return indexed
 
 
-async def _run_resume_upload(db, **kwargs):
+def _manual_upload_batch_size():
+    if os.getenv('SMARTHR_LOCAL_MODE', '').lower() not in {'1', 'true', 'yes', 'on'}:
+        return 1
+    from vps_local.discovery_shim import MAX_RESUME_EMBED_BATCH
+    try:
+        return max(1, min(MAX_RESUME_EMBED_BATCH, int(os.getenv('SMARTHR_BULK_EMBED_BATCH_SIZE', '1'))))
+    except ValueError:
+        return 1
+
+
+def _store_resume_upload_batch(db, bucket_name, company_id, company_code, user_id, uploads, *, managed_pool=None):
+    from vps_local.discovery_shim import Document, index_resume_batch
+    outcomes = [None] * len(uploads)
+    saved = []
+    for i, upload in enumerate(uploads):
+        try:
+            _persist_resume_upload(db, bucket_name=bucket_name, company_id=company_id, user_id=user_id, **upload)
+            saved.append(i)
+            outcomes[i] = False
+        except Exception as exc:
+            logger.warning('Resume upload failed: %s', type(exc).__name__)
+
+    if not saved:
+        return outcomes
+    if managed_pool and len(saved) > 1:
+        try:
+            job = managed_pool.enqueue(company_id, bucket_name, [
+                {'key': uploads[i]['blob_name'], 'mime': get_mime_type_for_datastore(uploads[i]['blob_name'])} for i in saved
+            ])
+            if job:
+                return job, saved, outcomes
+        except Exception as exc:
+            logger.warning('Managed queue unavailable; indexing saved originals on VPS: %s', type(exc).__name__)
+    try:
+        documents = [Document(struct_data={'company_id': company_id}, content=Document.Content(
+            uri=f"gs://{bucket_name}/{uploads[i]['blob_name']}",
+            mime_type=get_mime_type_for_datastore(uploads[i]['blob_name']))) for i in saved]
+        result = index_resume_batch(documents)
+        if len(result) != len(saved):
+            raise ValueError('Unexpected bulk indexing response')
+        for i, operation in zip(saved, result, strict=True):
+            outcomes[i] = operation.indexed
+            if not operation.indexed:
+                logger.warning('Resume indexing did not complete: %s', operation.error_code)
+    except Exception as exc:
+        logger.warning('Bulk indexing unavailable; using individual indexing: %s', type(exc).__name__)
+        for i in saved:
+            upload = uploads[i]
+            outcomes[i] = upload_to_vector_datastore(file_path=upload['blob_name'], company_id=company_id,
+                company_code=company_code, user_id=str(user_id), display_filename=upload['filename'])
+
+    for i in saved:
+        _record_resume_upload_metadata(db, bucket_name, uploads[i]['blob_name'], company_id)
+    return outcomes
+
+
+async def _run_resume_worker(function, *args, **kwargs):
     # Bound CPU indexing and database use without blocking unrelated API requests.
     slots = _resume_upload_slots
     await slots.acquire()
     try:
-        worker = asyncio.create_task(asyncio.to_thread(_store_resume_upload, db, **kwargs))
+        worker = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
     except BaseException:
         slots.release()
         raise
@@ -6108,6 +6203,16 @@ async def _run_resume_upload(db, **kwargs):
     worker.add_done_callback(finished)
     # A disconnected caller must not free capacity while its thread is still writing.
     return await asyncio.shield(worker)
+
+
+async def _run_resume_upload(db, **kwargs):
+    return await _run_resume_worker(_store_resume_upload, db, **kwargs)
+
+
+from services.managed_desktop_routes import create_managed_desktop_router
+
+app.include_router(create_managed_desktop_router(
+    require_tenant_admin, lambda user: _get_company_id(user), _is_secure_request, _run_resume_worker, limiter))
 
 
 async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], folder_path: str, user: dict) -> Dict[str, Any]:
@@ -6166,6 +6271,8 @@ async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], fold
     for email_data in scraped_emails:
         email_id = email_data['id']
         email_subject = email_data['subject']
+        from services.email_context import build_context
+        source_email = build_context(email_data)
 
         for attachment in email_data['attachments']:
             try:
@@ -6220,6 +6327,7 @@ async def process_scraped_attachments(scraped_emails: List[Dict[str, Any]], fold
                     company_code=company_code,
                     user_id=user['id'],
                     source_received=email_data.get('date'),
+                    source_email=source_email,
                 )
 
                 upload_results.append({
@@ -6491,9 +6599,48 @@ async def upload_files(
                               in config['upload']['allowed_extensions'] for f in files)
         await _check_resume_upload_limit(db, company_id, files_to_upload)
 
-        upload_results = []
-        batch_success_count = 0
-        batch_error_count = 0
+        upload_results = [None] * len(files)
+        pending = []
+        pending_bytes = 0
+        batch_size = _manual_upload_batch_size()
+        company = user.get('company')
+        company_code = company.get('company_code') if isinstance(company, dict) else getattr(company, 'company_code', None)
+
+        async def flush_uploads():
+            nonlocal pending_bytes
+            if not pending:
+                return
+            if len(pending) == 1:
+                try:
+                    outcome = await _run_resume_upload(db, bucket_name=bucket_name,
+                        company_id=company_id, company_code=company_code, user_id=user['id'], **pending[0][1])
+                except Exception as exc:
+                    logger.warning('Resume upload failed: %s', type(exc).__name__)
+                    outcome = None
+                outcomes = [outcome]
+            else:
+                desktop = getattr(request.app.state, 'managed_desktop_scheduler', None)
+                scheduling = (desktop is not None and desktop.task is not None and not desktop.task.done()
+                              and company_id in desktop.pool.companies and _resume_upload_slots.locked())
+                options = {'managed_pool': desktop.pool} if scheduling else {}
+                outcomes = await _run_resume_worker(_store_resume_upload_batch, db, bucket_name,
+                    company_id, company_code, user['id'], [upload for _, upload in pending], **options)
+                if isinstance(outcomes, tuple):
+                    job, saved, outcomes = outcomes
+                    indexed = await desktop.wait(job)
+                    if indexed is not None:
+                        for i, ready in zip(saved, indexed, strict=True):
+                            outcomes[i] = ready
+            for (index, upload), indexed in zip(pending, outcomes, strict=True):
+                result = {'filename': upload['filename'], 'success': indexed is not None, 'batch_info': batch_info}
+                if indexed is None:
+                    result['error'] = 'Upload could not be completed. Please try again shortly.'
+                else:
+                    result.update(gcs_path=f"gs://{bucket_name}/{upload['blob_name']}",
+                                  size=len(upload['content']), folder=upload_folder, vector_indexed=indexed)
+                upload_results[index] = result
+            pending.clear()
+            pending_bytes = 0
 
         print(f"\n🔄 Processing {len(files)} files in batch{batch_log}")
 
@@ -6507,24 +6654,22 @@ async def upload_files(
 
             if file_ext not in allowed_extensions:
                 print(f"❌ File {file.filename} rejected: unsupported type {file_ext}")
-                upload_results.append({
+                upload_results[i] = {
                     "filename": file.filename,
                     "success": False,
                     "error": f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}"
-                })
-                batch_error_count += 1
+                }
                 continue
 
             # Check file size before reading content
             file_size = file.size if hasattr(file, 'size') else None
             if file_size and file_size > MAX_FILE_SIZE:
                 print(f"❌ File {file.filename} rejected: too large ({file_size:,} bytes > {MAX_FILE_SIZE:,} bytes)")
-                upload_results.append({
+                upload_results[i] = {
                     "filename": file.filename,
                     "success": False,
                     "error": f"File too large. Maximum size allowed: {MAX_FILE_SIZE // (1024*1024)}MB, file size: {file_size // (1024*1024)}MB"
-                })
-                batch_error_count += 1
+                }
                 continue
 
             # Read file content with size validation
@@ -6532,74 +6677,39 @@ async def upload_files(
             content = await file.read(MAX_FILE_SIZE + 1)
             if len(content) > MAX_FILE_SIZE:
                 print(f"❌ File {file.filename} rejected: content too large ({len(content):,} bytes)")
-                upload_results.append({
+                upload_results[i] = {
                     "filename": file.filename,
                     "success": False,
                     "error": f"File too large. Maximum size allowed: {MAX_FILE_SIZE // (1024*1024)}MB, actual size: {len(content) // (1024*1024)}MB"
-                })
-                batch_error_count += 1
+                }
                 continue
 
             is_valid_payload, payload_error = validate_resume_payload(file.filename, content)
             if not is_valid_payload:
                 print(f"❌ File {file.filename} rejected: invalid payload for {file_ext}")
-                upload_results.append({
+                upload_results[i] = {
                     "filename": file.filename,
                     "success": False,
                     "error": payload_error
-                })
-                batch_error_count += 1
+                }
                 continue
 
-            try:
-                # Sanitize filename to prevent path injection via crafted filenames
-                safe_name = _sanitize_object_path(file.filename) or 'unnamed'
-                # Upload to GCS
-                blob_name = _resume_blob_name(upload_folder, safe_name)
-
-                # Upload to vector datastore for immediate searchability (incremental indexing)
-                company_code = None
-                if user.get('company'):
-                    if isinstance(user['company'], dict):
-                        company_code = user['company'].get('company_code')
-                    else:
-                        company_code = getattr(user['company'], 'company_code', None)
-
-                print(f"🔍 Adding {file.filename} to vector datastore")
-                vector_upload_success = await _run_resume_upload(
-                    db, bucket_name=bucket_name, blob_name=blob_name,
-                    filename=file.filename, content=content, content_type=file.content_type,
-                    company_id=company_id,
-                    company_code=company_code,
-                    user_id=user['id']
-                )
-
-                upload_results.append({
-                    "filename": file.filename,
-                    "success": True,
-                    "gcs_path": f"gs://{bucket_name}/{blob_name}",
-                    "size": len(content),
-                    "folder": upload_folder,
-                    "vector_indexed": vector_upload_success,
-                    "batch_info": batch_info
-                })
-
-                batch_success_count += 1
-                print(f"✅ Successfully processed {file.filename}")
-
-            except Exception as e:
-                logger.warning('Resume upload failed: %s', type(e).__name__)
-                upload_results.append({
-                    "filename": file.filename,
-                    "success": False,
-                    "error": "Upload could not be completed. Please try again shortly.",
-                    "batch_info": batch_info
-                })
-                batch_error_count += 1
+            # Bound the memory held by the embedding group independently of the request limit.
+            if pending_bytes + len(content) > 16 * 1024 * 1024:
+                await flush_uploads()
+            safe_name = _sanitize_object_path(file.filename) or 'unnamed'
+            pending.append((i, dict(blob_name=_resume_blob_name(upload_folder, safe_name), filename=file.filename,
+                                    content=content, content_type=file.content_type)))
+            pending_bytes += len(content)
+            if len(pending) == batch_size:
+                await flush_uploads()
 
             # Reset file position for next iteration
             await file.seek(0)
 
+        await flush_uploads()
+        batch_success_count = sum(result['success'] for result in upload_results)
+        batch_error_count = len(files) - batch_success_count
         # Log batch completion
         print(f"\n✅ BATCH UPLOAD COMPLETED{batch_log}")
         print(f"📊 Results: {batch_success_count} successful, {batch_error_count} failed")
@@ -6664,6 +6774,58 @@ async def get_config(user: dict = Depends(require_auth)):
             "default_folder": config.get("gcs", {}).get("default_folder", ""),
         },
     }
+
+@app.post('/api/similar-candidates')
+@limiter.limit('10/minute')
+async def similar_candidates(
+    request: Request,
+    query: str = Form(...),
+    result_count: int = Form(10),
+    folders: Annotated[Optional[str], Form()] = None,
+    filters: Annotated[Optional[str], Form()] = None,
+    user: dict = Depends(require_auth),
+):
+    query = _sanitize_user_text(query, max_len=4000)
+    if not query.strip():
+        raise HTTPException(status_code=400, detail='Enter candidate requirements.')
+    if len(parse_search_criteria(query).required_skills) > 32:
+        raise HTTPException(status_code=422, detail='Use no more than 32 explicit required skills for similar profiles.')
+    selected = _parse_search_folders(folders)
+    filtering = _parse_resume_filters(filters)
+    count = clamp_result_count(result_count, default=10, max_value=MAX_HR_SCORECARD_RESULTS)
+    tenant = _local_company_search_filter(user)
+    if os.getenv('SMARTHR_LOCAL_MODE', '').lower() not in {'1', 'true', 'yes', 'on'}:
+        raise HTTPException(status_code=501, detail='Similar candidate previews are unavailable.')
+    db = get_db_manager()
+    if not db:
+        raise HTTPException(status_code=503, detail='Candidate search is temporarily unavailable.')
+    try:
+        company_id = _get_company_id(user)
+        if company_id:
+            await asyncio.to_thread(db.check_search_limit, company_id)
+        from services.resume_folders import searchable_count
+        from services.similar_candidates import search
+        results = []
+        if await request.is_disconnected():
+            raise HTTPException(status_code=499, detail='Search request closed.')
+        available = await asyncio.to_thread(searchable_count, db, user, selected, filtering, timeout_ms=5000)
+        if await request.is_disconnected():
+            raise HTTPException(status_code=499, detail='Search request closed.')
+        if available:
+            results = await asyncio.to_thread(search, query, count, tenant, selected, filtering)
+        return {'success': True, 'query': query, 'match_mode': 'similar',
+                'verification': 'indexed_profile_only', 'paid_ai_calls': 0,
+                'requested_result_count': count, 'total_results': len(results),
+                'folder_filters': selected or [], 'resume_filters': filtering,
+                'results': results}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if 'maximum search limit' in str(exc).lower():
+            raise HTTPException(status_code=400, detail='Your company has reached its maximum search limit.') from None
+        logging.warning('Similar candidate preview failed: %s', type(exc).__name__)
+        raise HTTPException(status_code=503, detail='Similar candidates could not be loaded. Please try again.') from None
+
 
 @app.post("/api/search-vector")
 async def search_vector(
@@ -9333,7 +9495,9 @@ async def run_hr_scorecard_task(task_payload):
             if not await asyncio.to_thread(searchable_count, db_idem, user_data, folder_filters, resume_filters):
                 await asyncio.to_thread(db_idem.complete_hr_task, task_id, [],
                     {'step': 'completed', 'results': 0, 'requested_results': result_count,
-                     'returned_results': 0, 'exact_match_shortfall': result_count}, lease[1] if lease else None)
+                     'returned_results': 0, 'exact_match_shortfall': result_count,
+                     'processing_time_seconds': round(time.time() - start_time, 2),
+                     'token_usage': token_tracker.get_summary()}, lease[1] if lease else None)
                 return {'success': True, 'results': 0, 'message': 'No searchable CVs in the selected folders'}
 
         # Run both keyword-extraction LLM calls in parallel (was sequential)
@@ -9388,6 +9552,8 @@ async def run_hr_scorecard_task(task_payload):
             user_context=user,
             folder_filters=folder_filters,
             resume_filters=resume_filters,
+            criteria_query=query,
+            email_context_query=job_title,
         )
 
         response = await asyncio.to_thread(client.search, request_obj)
@@ -9413,6 +9579,7 @@ async def run_hr_scorecard_task(task_payload):
                     user_context=user,
                     folder_filters=folder_filters,
                     resume_filters=resume_filters,
+                    email_context_query=job_title,
                 )
                 fallback_resp = await asyncio.to_thread(client.search, fallback_req)
                 fb_results = list(fallback_resp.results)
@@ -9431,7 +9598,9 @@ async def run_hr_scorecard_task(task_payload):
         if found_count == 0:
             await asyncio.to_thread(db_idem.complete_hr_task, task_id, [],
                 {'step': 'completed', 'results': 0, 'requested_results': result_count,
-                 'returned_results': 0, 'exact_match_shortfall': result_count}, lease[1] if lease else None)
+                 'returned_results': 0, 'exact_match_shortfall': result_count,
+                 'processing_time_seconds': round(time.time() - start_time, 2),
+                 'token_usage': token_tracker.get_summary()}, lease[1] if lease else None)
             return {"success": True, "results": 0, "message": "No candidates found"}
 
         # Generate HR scorecards for filtered results — in PARALLEL, with a
@@ -9515,7 +9684,10 @@ async def run_hr_scorecard_task(task_payload):
                             return blob.generation
                         version = await asyncio.to_thread(_resume_version)
                         jd_hash = scorecard_signature(query, job_title, user_bucket,
-                                                      file_path_for_cache, version, HR_SCORECARD_PROMPT)
+                            file_path_for_cache, version, assessment_prompt(HR_SCORECARD_PROMPT),
+                            keywords=standardized_keywords,
+                            auxiliary_prompts=(ENTITY_EXTRACTION_PROMPT, SCORECARD_PROMPT,
+                                               KEYWORD_MATCHING_PROMPT))
                     except Exception:
                         logging.warning("Resume metadata unavailable; bypassing scorecard cache.")
 
@@ -9748,6 +9920,9 @@ async def run_hr_scorecard_task(task_payload):
                 'requested_results': result_count,
                 'returned_results': len(results),
                 'candidate_pool_size': fetch_count,
+                'retrieval_email_context_matches': sum((getattr(r.document, 'struct_data', None) or {}).get('email_context_match') is True
+                    for r in result_list if r.document),
+                'cache_hits': completed_counter['cache_hits'],
                 'exact_match_shortfall': max(0, result_count - len(results)),
                 'search_criteria': task_search_criteria.to_dict(),
                 'successful_scorecards': len([r for r in results if r.get('analysis_type') == 'comprehensive_hr_scorecard']),
@@ -11099,9 +11274,11 @@ async def get_search_history(
             "page_size": effective_page_size,
             "has_more": effective_offset + len(history) < total,
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"❌ Error fetching search history: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch search history: {str(e)}")
+        logger.warning('Search history could not be loaded: %s', type(e).__name__)
+        raise HTTPException(status_code=500, detail='Search history is temporarily unavailable.') from None
 
 @app.get("/api/search-results/{search_id}")
 async def get_saved_search_results(search_id: int, user: dict = Depends(require_auth)):
@@ -11558,7 +11735,7 @@ async def get_public_application_page(request: Request, public_token: str):
     db = get_db_manager()
     with db.get_cursor() as (cursor, _conn):
         cursor.execute('''SELECT p.title,p.description,p.location,p.employment_type,p.custom_questions,
-            p.application_settings,c.company_name FROM job_application_pages p JOIN tenant_companies c ON c.id=p.company_id
+            p.application_settings,p.version,c.company_name FROM job_application_pages p JOIN tenant_companies c ON c.id=p.company_id
             WHERE p.public_token=%s AND p.status='published' AND c.is_active IS DISTINCT FROM FALSE''',
             (public_token,))
         page = cursor.fetchone()
@@ -11584,6 +11761,7 @@ async def submit_public_application(
     resume_url: str = Form(''),
     portfolio_url: str = Form(''),
     answers: str = Form('{}'),
+    page_version: Optional[int] = Form(None, ge=1),
     consent: bool = Form(False),
     company_website: str = Form(''),
 ):
@@ -11607,13 +11785,16 @@ async def submit_public_application(
 
     db = get_db_manager()
     with db.get_cursor() as (cursor, _conn):
-        cursor.execute('''SELECT p.id,p.company_id,p.created_by_user_id,p.custom_questions,p.application_settings,c.company_code,
+        cursor.execute('''SELECT p.id,p.company_id,p.created_by_user_id,p.custom_questions,p.application_settings,p.version,c.company_code,
             c.gcs_bucket_name FROM job_application_pages p JOIN tenant_companies c ON c.id=p.company_id
             WHERE p.public_token=%s AND p.status='published' AND c.is_active IS DISTINCT FROM FALSE''',
             (public_token,))
         page = cursor.fetchone()
     if not page:
         raise HTTPException(status_code=404, detail='This application page is unavailable.')
+    changed_message = 'This job page was updated. Keep a copy of your answers, then reload the page to review the latest form.'
+    if page_version is not None and page_version != page['version']:
+        raise HTTPException(status_code=409, detail=changed_message)
     settings = _application_settings(page.get('application_settings'))
     fields = settings['fields']
     phone_value = _sanitize_user_text(phone, 40) if fields['phone'] else ''
@@ -11651,7 +11832,7 @@ async def submit_public_application(
     if set(supplied_answers) - {str(i) for i in range(len(questions))}:
         raise HTTPException(status_code=422, detail='Review your answers and submit again.')
     clean_answers = {}
-    for key, question in enumerate(questions):
+    for key in range(len(questions)):
         raw_answer = supplied_answers.get(str(key), '')
         if not isinstance(raw_answer, str) or len(raw_answer) > 1000:
             raise HTTPException(status_code=422, detail='Keep each application answer to 1,000 characters or fewer.')
@@ -11685,11 +11866,22 @@ async def submit_public_application(
     from psycopg2 import IntegrityError
     try:
         with db.get_cursor() as (cursor, _conn):
+            # File validation may have yielded. Serialize reservation with page edits,
+            # closure and company deactivation, without holding locks during upload.
+            cursor.execute('''SELECT p.version FROM job_application_pages p JOIN tenant_companies c ON c.id=p.company_id
+                WHERE p.id=%s AND p.company_id=%s AND p.status='published' AND c.is_active IS DISTINCT FROM FALSE
+                FOR SHARE OF p,c''', (page['id'], company_id))
+            current_page = cursor.fetchone()
+            if not current_page:
+                raise HTTPException(status_code=404, detail='This application page is no longer accepting submissions.')
+            if current_page['version'] != page['version']:
+                raise HTTPException(status_code=409, detail=changed_message)
             cursor.execute('''INSERT INTO job_applications(page_id,company_id,candidate_name,normalized_email,
-                phone,location,years_experience,linkedin_url,resume_url,portfolio_url,answers,consent_at,status)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NOW(),%s) RETURNING id''',
+                phone,location,years_experience,linkedin_url,resume_url,portfolio_url,answers,answer_questions,consent_at,status)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,NOW(),%s) RETURNING id''',
                 (page['id'], company_id, name, email_value, phone_value, location_value, experience,
                  linkedin_value, resume_link, portfolio_value, json.dumps(clean_answers),
+                 json.dumps({key: questions[int(key)] for key in clean_answers}),
                  'processing' if has_upload else 'received'))
             application_id = cursor.fetchone()['id']
     except IntegrityError as exc:
@@ -11942,7 +12134,7 @@ async def list_job_applications(page_id: int, request: Request, limit: int = 100
                        (page_id, company_id))
         total = cursor.fetchone()['total']
         cursor.execute('''SELECT a.id,a.candidate_name,a.normalized_email,a.phone,a.location,a.years_experience,
-            a.linkedin_url,a.resume_url,a.portfolio_url,a.answers,a.status,a.version,a.vector_indexed,a.created_at,a.resume_upload_id,
+            a.linkedin_url,a.resume_url,a.portfolio_url,a.answers,a.answer_questions,a.status,a.version,a.vector_indexed,a.created_at,a.resume_upload_id,
             u.file_name,i.id AS interview_id,i.interview_date,i.interview_time,i.status AS interview_status
             FROM job_applications a LEFT JOIN resume_uploads u ON u.id=a.resume_upload_id
             LEFT JOIN LATERAL (
@@ -11971,7 +12163,7 @@ async def set_job_application_status(application_id: int, request: Request, comp
     db = get_db_manager()
     with db.get_cursor() as (cursor, _conn):
         cursor.execute('''SELECT status,version,page_id FROM job_applications WHERE id=%s AND company_id=%s
-            AND status <> 'erased' FOR UPDATE''', (application_id, company_id))
+            AND status NOT IN ('erased','processing') FOR UPDATE''', (application_id, company_id))
         old = cursor.fetchone()
         if not old:
             raise HTTPException(status_code=404, detail='Application not found.')

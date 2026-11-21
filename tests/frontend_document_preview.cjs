@@ -55,5 +55,28 @@ async function setup(kind='pdf',fail=false){
     d.querySelector('[data-mode="text"]').click();assert.equal(d.querySelector('pre').textContent,'Cached text excerpt');
     assert.equal(value.requests.filter(([url])=>url.endsWith('/document')).length,1,'Failures must not loop or create paid work');
     value.dispose();await flush();value.dom.window.close();
-    console.log('Document previews passed: private lazy PDF viewer, disabled PDF scripting/AI downloads, full original text, safe inline errors, reusable modes and blob cleanup.');
+    value=await setup();({w,d}=value);
+    d.querySelector('[data-close]').click();await flush();
+    const baseFetch=w.fetch;
+    let previewSignal,listSignal,resolvePreview,resolveList;
+    w.fetch=(url,options)=>{
+        if(url==='/api/resume-library/7'){
+            previewSignal=options.signal;
+            return new Promise(resolve=>{resolvePreview=resolve;});
+        }
+        if(url.startsWith('/api/resume-library?')){
+            listSignal=options.signal;
+            return new Promise(resolve=>{resolveList=resolve;});
+        }
+        return baseFetch(url,options);
+    };
+    d.querySelector('[data-preview]').click();
+    d.querySelector('[data-refresh]').click();
+    assert(previewSignal.aborted,'Refreshing the library cancels pending metadata for a removed row');
+    resolvePreview(await baseFetch('/api/resume-library/7'));
+    await flush();assert.equal(d.querySelector('[data-library-dialog]'),null,'Stale metadata must not open a preview');
+    value.dispose();assert(listSignal.aborted,'Leaving the library cancels outstanding lists');
+    resolveList(await baseFetch('/api/resume-library?limit=25&offset=0'));
+    await flush();value.dom.window.close();
+    console.log('Document previews passed: private PDF viewer, full original text, inline errors, blob cleanup and stale request cancellation.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -49,7 +49,7 @@ def test_missing_source_is_not_reported_as_indexed():
     assert operation.error_code == 'source_missing'
 
 
-def test_unique_storage_key_keeps_original_display_filename(tmp_path):
+def test_unique_storage_key_is_not_replaced_by_the_display_filename(tmp_path):
     path = tmp_path / 'generated-id__abc123.pdf'
     path.write_bytes(b'fixture')
     conn, cursor, pool = MagicMock(), MagicMock(), MagicMock()
@@ -69,7 +69,8 @@ def test_unique_storage_key_keeps_original_display_filename(tmp_path):
         operation = discovery._upsert_document_embedding(document, document_id='generated-id')
 
     assert operation.indexed is True
-    assert cursor.execute.call_args_list[0].args[1][0] == 'Original Candidate CV.pdf'
+    assert cursor.execute.call_args_list[0].args[1][0] == 'generated-id__abc123.pdf'
+    assert cursor.execute.call_args_list[1].args[1][3] == 'generated-id__abc123.pdf'
     conn.commit.assert_called_once()
     pool.putconn.assert_called_once_with(conn)
 

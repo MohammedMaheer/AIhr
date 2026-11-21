@@ -14,6 +14,10 @@ assert re.fullmatch(r'[\w.-]+@[\w.-]+', host)
 assert re.fullmatch(r'[\w.-]+:[\w.-]+', image)
 paths = ('config.example.json', 'deploy/schema.sql', 'deploy/vps/schema-local-mode.sql',
          'tests/local-upload-pilot/handoff_vps.py')
+managed = sys.argv[1:] == ['managed']
+assert managed or not sys.argv[1:]
+if managed:
+    paths += ('tests/local-upload-pilot/managed_handoff_vps.py', 'tests/local-upload-pilot/managed_pool_vps.py')
 payload = {Path(name).name: base64.b64encode((root/name).read_bytes()).decode() for name in paths}
 
 stage = r'''
@@ -67,10 +71,15 @@ with tempfile.TemporaryDirectory(prefix=tag+'-') as temp:
                  '--read-only','--tmpfs','/tmp:rw,nosuid,mode=1777,size=128m','--cap-drop=ALL','--security-opt=no-new-privileges',
                  '--cpus=1.75','--memory=1600m','--memory-swap=1600m','--pids-limit=64',
                  '-v','smarthr_stcache:/app/.st_cache:ro','-v',str(config)+':/app/config.json:ro',
-                 '-v',str(directory/'handoff_vps.py')+':/qa/handoff.py:ro']
+                 '-v',str(directory/'handoff_vps.py')+':/qa/handoff_vps.py:ro']
+        entry='/qa/handoff_vps.py'
+        if managed:
+            entry='/qa/managed_handoff_vps.py'
+            for name in ('managed_handoff_vps.py','managed_pool_vps.py'):
+                options.extend(['-v',str(directory/name)+':/qa/'+name+':ro'])
         for k,v in env.items():
             options.extend(['-e',k+'='+v])
-        status=subprocess.run(options+['--entrypoint','timeout',image,'210','python','-u','/qa/handoff.py'],timeout=220).returncode
+        status=subprocess.run(options+['--entrypoint','timeout',image,'210','python','-u',entry],timeout=220).returncode
     finally:
         for name in (tag,db):
             found=subprocess.run(['docker','inspect',name],capture_output=True,text=True)
@@ -81,7 +90,7 @@ with tempfile.TemporaryDirectory(prefix=tag+'-') as temp:
         run(['docker','network','rm',net])
     raise SystemExit(status)
 '''
-bootstrap = f'image={image!r}\npayload={payload!r}\n{stage}'
+bootstrap = f'image={image!r}\npayload={payload!r}\nmanaged={managed!r}\n{stage}'
 command = "python3 -u -c 'import sys,base64; exec(base64.b64decode(sys.stdin.buffer.readline()))'"
 with subprocess.Popen(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=8',
                        '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', host, command],

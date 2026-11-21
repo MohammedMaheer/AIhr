@@ -7,11 +7,15 @@
     "start": "node server.mjs",
     "test": "node verify.mjs",
     "benchmark": "node benchmark.mjs",
-    "verify-handoff": "node verify-handoff.mjs"
+    "verify-handoff": "node verify-handoff.mjs",
+    "verify-managed-worker": "node verify-managed-worker.mjs"
   },
   "dependencies": {
     "@huggingface/tokenizers": "0.2.0",
     "onnxruntime-web": "1.31.1",
     "playwright": "1.65.1"
+  },
+  "devDependencies": {
+    "onnxruntime-node": "1.31.1"
   }
 }

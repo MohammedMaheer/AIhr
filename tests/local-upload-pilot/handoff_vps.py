@@ -128,7 +128,7 @@ def measured(function):
 def upload(command):
     state = command['state']
     assert state in {'reference', 'healthy', 'busy'}
-    client, company, owner, bucket = clients['owner']
+    client, company, owner, bucket = clients[command.get('actor', 'owner')]
     folder = 'Synthetic/Offload/' + secrets.token_hex(5)
     data = [(f'{i}.pdf', base64.b64decode(item, validate=True), 'application/pdf')
             for i, item in enumerate(command['pdfs'])]
@@ -241,9 +241,14 @@ def output(value):
     sys.stdout.flush()
 
 
-output({'ready': True})
-for line in sys.stdin:
-    request = json.loads(line)
-    if request['op'] == 'close':
-        break
-    output(dispatch(request))
+def serve(handler):
+    output({'ready': True})
+    for line in sys.stdin:
+        request = json.loads(line)
+        if request['op'] == 'close':
+            break
+        output(handler(request))
+
+
+if __name__ == '__main__':
+    serve(dispatch)

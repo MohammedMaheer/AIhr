@@ -5,6 +5,17 @@ source commit, deployment evidence and remaining limitations in the commit body.
 Tags and shared commits are not rewritten. Runtime secrets, customer voice notes,
 CVs and private audit receipts are excluded from Git.
 
+## v2026.11.21.2 - 2026-11-21
+
+### Managed Desktop Worker Pool Pilot
+
+- Test admin-enrolled, tenant-scoped native workers with signed leases and
+  PostgreSQL-backed assignments, reassignment and VPS fallback.
+- Reduce staged VPS CPU by 66.37% with no VPS model calls on the managed path
+  and 70 matching ranked comparisons. Keep production unchanged pending
+  managed agent packaging and live scheduler integration.
+  Details: `docs/MANAGED_DESKTOP_POOL_2026-11-21.md`.
+
 ## v2026.11.21.1 - 2026-11-21
 
 ### Desktop Offload Release Gate
